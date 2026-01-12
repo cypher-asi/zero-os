@@ -201,10 +201,22 @@ pub enum EntryType {
     // Verification
     Receipt = 80,
     
+    // Policy and authorization
+    PolicyDecision = 85,
+    PolicyRuleAdded = 86,
+    PolicyRuleRemoved = 87,
+    
+    // Identity and key management
+    IdentityCreated = 88,
+    IdentityUpdated = 89,
+    CredentialAdded = 90,
+    CredentialRevoked = 91,
+    KeyUsage = 92,
+    
     // System updates
-    ImageStage = 90,
-    ImageActivate = 91,
-    ImageRollback = 92,
+    ImageStage = 100,
+    ImageActivate = 101,
+    ImageRollback = 102,
 }
 ```
 
@@ -351,6 +363,105 @@ pub struct ReceiptPayload {
 }
 ```
 
+#### Policy Decision
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PolicyDecisionPayload {
+    /// Hash of the request that was evaluated
+    pub request_hash: Hash,
+    
+    /// Requestor identity
+    pub requestor: IdentityId,
+    
+    /// Action that was requested
+    pub action: PolicyAction,
+    
+    /// Resource affected
+    pub resource: ResourceRef,
+    
+    /// Policy state hash at time of evaluation
+    pub policy_state_hash: Hash,
+    
+    /// Rules that matched the request
+    pub matched_rules: Vec<RuleId>,
+    
+    /// The final decision
+    pub decision: PolicyEffect,
+    
+    /// Rule that determined the decision
+    pub deciding_rule: RuleId,
+    
+    /// Any conditions attached to the decision
+    pub conditions: Vec<PolicyCondition>,
+    
+    /// Policy Engine signature over this decision
+    pub signature: Signature,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum PolicyEffect {
+    Allow,
+    Deny { reason: String },
+    AllowWithConditions,
+}
+```
+
+#### Identity Created
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct IdentityCreatedPayload {
+    /// New identity ID (hash of public key)
+    pub identity_id: IdentityId,
+    
+    /// Human-readable name
+    pub name: String,
+    
+    /// Identity type
+    pub identity_type: IdentityType,
+    
+    /// Parent identity
+    pub parent: Option<IdentityId>,
+    
+    /// Public key
+    pub public_key: PublicKey,
+    
+    /// Key derivation path
+    pub key_path: KeyPath,
+}
+```
+
+#### Key Usage
+
+```rust
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KeyUsagePayload {
+    /// Identity using the key
+    pub identity: IdentityId,
+    
+    /// Key derivation path
+    pub key_path: KeyPath,
+    
+    /// Operation performed
+    pub operation: KeyOperation,
+    
+    /// Hash of the message/data (for signing operations)
+    pub message_hash: Option<Hash>,
+    
+    /// Policy decision that authorized this operation
+    pub authorization: AxiomRef,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum KeyOperation {
+    Sign,
+    Encrypt,
+    Decrypt,
+    DeriveChild,
+}
+```
+
 ---
 
 ## 4. Sequencer Protocol
@@ -359,16 +470,20 @@ pub struct ReceiptPayload {
 
 The Axiom Sequencer:
 
-1. **Receives proposals** from services
-2. **Validates proposals** against current state
-3. **Assigns sequence numbers** (total ordering)
-4. **Commits entries** atomically
-5. **Notifies subscribers** of new entries
+1. **Receives proposals** from the Policy Engine (NOT directly from services)
+2. **Verifies policy decisions** — rejects proposals without valid policy authorization
+3. **Validates proposals** against current state
+4. **Assigns sequence numbers** (total ordering)
+5. **Commits entries** atomically
+6. **Notifies subscribers** of new entries
+
+**Critical Invariant:** The Axiom Sequencer only accepts proposals that include a valid, signed policy decision from the Policy Engine. Direct submission from services is prohibited.
 
 ### 4.2 Proposal Submission
 
 ```rust
-/// A proposal for a Axiom entry
+/// A proposal for an Axiom entry
+/// NOTE: Proposals MUST be submitted through the Policy Engine
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Proposal {
     /// Proposed entry type
@@ -377,11 +492,24 @@ pub struct Proposal {
     /// Proposed payload
     pub payload: EntryPayload,
     
-    /// Submitting service
-    pub submitter: ServiceId,
+    /// Submitting service identity
+    pub submitter: IdentityId,
     
     /// Nonce for deduplication
     pub nonce: u64,
+}
+
+/// Policy-approved proposal (required for sequencer submission)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuthorizedProposal {
+    /// The original proposal
+    pub proposal: Proposal,
+    
+    /// Policy Engine decision (REQUIRED)
+    pub policy_decision: PolicyDecision,
+    
+    /// Reference to the policy decision Axiom entry
+    pub decision_ref: AxiomRef,
 }
 
 /// Sequencer response
@@ -404,8 +532,17 @@ pub enum RejectionReason {
     /// Invalid payload format
     InvalidPayload,
     
-    /// Missing required capability
-    Unauthorized,
+    /// Missing or invalid policy decision
+    MissingPolicyDecision,
+    
+    /// Policy decision doesn't authorize this proposal
+    PolicyMismatch,
+    
+    /// Policy decision has expired
+    PolicyDecisionExpired,
+    
+    /// Policy decision signature invalid
+    InvalidPolicySignature,
     
     /// Referenced resource doesn't exist
     ResourceNotFound,
@@ -418,14 +555,23 @@ pub enum RejectionReason {
 }
 ```
 
-### 4.3 Sequencer State Machine
+### 4.3 Sequencer State Machine (Policy-Gated)
 
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
     
-    Idle --> Receiving: proposal arrives
-    Receiving --> Validating: proposal parsed
+    Idle --> Receiving: authorized proposal arrives
+    Receiving --> VerifyingPolicy: proposal parsed
+    
+    state "Policy Verification" as pv {
+        VerifyingPolicy --> PolicyValid: decision verified
+        VerifyingPolicy --> PolicyInvalid: invalid/missing decision
+    }
+    
+    PolicyInvalid --> Rejected: missing policy authorization
+    
+    PolicyValid --> Validating: policy check passed
     
     Validating --> Rejected: validation fails
     Validating --> Committing: validation passes
@@ -439,6 +585,8 @@ stateDiagram-v2
     Persisting --> Recovery: crash during write
     Recovery --> Persisting: replay WAL
 ```
+
+**Note:** The sequencer MUST verify that every incoming proposal includes a valid, unexpired policy decision from the Policy Engine before processing.
 
 ### 4.4 Batching
 
@@ -745,4 +893,4 @@ pub struct ReplicatedEntry {
 
 ---
 
-*[← Comparative Analysis](../whitepaper/04-comparative-analysis.md) | [Kernel Specification →](01-kernel.md)*
+*[← Supervisor](../01-boot/02-supervisor.md) | [Policy Engine →](02-policy.md)*

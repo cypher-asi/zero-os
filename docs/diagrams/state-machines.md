@@ -10,6 +10,8 @@
 
 This document contains all formal state machine diagrams for Orbital OS components.
 
+**Key Principle:** All consequential state transitions flow through the Policy Engine before reaching the Axiom.
+
 ---
 
 ## 1. System Boot State Machine
@@ -55,15 +57,16 @@ stateDiagram-v2
 
 ---
 
-## 2. Three-Phase Action Lifecycle
+## 2. Three-Phase Action Lifecycle (with Policy Engine)
 
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
     
-    state phase1 [Phase 1: Pre-Commit]
-    state phase2 [Phase 2: Commit]
-    state phase3 [Phase 3: Effect]
+    state "Phase 1: Pre-Commit" as phase1
+    state "Policy Evaluation" as policy
+    state "Phase 2: Commit" as phase2
+    state "Phase 3: Effect" as phase3
     
     Idle --> Executing: begin_work
     
@@ -72,16 +75,24 @@ stateDiagram-v2
         WorkComplete --> ProposalReady: proposal created
     }
     
-    ProposalReady --> Validating: submit to sequencer
+    ProposalReady --> PolicyEval: submit to Policy Engine
+    
+    state policy {
+        PolicyEval --> Authenticating: request received
+        Authenticating --> Authorizing: identity verified
+        Authorizing --> PolicyApproved: policy allows
+        Authorizing --> PolicyDenied: policy denies
+        Authenticating --> PolicyDenied: auth failed
+    }
+    
+    PolicyDenied --> Idle: discard proposal
+    
+    PolicyApproved --> Sequencing: forward to Axiom
     
     state phase2 {
-        Validating --> Rejected: validation failed
-        Validating --> Sequencing: validation passed
         Sequencing --> Persisting: sequence assigned
         Persisting --> Committed: entry persisted
     }
-    
-    Rejected --> Idle: discard proposal
     
     Committed --> Materializing: begin effects
     
@@ -93,9 +104,9 @@ stateDiagram-v2
     
     Complete --> Idle: action finished
     
-    note right of Executing
-        Crash here: work lost
-        Recovery: re-execute
+    note right of PolicyEval
+        ALL proposals must pass
+        through Policy Engine
     end note
     
     note right of Persisting
@@ -111,20 +122,28 @@ stateDiagram-v2
 
 ---
 
-## 3. Axiom Entry Lifecycle
+## 3. Axiom Entry Lifecycle (Policy-Gated)
 
 ```mermaid
 stateDiagram-v2
     [*] --> Proposed
     
-    Proposed --> Validating: sequencer receives
+    Proposed --> PolicyEngine: sequencer receives
     
-    Validating --> Rejected: invalid
-    Validating --> Authorized: valid
+    state "Policy Engine" as pe {
+        PolicyEngine --> Authenticating: parse request
+        Authenticating --> AuthFailed: bad credentials
+        Authenticating --> Authorizing: identity confirmed
+        Authorizing --> Authorized: policy permits
+        Authorizing --> Denied: policy denies
+    }
+    
+    AuthFailed --> Rejected: authentication error
+    Denied --> Rejected: authorization denied
     
     Rejected --> [*]: discard
     
-    Authorized --> Sequencing: check authorization
+    Authorized --> Sequencing: policy decision recorded
     
     Sequencing --> Persisting: sequence number assigned
     
@@ -136,6 +155,11 @@ stateDiagram-v2
     
     Notified --> [*]: entry complete
     
+    note right of PolicyEngine
+        Policy decision is itself
+        recorded in Axiom
+    end note
+    
     note right of Persisting
         Atomic write with WAL
         Crash-consistent
@@ -144,13 +168,20 @@ stateDiagram-v2
 
 ---
 
-## 4. Job Execution State Machine
+## 4. Job Execution State Machine (Policy-Controlled)
 
 ```mermaid
 stateDiagram-v2
     [*] --> Submitted
     
-    Submitted --> Validating: validation starts
+    Submitted --> PolicyCheck: request authorization
+    
+    state "Policy Engine" as pe {
+        PolicyCheck --> Validating: job authorized
+        PolicyCheck --> Rejected: job denied
+    }
+    
+    Rejected --> [*]: policy denied job
     
     Validating --> ValidationFailed: invalid manifest
     Validating --> Validated: manifest valid
@@ -184,7 +215,9 @@ stateDiagram-v2
     
     VerificationFailed --> Failed: verification error
     
-    Verified --> Receipted: receipt committed
+    Verified --> CommittingReceipt: submit receipt to Axiom
+    
+    CommittingReceipt --> Receipted: receipt committed
     
     Receipted --> [*]: job complete
     Failed --> [*]: job failed
@@ -197,11 +230,22 @@ stateDiagram-v2
 
 ---
 
-## 5. Process Lifecycle State Machine
+## 5. Process Lifecycle State Machine (Policy-Controlled)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Creating
+    [*] --> RequestCreate
+    
+    RequestCreate --> PolicyCheck: submit to Policy Engine
+    
+    state "Policy Engine" as pe {
+        PolicyCheck --> Authorized: process allowed
+        PolicyCheck --> Denied: process denied
+    }
+    
+    Denied --> [*]: creation rejected
+    
+    Authorized --> Creating: proceed with creation
     
     Creating --> Created: address space ready
     Creating --> CreateFailed: resource error
@@ -215,19 +259,30 @@ stateDiagram-v2
     
     StartFailed --> Zombie: cleanup needed
     
-    Running --> Suspended: suspend signal
-    Running --> Zombie: exit or kill
+    Running --> SuspendRequest: suspend requested
+    Running --> TerminateRequest: exit or kill
     
-    Suspended --> Running: resume signal
+    SuspendRequest --> PolicyCheckSuspend: check policy
+    PolicyCheckSuspend --> Suspended: allowed
+    PolicyCheckSuspend --> Running: denied
+    
+    TerminateRequest --> Zombie: termination authorized
+    
+    Suspended --> ResumeRequest: resume requested
     Suspended --> Zombie: kill while suspended
+    
+    ResumeRequest --> PolicyCheckResume: check policy
+    PolicyCheckResume --> Running: allowed
+    PolicyCheckResume --> Suspended: denied
     
     Zombie --> Dead: parent waited
     
     Dead --> [*]
     
-    note right of Running
-        May have multiple threads
-        Scheduler manages threads
+    note right of PolicyCheck
+        Identity verified
+        Capabilities checked
+        Resource limits applied
     end note
 ```
 
@@ -262,24 +317,46 @@ stateDiagram-v2
         [*] --> SleepWait: sleeping
         [*] --> PageFault: waiting for page
     }
+    
+    note right of Created
+        Thread creation authorized
+        via process policy check
+    end note
 ```
 
 ---
 
-## 7. Service Lifecycle State Machine
+## 7. Service Lifecycle State Machine (Policy-Controlled)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Registered
+    [*] --> RegisterRequest
     
-    Registered --> Starting: supervisor starts
+    RegisterRequest --> PolicyCheck: check registration policy
+    
+    state "Policy Engine" as pe {
+        PolicyCheck --> Registered: service allowed
+        PolicyCheck --> Rejected: service denied
+    }
+    
+    Rejected --> [*]
+    
+    Registered --> StartRequest: supervisor starts
+    
+    StartRequest --> PolicyCheckStart: check start policy
+    PolicyCheckStart --> Starting: allowed to start
+    PolicyCheckStart --> Registered: denied
     
     Starting --> Running: health check passed
     Starting --> Failed: startup timeout
     
     Running --> Degraded: health warning
-    Running --> Stopping: stop requested
+    Running --> StopRequest: stop requested
     Running --> Failed: fatal error
+    
+    StopRequest --> PolicyCheckStop: check stop policy
+    PolicyCheckStop --> Stopping: allowed to stop
+    PolicyCheckStop --> Running: denied (critical)
     
     Degraded --> Running: recovered
     Degraded --> Stopping: stop requested
@@ -288,8 +365,9 @@ stateDiagram-v2
     Stopping --> Stopped: clean shutdown
     Stopping --> Failed: shutdown timeout
     
-    Failed --> Restarting: restart policy
-    Failed --> Stopped: max restarts exceeded
+    Failed --> RestartCheck: check restart policy
+    RestartCheck --> Restarting: restart allowed
+    RestartCheck --> Stopped: max restarts exceeded
     
     Restarting --> Starting: restart initiated
     
@@ -299,13 +377,24 @@ stateDiagram-v2
 
 ---
 
-## 8. Filesystem Transaction State Machine
+## 8. Filesystem Transaction State Machine (Policy-Gated)
 
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
     
-    Idle --> BeginTx: start transaction
+    Idle --> RequestOp: filesystem operation
+    
+    RequestOp --> PolicyEngine: authenticate & authorize
+    
+    state "Policy Engine" as pe {
+        PolicyEngine --> Authorized: operation allowed
+        PolicyEngine --> Denied: operation denied
+    }
+    
+    Denied --> Idle: reject with error
+    
+    Authorized --> BeginTx: start transaction
     
     BeginTx --> PreparingMetadata: transaction started
     
@@ -330,6 +419,11 @@ stateDiagram-v2
     Complete --> Idle: reset
     Aborted --> Idle: cleanup
     
+    note right of PolicyEngine
+        Checks: identity, path access,
+        operation type, quotas
+    end note
+    
     note right of Committed
         Point of no return
         Must complete writes
@@ -338,24 +432,42 @@ stateDiagram-v2
 
 ---
 
-## 9. Network Connection State Machine
+## 9. Network Connection State Machine (Policy-Gated)
 
 ```mermaid
 stateDiagram-v2
     [*] --> Closed
     
     state "TCP Client" as client {
-        Closed --> Authorizing: connect requested
-        Authorizing --> SynSent: authorized
-        Authorizing --> Closed: denied
+        Closed --> ConnectRequest: connect requested
+        ConnectRequest --> PolicyEngine: authorize connection
+        
+        state "Policy Check" as pc {
+            PolicyEngine --> Authorized: connection allowed
+            PolicyEngine --> Denied: connection denied
+        }
+        
+        Denied --> Closed: reject
+        Authorized --> SynSent: send SYN
         SynSent --> Established: SYN-ACK received
         SynSent --> Closed: timeout
     }
     
     state "TCP Server" as server {
-        Closed --> Authorizing2: listen requested
-        Authorizing2 --> Listening: authorized
-        Listening --> SynReceived: SYN received
+        Closed --> ListenRequest: listen requested
+        ListenRequest --> PolicyEngine2: authorize listen
+        
+        state "Policy Check" as pc2 {
+            PolicyEngine2 --> ListenAuth: listen allowed
+            PolicyEngine2 --> ListenDenied: listen denied
+        }
+        
+        ListenDenied --> Closed: reject
+        ListenAuth --> Listening: start listening
+        Listening --> AcceptRequest: SYN received
+        AcceptRequest --> PolicyEngine3: authorize accept
+        PolicyEngine3 --> SynReceived: accept allowed
+        PolicyEngine3 --> Listening: reject connection
         SynReceived --> Established: ACK received
     }
     
@@ -375,6 +487,11 @@ stateDiagram-v2
     LastAck --> Closed: ACK received
     
     TimeWait --> Closed: timeout
+    
+    note right of PolicyEngine
+        Connection authorization
+        recorded in Axiom
+    end note
 ```
 
 ---
@@ -401,6 +518,11 @@ stateDiagram-v2
     
     client --> server: message
     server --> client: reply
+    
+    note right of client
+        Capability-gated:
+        must hold endpoint capability
+    end note
 ```
 
 ---
@@ -428,11 +550,16 @@ stateDiagram-v2
         Timer interrupts
         trigger preemption check
     end note
+    
+    note right of PickingNext
+        Scheduling is nondeterministic
+        (allowed by design)
+    end note
 ```
 
 ---
 
-## 12. Axiom Sequencer State Machine
+## 12. Axiom Sequencer State Machine (Policy-First)
 
 ```mermaid
 stateDiagram-v2
@@ -440,18 +567,31 @@ stateDiagram-v2
     
     Ready --> Receiving: proposal arrives
     
-    Receiving --> Validating: proposal parsed
+    Receiving --> Parsing: proposal received
     
-    Validating --> Rejecting: invalid
-    Validating --> Authorizing: valid format
+    Parsing --> ParseError: malformed
+    Parsing --> PolicyEngine: well-formed
     
-    Authorizing --> Rejecting: unauthorized
-    Authorizing --> Sequencing: authorized
+    ParseError --> Ready: reject
+    
+    state "Policy Engine" as pe {
+        PolicyEngine --> Authenticating: evaluate request
+        Authenticating --> AuthFailed: bad identity
+        Authenticating --> Authorizing: identity valid
+        Authorizing --> PolicyApproved: policy allows
+        Authorizing --> PolicyDenied: policy denies
+    }
+    
+    AuthFailed --> Rejecting: auth error
+    PolicyDenied --> Rejecting: policy denied
     
     Rejecting --> Ready: rejection sent
     
-    Sequencing --> Batching: single proposal
-    Sequencing --> Batching: batch mode
+    PolicyApproved --> RecordingDecision: log policy decision
+    
+    RecordingDecision --> Sequencing: decision recorded
+    
+    Sequencing --> Batching: assign sequence number
     
     Batching --> Persisting: batch ready
     
@@ -461,6 +601,16 @@ stateDiagram-v2
     Recovery --> Persisting: WAL replay
     
     Notifying --> Ready: subscribers notified
+    
+    note right of PolicyEngine
+        EVERY proposal goes
+        through Policy Engine
+    end note
+    
+    note right of RecordingDecision
+        Policy decision is itself
+        an Axiom entry
+    end note
 ```
 
 ---
@@ -492,6 +642,11 @@ stateDiagram-v2
     
     NotFound --> Ready: return error
     Corrupted --> Ready: return error
+    
+    note right of store
+        Content operations authorized
+        via FS policy check
+    end note
 ```
 
 ---
@@ -512,11 +667,25 @@ stateDiagram-v2
     
     ComputingHash --> Signing: hash computed
     
-    Signing --> Committing: signature added
+    Signing --> PolicyCheck: request signature
+    
+    state "Policy Engine" as pe {
+        PolicyCheck --> SignAuthorized: signing allowed
+        PolicyCheck --> SignDenied: signing denied
+    }
+    
+    SignDenied --> [*]: receipt generation failed
+    
+    SignAuthorized --> Committing: signature added
     
     Committing --> Committed: Axiom accepted
     
     Committed --> [*]
+    
+    note right of Signing
+        Key usage requires
+        Policy Engine approval
+    end note
 ```
 
 ---
@@ -555,17 +724,33 @@ stateDiagram-v2
     OutputMismatch --> [*]: fail
     
     Verified --> [*]: pass
+    
+    note right of Executing
+        Verification is read-only
+        No policy check needed
+    end note
 ```
 
 ---
 
-## 16. System Upgrade State Machine
+## 16. System Upgrade State Machine (Policy-Gated)
 
 ```mermaid
 stateDiagram-v2
     [*] --> Stable
     
-    Stable --> Staging: new image available
+    Stable --> UpgradeRequest: new image available
+    
+    UpgradeRequest --> PolicyEngine: authorize upgrade
+    
+    state "Policy Engine" as pe {
+        PolicyEngine --> Authorized: upgrade allowed
+        PolicyEngine --> Denied: upgrade denied
+    }
+    
+    Denied --> Stable: reject upgrade
+    
+    Authorized --> Staging: proceed with staging
     
     Staging --> Verifying: image downloaded
     
@@ -574,7 +759,12 @@ stateDiagram-v2
     
     StageFailed --> Stable: abort
     
-    Staged --> Activating: activate command
+    Staged --> ActivateRequest: activate command
+    
+    ActivateRequest --> PolicyCheckActivate: authorize activation
+    
+    PolicyCheckActivate --> Activating: activation allowed
+    PolicyCheckActivate --> Staged: activation denied
     
     Activating --> Rebooting: bootloader updated
     
@@ -589,9 +779,117 @@ stateDiagram-v2
     
     Confirming --> Stable: upgrade confirmed
     
+    note right of PolicyEngine
+        Upgrade requires
+        elevated authorization
+    end note
+    
     note right of RollingBack
         Automatic rollback
         if new image fails
+    end note
+```
+
+---
+
+## 17. Key Derivation Service State Machine (Policy-Controlled)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Ready
+    
+    Ready --> ReceiveRequest: operation requested
+    
+    ReceiveRequest --> ParseRequest: request received
+    
+    ParseRequest --> InvalidRequest: malformed
+    ParseRequest --> PolicyEngine: well-formed
+    
+    InvalidRequest --> Ready: reject
+    
+    state "Policy Engine" as pe {
+        PolicyEngine --> Authenticating: evaluate
+        Authenticating --> AuthFailed: bad identity
+        Authenticating --> Authorizing: identity valid
+        Authorizing --> Authorized: operation allowed
+        Authorizing --> Denied: operation denied
+    }
+    
+    AuthFailed --> Rejecting: auth error
+    Denied --> Rejecting: not authorized
+    
+    Rejecting --> Ready: rejection sent
+    
+    Authorized --> RecordingDecision: log to Axiom
+    
+    RecordingDecision --> DeriveKey: decision recorded
+    
+    DeriveKey --> PerformOperation: key derived
+    
+    PerformOperation --> ZeroMemory: operation complete
+    
+    ZeroMemory --> RecordUsage: key zeroed
+    
+    RecordUsage --> Ready: usage logged to Axiom
+    
+    note right of PolicyEngine
+        Every key operation
+        requires authorization
+    end note
+    
+    note right of ZeroMemory
+        Key material exists
+        only during operation
+    end note
+```
+
+---
+
+## 18. Identity Authentication State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    
+    Idle --> ChallengeRequest: client requests auth
+    
+    ChallengeRequest --> GeneratingChallenge: create challenge
+    
+    GeneratingChallenge --> ChallengeIssued: challenge sent
+    
+    ChallengeIssued --> ResponseReceived: client responds
+    ChallengeIssued --> Timeout: no response
+    
+    Timeout --> Idle: auth failed
+    
+    ResponseReceived --> VerifyingCredential: validate response
+    
+    VerifyingCredential --> CredentialInvalid: bad credential
+    VerifyingCredential --> PolicyEngine: credential valid
+    
+    CredentialInvalid --> RecordFailure: log failed attempt
+    
+    state "Policy Engine" as pe {
+        PolicyEngine --> AuthPolicyCheck: check auth policy
+        AuthPolicyCheck --> AuthAllowed: policy permits
+        AuthPolicyCheck --> AuthDenied: policy denies
+    }
+    
+    AuthDenied --> RecordFailure: policy denied
+    
+    RecordFailure --> Idle: auth failed (logged)
+    
+    AuthAllowed --> RecordSuccess: log successful auth
+    
+    RecordSuccess --> IssueToken: create auth token
+    
+    IssueToken --> Authenticated: token issued
+    
+    Authenticated --> Idle: auth complete
+    
+    note right of RecordSuccess
+        All auth events
+        recorded in Axiom
     end note
 ```
 
@@ -605,6 +903,26 @@ stateDiagram-v2
 | `-->` | Transition |
 | `state { }` | Composite state |
 | `note` | Annotation |
+| `PolicyEngine` | Policy evaluation required |
+
+---
+
+## Policy Engine Integration Summary
+
+Every consequential operation flows through the Policy Engine:
+
+| Operation Type | Policy Check Point |
+|---------------|-------------------|
+| Process creation | Before address space allocation |
+| File operations | Before metadata changes |
+| Network connections | Before socket operations |
+| Job execution | Before scheduling |
+| Key operations | Before derivation/signing |
+| Service lifecycle | Before state changes |
+| System upgrades | Before staging and activation |
+| Authentication | After credential verification |
+
+**The Axiom only accepts entries that have been authorized by the Policy Engine.**
 
 ---
 

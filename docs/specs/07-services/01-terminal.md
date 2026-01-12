@@ -804,4 +804,4 @@ pub enum ExecError {
 
 ---
 
-*[← Networking](07-networking.md) | [Verification and Receipts →](09-verification-and-receipts.md)*
+*[← Verification and Receipts](../06-execution/02-verification.md) | [Update Manager →](02-update-manager.md)*

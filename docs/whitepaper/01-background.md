@@ -182,11 +182,21 @@ Orbital introduces an **authority layer** between execution and state:
                       │ proposals
                       ▼
 ┌─────────────────────────────────────────────────────────┐
+│                    POLICY ENGINE                        │
+│              (Gatekeeper of Authority)                  │
+│                                                         │
+│   ALL proposals MUST pass through policy evaluation    │
+│   Authenticates identity, evaluates rules, decides     │
+└─────────────────────┬───────────────────────────────────┘
+                      │ authorized proposals only
+                      ▼
+┌─────────────────────────────────────────────────────────┐
 │                    AUTHORITY LAYER                      │
 │                      (The Axiom)                        │
 │                                                         │
 │   Single, totally-ordered, hash-chained sequence       │
 │   This is the ONLY source of truth                     │
+│   ONLY accepts policy-approved entries                 │
 └─────────────────────┬───────────────────────────────────┘
                       │ deterministic reduction
                       ▼
@@ -229,7 +239,9 @@ Execution proposes. Authority decides. Effects follow.
 
 ## 4. The Policy Engine: Gatekeeper of Authority
 
-All meaningful operations in Orbital must pass through the **Policy Engine** before becoming authoritative. The Policy Engine is the central point of control for what the system is allowed to do.
+**All state transitions must pass through the Policy Engine before reaching the Axiom.** This is not optional, not recommended — it is an architectural invariant. No proposal bypasses policy evaluation.
+
+The Policy Engine is the central point of control for what the system is allowed to do.
 
 ### 4.1 Role of the Policy Engine
 
@@ -263,16 +275,30 @@ Unlike traditional OS permission checks (which happen at execution time and are 
 
 ### 4.3 What Flows Through Policy
 
-Every consequential action must be authorized:
+**Every consequential action must be authorized:**
 
-- **Process creation** — Can this service spawn this job?
-- **Filesystem operations** — Can this process create/read/write this path?
-- **Network connections** — Can this service connect to this endpoint?
-- **Capability delegation** — Can this process grant this capability?
-- **System upgrades** — Is this image authorized for activation?
-- **Key usage** — Can this operation use this signing key?
+| Operation Type | Policy Question |
+|----------------|-----------------|
+| **Process creation** | Can this identity spawn this process? |
+| **Filesystem operations** | Can this identity create/read/write this path? |
+| **Network connections** | Can this service connect to this endpoint? |
+| **Capability delegation** | Can this identity grant this capability? |
+| **System upgrades** | Is this image authorized for activation? |
+| **Key usage** | Can this identity use this signing key? |
+| **Service lifecycle** | Can this action start/stop this service? |
+| **Policy modification** | Can this identity modify these rules? |
 
-Nothing happens without policy approval. Nothing is approved without a record.
+**Nothing reaches the Axiom without policy approval. Nothing is approved without a permanent record.**
+
+### 4.4 The Policy-First Guarantee
+
+This architectural decision has profound implications:
+
+1. **Complete audit trail** — Every authorization decision is recorded
+2. **Verifiable decisions** — Anyone can verify policy was correctly applied
+3. **Deterministic authorization** — Same policy state + same request = same decision
+4. **Revocable access** — Capabilities can be revoked and the revocation is enforced
+5. **No ambient authority** — Everything requires explicit authorization
 
 ---
 

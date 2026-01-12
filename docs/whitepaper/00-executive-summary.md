@@ -1,6 +1,6 @@
 # Orbital OS — Executive Summary
 
-**Version:** 1.0  
+**Version:** 2.0  
 **Status:** Whitepaper  
 **Classification:** Public
 
@@ -29,7 +29,7 @@ The question *"What did the system do?"* has no definitive answer in any mainstr
 
 ## The Orbital Solution
 
-Orbital OS introduces a fundamentally different architecture based on six non-negotiable invariants:
+Orbital OS introduces a fundamentally different architecture based on seven non-negotiable invariants:
 
 | Invariant | Guarantee |
 |-----------|-----------|
@@ -39,6 +39,107 @@ Orbital OS introduces a fundamentally different architecture based on six non-ne
 | **No Unauthorized Effects** | No externally visible side effect without explicit Axiom authorization |
 | **Crash Safety** | Pre-commit work is discardable; post-commit effects are idempotent and retryable |
 | **Verifiable Computation** | Any authoritative result can be independently verified via replay |
+| **Cryptographic Identity** | All principals have policy-controlled cryptographic identities |
+
+**The Central Principle: All consequential state transitions flow through the Policy Engine before reaching the Axiom.**
+
+---
+
+## Architecture by Layer
+
+Orbital OS is organized into distinct layers, from most fundamental to least:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  LAYER 8: APPLICATIONS                                              │
+│    Deterministic Jobs, Visual OS                                    │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 7: USER-FACING SERVICES                                      │
+│    Terminal, Update Manager                                         │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 6: EXECUTION INFRASTRUCTURE                                  │
+│    Job Scheduler, Job Executor, Effect Materializer                 │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 5: NETWORK & DEVICE                                          │
+│    Driver Manager, Network Service                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 4: STORAGE                                                   │
+│    Block Storage, Filesystem, Content-Addressed Store               │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 3: PROCESS & CAPABILITY                                      │
+│    Capability Service, Process Manager                              │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 2: CORE AUTHORITY                                            │
+│    Axiom Sequencer, Policy Engine, KDS, Identity Service            │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 1: BOOTSTRAP                                                 │
+│    Supervisor                                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│  LAYER 0: KERNEL                                                    │
+│    Scheduler, Memory, Capabilities, IPC, Interrupts                 │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Layer 0: Kernel (Most Fundamental)
+
+The minimal microkernel provides exactly five services:
+- Preemptive multitasking (SMP)
+- Virtual memory and address-space isolation
+- Capability enforcement
+- Fast IPC primitives
+- Interrupt and timer handling
+
+**Everything else runs in user space.**
+
+### Layer 1: Bootstrap
+
+The **Supervisor** is the first user-space process:
+- Spawned by kernel with full system capabilities
+- Boots all other services in dependency order
+- Monitors service health, restarts failed services
+
+### Layer 2: Core Authority (The "Authority Spine")
+
+Four critical services form the foundation of system trust:
+
+| Service | Role |
+|---------|------|
+| **Axiom Sequencer** | Single source of truth — append-only, hash-chained log of all state transitions |
+| **Policy Engine** | Central authorization gate — ALL proposals must pass policy before reaching Axiom |
+| **Key Derivation Service** | Cryptographic foundation — derives keys, performs signing within secure boundary |
+| **Identity Service** | Principal management — users, services, nodes with hierarchical crypto keys |
+
+### Layer 3: Process & Capability
+
+- **Capability Service** — Manages capability delegation and revocation
+- **Process Manager** — Creates/destroys processes, enforces resource limits
+
+### Layer 4: Storage
+
+- **Block Storage** — Low-level block device abstraction
+- **Filesystem Service** — Namespace, metadata, path resolution
+- **Content-Addressed Store** — Immutable content by BLAKE3 hash
+
+### Layer 5: Network & Device
+
+- **Driver Manager** — Loads and manages user-space drivers
+- **Network Service** — TCP/IP stack, policy-gated connections
+
+### Layer 6: Execution Infrastructure
+
+- **Job Scheduler & Executor** — Runs deterministic jobs in isolation
+- **Effect Materializer** — Executes authorized effects after Axiom commit
+- **Verification & Receipts** — Binds inputs to outputs cryptographically
+
+### Layer 7: User-Facing Services
+
+- **Terminal Service** — User interaction, command execution
+- **Update Manager** — Atomic system image updates, rollback
+
+### Layer 8: Applications
+
+- **Deterministic Jobs** — Content-addressed inputs → content-addressed outputs
+- **Visual OS** — Deterministic UI layer (future)
 
 ---
 
@@ -55,84 +156,22 @@ Urbit sacrifices parallelism for determinism (single-threaded execution). Orbita
 
 ---
 
-## Architecture at a Glance
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        APPLICATIONS                                 │
-│                  (Deterministic Jobs v0)                            │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │
-┌──────────────────────────▼──────────────────────────────────────────┐
-│                      USERLAND SERVICES                              │
-│                                                                     │
-│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐           │
-│  │  Axiom    │ │  Policy   │ │    FS     │ │  Network  │           │
-│  │ Sequencer │ │  Engine   │ │  Service  │ │  Service  │           │
-│  └─────┬─────┘ └─────┬─────┘ └───────────┘ └───────────┘           │
-│        │             │                                              │
-│  ┌─────┴─────────────┴─────┐ ┌───────────┐ ┌───────────┐           │
-│  │     authoritative       │ │  Process  │ │ Terminal  │           │
-│  │        control          │ │  Manager  │ │  Service  │           │
-│  └─────────────────────────┘ └───────────┘ └───────────┘           │
-│                                                                     │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │ IPC
-┌──────────────────────────▼──────────────────────────────────────────┐
-│                          KERNEL                                     │
-│         (minimal, no policy — enforcement only)                     │
-│                                                                     │
-│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐           │
-│  │ Scheduler │ │  Memory   │ │Capability │ │    IPC    │           │
-│  │   (SMP)   │ │  Manager  │ │ Enforcer  │ │Primitives │           │
-│  └───────────┘ └───────────┘ └───────────┘ └───────────┘           │
-│                                                                     │
-│  ┌───────────┐                                                      │
-│  │ Interrupt │                                                      │
-│  │  Handler  │                                                      │
-│  └───────────┘                                                      │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### Where Does Policy Live?
-
-The **Policy Engine** is a user-space service that:
-- Defines authorization rules (who can do what)
-- Evaluates capability requests
-- Provides policy decisions to the Axiom Sequencer
-
-The kernel **enforces** capabilities but does not **decide** policy. All policy logic lives in user space, is auditable, and its decisions are recorded in the Axiom.
-
----
-
-## The Axiom
-
-The Axiom is the **authoritative record** of system reality:
-
-- **Append-only**: History cannot be rewritten
-- **Totally ordered**: Every entry has a definite position
-- **Hash-chained**: Integrity is cryptographically guaranteed
-- **Crash-consistent**: Survives unexpected termination
-
-Only semantic state transitions enter the Axiom — policy changes, job completions, filesystem transactions, network authorizations. High-frequency runtime events stay out.
-
----
-
 ## Three-Phase Action Model
 
-Every meaningful system action follows this lifecycle:
+Every meaningful system action follows this lifecycle, with **mandatory Policy Engine evaluation**:
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  PHASE 1    │────▶│  PHASE 2    │────▶│  PHASE 3    │
-│  Pre-Commit │     │   Commit    │     │   Effect    │
-│  (Propose)  │     │  (Decide)   │     │(Materialize)│
-└─────────────┘     └─────────────┘     └─────────────┘
-      │                   │                   │
-   Tentative          Axiom entry         Idempotent
-   execution          accepted            side effects
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  PHASE 1    │────▶│   POLICY    │────▶│  PHASE 2    │────▶│  PHASE 3    │
+│  Pre-Commit │     │   ENGINE    │     │   Commit    │     │   Effect    │
+│  (Propose)  │     │ (Authorize) │     │  (Decide)   │     │(Materialize)│
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+      │                   │                   │                   │
+   Tentative          Identity +          Axiom entry         Idempotent
+   execution          policy check        accepted            side effects
 ```
+
+**Key guarantee: The Axiom only accepts entries that have been authorized by the Policy Engine.**
 
 **Crash guarantees:**
 - Crash before commit → proposal discarded (no effect)
@@ -142,15 +181,11 @@ Every meaningful system action follows this lifecycle:
 
 ## Target Platforms
 
-Orbital OS supports multiple deployment targets:
-
 | Platform | Purpose | Status |
 |----------|---------|--------|
 | **Hosted mode** | Development and debugging — runs as Rust binary on host OS | Development |
 | **QEMU** | Integration testing and production virtualized workloads | Production |
 | **Bare metal** | Native x86_64 hardware deployment | Production |
-
-For production deployments, both QEMU (virtualized) and bare metal are supported. Hosted mode is intended for development iteration only.
 
 ---
 
@@ -165,19 +200,6 @@ Version 0 supports **deterministic applications only**:
 - Results are replay-verifiable
 
 Interactive, long-running, nondeterministic applications are reserved for future versions.
-
-### Determinism Enforcement
-
-Orbital enforces determinism through multiple layers:
-
-| Layer | Mechanism |
-|-------|-----------|
-| **Static Analysis** | The `orbital-lint` tool analyzes Rust code at compile time, detecting nondeterministic patterns (time access, random calls, unsafe concurrency) |
-| **Runtime Sandbox** | Syscall filtering blocks nondeterministic operations; forbidden calls terminate the job |
-| **Environment Pinning** | Execution environment is content-addressed; same environment hash guarantees identical behavior |
-| **Deterministic Runtime** | The `orbital-rt` runtime library provides deterministic replacements for time, randomness (seeded), and concurrency (fork-join) |
-
-Applications must be built with the Orbital toolchain, which enforces compliance before deployment.
 
 ---
 
@@ -198,21 +220,33 @@ The convergence of several factors makes Orbital OS timely:
 This document suite provides:
 
 - **Background & Motivation** — Why existing approaches fall short
-- **Core Principles** — The six invariants in detail
-- **Architecture Overview** — System structure and component relationships
+- **Core Principles** — The seven invariants in detail
+- **Architecture by Layer** — System structure from kernel to applications
 - **Comparative Analysis** — Technical comparison with seL4, Linux, Plan 9, Urbit
-- **Formal Specifications** — Axiom, kernel, services, applications, verification
-- **State Machine Diagrams** — Precise behavioral specifications
-- **Implementation Roadmap** — Phased development plan
+
+The accompanying **Specifications** provide formal definitions organized by layer:
+
+```
+specs/
+├── 00-kernel/          # Kernel, processes, scheduling
+├── 01-boot/            # Supervisor
+├── 02-authority/       # Axiom, Policy, Identity, Keys
+├── 03-capability/      # Capabilities, Process Manager
+├── 04-storage/         # Filesystem, Block Storage
+├── 05-network/         # Networking, Drivers
+├── 06-execution/       # Three-Phase Model, Verification
+├── 07-services/        # Terminal, Updates
+└── 08-applications/    # Application Model, Visual OS
+```
 
 ---
 
 ## Guiding Principle
 
 > **The Axiom defines reality.**  
-> **Execution proposes; commits decide; effects follow.**
+> **Execution proposes; Policy authorizes; the Axiom commits; effects follow.**
 
-This is the foundation upon which Orbital OS is built.
+This is the foundation upon which Orbital OS is built. No state transition reaches the Axiom without Policy Engine authorization.
 
 ---
 

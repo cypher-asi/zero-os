@@ -698,4 +698,4 @@ This nondeterminism is **acceptable** because:
 
 ---
 
-*[← Kernel Specification](01-kernel.md) | [Userland Services →](03-userland-services.md)*
+*[← Kernel](01-kernel.md) | [Init →](../01-boot/01-init.md)*

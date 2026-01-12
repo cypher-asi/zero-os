@@ -10,6 +10,8 @@
 
 The Three-Phase Action Model is the fundamental pattern for all meaningful system operations in Orbital OS. It ensures crash safety, auditability, and deterministic authority.
 
+**Critical Invariant: All proposals must pass through the Policy Engine before reaching the Axiom Sequencer. The Axiom only accepts entries that have been authorized by the Policy Engine.**
+
 ---
 
 ## 2. The Three Phases
@@ -32,6 +34,12 @@ flowchart LR
         proposal[Create Proposal]
     end
     
+    subgraph policy [Policy Gate]
+        auth[Authenticate]
+        eval[Evaluate Policy]
+        decide[Allow/Deny]
+    end
+    
     subgraph phase2 [Phase 2: Commit]
         submit[Submit to Sequencer]
         validate[Validate]
@@ -47,7 +55,11 @@ flowchart LR
     
     work --> prepare
     prepare --> proposal
-    proposal --> submit
+    proposal --> auth
+    auth --> eval
+    eval --> decide
+    decide -->|allowed| submit
+    decide -->|denied| rejected[Rejected]
     submit --> validate
     validate --> order
     order --> persist
@@ -55,6 +67,8 @@ flowchart LR
     materialize --> verify
     verify --> receipt
 ```
+
+**Key Point:** The Policy Gate sits between Phase 1 and Phase 2. All proposals must be authorized before they can be submitted to the Axiom Sequencer.
 
 ---
 
@@ -177,28 +191,105 @@ impl Proposal {
 
 ---
 
-## 4. Phase 2: Commit
+## 4. Policy Gate (Between Phase 1 and Phase 2)
 
-### 4.1 Properties
+Before any proposal can reach the Axiom Sequencer, it **MUST** pass through the Policy Engine.
+
+### 4.1 Policy Engine Role
+
+| Responsibility | Description |
+|----------------|-------------|
+| **Authentication** | Verify the identity of the requestor |
+| **Authorization** | Evaluate policy rules against the request |
+| **Decision Recording** | Record the policy decision in the Axiom |
+| **Conditions** | Attach any restrictions to an allowed request |
+
+### 4.2 Policy Evaluation Protocol
+
+```rust
+/// Policy Engine evaluation
+impl PolicyEngine {
+    pub fn evaluate(&self, proposal: &Proposal) -> Result<PolicyDecision, PolicyError> {
+        // 1. Authenticate requestor
+        let identity = self.authenticate(&proposal.submitter)?;
+        
+        // 2. Build policy request
+        let request = PolicyRequest {
+            requestor: identity,
+            action: proposal.to_policy_action(),
+            resource: proposal.target_resource(),
+            context: proposal.context(),
+        };
+        
+        // 3. Evaluate against policy rules (deterministic)
+        let matching_rules = self.find_matching_rules(&request);
+        let decision = self.evaluate_rules(&matching_rules, &request);
+        
+        // 4. Record decision in Axiom
+        let decision_record = self.record_decision(&request, &decision)?;
+        
+        // 5. Return decision with Axiom reference
+        Ok(PolicyDecision {
+            effect: decision.effect,
+            matched_rules: matching_rules.iter().map(|r| r.id).collect(),
+            deciding_rule: decision.deciding_rule,
+            conditions: decision.conditions,
+            axiom_ref: Some(decision_record),
+            signature: self.sign_decision(&decision)?,
+        })
+    }
+}
+```
+
+### 4.3 Policy Decision
+
+```rust
+#[derive(Clone, Debug)]
+pub enum PolicyEffect {
+    /// Request is allowed
+    Allow,
+    
+    /// Request is denied
+    Deny { reason: DenialReason },
+    
+    /// Request is allowed with conditions
+    AllowWithConditions { conditions: Vec<Restriction> },
+}
+```
+
+**If the Policy Engine denies the request, the proposal NEVER reaches the Axiom Sequencer.**
+
+---
+
+---
+
+## 5. Phase 2: Commit
+
+### 5.1 Properties
 
 | Property | Description |
 |----------|-------------|
+| **Policy-Gated** | Only policy-approved proposals are accepted |
 | **Atomic** | Proposal is fully committed or not at all |
 | **Ordered** | Sequencer assigns total order |
 | **Persistent** | Committed entries survive crashes |
 | **Deterministic** | Same proposals in same order → same result |
 
-### 4.2 Sequencer Protocol
+### 5.2 Sequencer Protocol
 
 ```rust
-/// Submit proposal to sequencer
+/// Submit proposal to sequencer (MUST include policy decision)
 impl AxiomSequencer {
-    pub fn submit(&mut self, proposal: Proposal) -> Result<CommitResult, SubmitError> {
-        // 1. Validate proposal
-        self.validate_proposal(&proposal)?;
+    pub fn submit(
+        &mut self, 
+        proposal: Proposal,
+        policy_decision: PolicyDecision,  // Required!
+    ) -> Result<CommitResult, SubmitError> {
+        // 1. Verify policy decision is valid and allows this proposal
+        self.verify_policy_decision(&proposal, &policy_decision)?;
         
-        // 2. Check authorization
-        self.check_authorization(&proposal)?;
+        // 2. Validate proposal format
+        self.validate_proposal(&proposal)?;
         
         // 3. Check idempotency
         if let Some(existing) = self.check_idempotency(&proposal.idempotency_key) {
@@ -208,8 +299,8 @@ impl AxiomSequencer {
         // 4. Assign sequence number
         let sequence = self.next_sequence();
         
-        // 5. Create Axiom entry
-        let entry = self.create_entry(sequence, &proposal);
+        // 5. Create Axiom entry (includes policy decision reference)
+        let entry = self.create_entry(sequence, &proposal, &policy_decision);
         
         // 6. Persist entry (atomic)
         self.persist_entry(&entry)?;
@@ -224,6 +315,29 @@ impl AxiomSequencer {
             sequence,
             entry_hash: entry.compute_hash(),
         })
+    }
+    
+    /// Verify the policy decision authorizes this proposal
+    fn verify_policy_decision(
+        &self,
+        proposal: &Proposal,
+        decision: &PolicyDecision,
+    ) -> Result<(), SubmitError> {
+        // Check decision allows the action
+        match &decision.effect {
+            PolicyEffect::Deny { reason } => {
+                return Err(SubmitError::PolicyDenied(reason.clone()));
+            }
+            PolicyEffect::Allow | PolicyEffect::AllowWithConditions { .. } => {}
+        }
+        
+        // Verify decision signature is from Policy Engine
+        self.verify_policy_signature(&decision)?;
+        
+        // Verify decision hasn't expired
+        self.check_decision_freshness(&decision)?;
+        
+        Ok(())
     }
 }
 
@@ -247,17 +361,27 @@ pub enum CommitResult {
 }
 ```
 
-### 4.3 Commit State Machine
+### 5.3 Commit State Machine (Policy-Gated)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Validating: proposal received
+    [*] --> PolicyCheck: proposal received
+    
+    state "Policy Engine" as pe {
+        PolicyCheck --> Authenticating: parse request
+        Authenticating --> AuthFailed: bad credentials
+        Authenticating --> Authorizing: identity confirmed
+        Authorizing --> PolicyApproved: policy allows
+        Authorizing --> PolicyDenied: policy denies
+    }
+    
+    AuthFailed --> Rejected: authentication error
+    PolicyDenied --> Rejected: policy denied
+    
+    PolicyApproved --> Validating: forward to sequencer
     
     Validating --> Rejected: validation failed
-    Validating --> Authorizing: valid
-    
-    Authorizing --> Rejected: unauthorized
-    Authorizing --> Sequencing: authorized
+    Validating --> Sequencing: valid format
     
     Sequencing --> Persisting: sequence assigned
     
@@ -269,6 +393,8 @@ stateDiagram-v2
     Failed --> Recovery: crash
     Recovery --> Persisting: retry
 ```
+
+**Note:** The Policy Engine gate is mandatory. The sequencer will reject any proposal that doesn't include a valid, signed policy decision.
 
 ### 4.4 Crash During Commit
 
@@ -305,9 +431,9 @@ impl AxiomSequencer {
 
 ---
 
-## 5. Phase 3: Effect Materialization
+## 6. Phase 3: Effect Materialization
 
-### 5.1 Properties
+### 6.1 Properties
 
 | Property | Description |
 |----------|-------------|
@@ -316,7 +442,7 @@ impl AxiomSequencer {
 | **Ordered** | Effects executed in Axiom order |
 | **Receipted** | Completion emits receipt |
 
-### 5.2 Effect Execution
+### 6.2 Effect Execution
 
 ```rust
 /// Execute authorized effects
@@ -393,7 +519,7 @@ impl EffectMaterializer {
 }
 ```
 
-### 5.3 Idempotency Implementation
+### 6.3 Idempotency Implementation
 
 ```rust
 /// Idempotency tracking for effects
@@ -427,7 +553,7 @@ impl IdempotencyTracker {
 }
 ```
 
-### 5.4 Effect State Machine
+### 6.4 Effect State Machine
 
 ```mermaid
 stateDiagram-v2
@@ -451,9 +577,9 @@ stateDiagram-v2
 
 ---
 
-## 6. Crash Safety Analysis
+## 7. Crash Safety Analysis
 
-### 6.1 Crash Points and Recovery
+### 7.1 Crash Points and Recovery
 
 | Crash Point | State Preserved | Recovery Action |
 |-------------|-----------------|-----------------|
@@ -463,7 +589,7 @@ stateDiagram-v2
 | During Phase 3 | Entry + partial effects | Retry remaining effects |
 | After Phase 3 | Entry + effects + receipt | Complete |
 
-### 6.2 Recovery Protocol
+### 7.2 Recovery Protocol
 
 ```rust
 impl System {
@@ -492,7 +618,7 @@ impl System {
 }
 ```
 
-### 6.3 Invariant Preservation
+### 7.3 Invariant Preservation
 
 | Invariant | How Preserved |
 |-----------|---------------|
@@ -503,9 +629,9 @@ impl System {
 
 ---
 
-## 7. Concurrency Considerations
+## 8. Concurrency Considerations
 
-### 7.1 Multiple Concurrent Proposals
+### 8.1 Multiple Concurrent Proposals
 
 Multiple services may prepare proposals concurrently:
 
@@ -519,7 +645,7 @@ Sequencer orders: A1, C1, B1 (example)
 Effects materialize in that order.
 ```
 
-### 7.2 Conflict Resolution
+### 8.2 Conflict Resolution
 
 The sequencer handles conflicts:
 
@@ -545,7 +671,7 @@ impl AxiomSequencer {
 }
 ```
 
-### 7.3 Proposal Dependencies
+### 8.3 Proposal Dependencies
 
 Some proposals depend on previous proposals:
 
@@ -564,9 +690,9 @@ pub struct ProposalWithDeps {
 
 ---
 
-## 8. Example Workflows
+## 9. Example Workflows
 
-### 8.1 File Write
+### 9.1 File Write (with Policy Engine)
 
 ```rust
 // Phase 1: Prepare
@@ -603,7 +729,7 @@ let entry_id = match result {
 // ... effects are executed, receipt is committed
 ```
 
-### 8.2 Network Connection Authorization
+### 9.2 Network Connection Authorization
 
 ```rust
 // Phase 1: Prepare authorization
@@ -626,7 +752,7 @@ let result = sequencer.submit(proposal)?;
 // Subsequent network operations reference this authorization
 ```
 
-### 8.3 Job Submission
+### 9.3 Job Submission
 
 ```rust
 // Phase 1: Prepare job
@@ -659,9 +785,9 @@ let result = sequencer.submit(proposal)?;
 
 ---
 
-## 9. Performance Considerations
+## 10. Performance Considerations
 
-### 9.1 Latency Targets
+### 10.1 Latency Targets
 
 | Phase | Target Latency |
 |-------|----------------|
@@ -669,7 +795,7 @@ let result = sequencer.submit(proposal)?;
 | Phase 2 (commit) | < 1ms (SSD) |
 | Phase 3 (materialization) | Effect-dependent |
 
-### 9.2 Batching
+### 10.2 Batching
 
 The sequencer can batch multiple proposals:
 
@@ -708,7 +834,7 @@ impl AxiomSequencer {
 }
 ```
 
-### 9.3 Pipelining
+### 10.3 Pipelining
 
 Phases can be pipelined:
 
@@ -720,18 +846,21 @@ Proposal 3:                           [P3-Prepare] [P3-Commit] [P3-Effect]
 
 ---
 
-## 10. Summary
+## 11. Summary
 
 The Three-Phase Action Model provides:
 
 | Guarantee | Mechanism |
 |-----------|-----------|
+| **Policy-Gated** | All proposals evaluated by Policy Engine before commit |
 | **Crash safety** | Pre-commit discardable, post-commit idempotent |
 | **Auditability** | Every effect authorized by Axiom entry |
 | **Determinism** | Authority from Axiom reduction |
 | **Concurrency** | Parallel preparation, sequential commit |
 | **Verification** | Receipts bind inputs to outputs |
 
+**Critical Principle:** The Axiom only accepts entries that have been authorized by the Policy Engine. No state transition bypasses policy evaluation.
+
 ---
 
-*[← Application Model](04-application-model.md) | [Filesystem and Storage →](06-filesystem-and-storage.md)*
+*[← Networking](../05-network/01-networking.md) | [Verification and Receipts →](02-verification.md)*

@@ -678,4 +678,4 @@ What Orbital **avoids**:
 
 ---
 
-*← [Architecture Overview](03-architecture-overview.md) | [Specifications →](../specs/00-axiom.md)*
+*← [Architecture Overview](03-architecture-overview.md) | [Specifications →](../specs/README.md)*

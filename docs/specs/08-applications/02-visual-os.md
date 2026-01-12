@@ -926,4 +926,4 @@ The renderer runs in a sandboxed process:
 
 ---
 
-*[← Verification and Receipts](09-verification-and-receipts.md) | [State Machine Diagrams →](../diagrams/state-machines.md)*
+*[← Application Model](01-application-model.md) | [Specifications Index →](../README.md)*

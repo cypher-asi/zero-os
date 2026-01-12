@@ -912,4 +912,4 @@ The kernel spawns a single init process with:
 
 ---
 
-*[← Axiom Specification](00-axiom.md) | [Processes and Scheduling →](02-processes-and-scheduling.md)*
+*[← Specifications Index](../README.md) | [Processes and Scheduling →](02-processes.md)*

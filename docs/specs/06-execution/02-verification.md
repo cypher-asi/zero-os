@@ -791,4 +791,4 @@ pub enum VerifyError {
 
 ---
 
-*[← Terminal](08-terminal.md) | [Visual OS →](10-visual-os.md)*
+*[← Three-Phase Action Model](01-three-phase.md) | [Terminal →](../07-services/01-terminal.md)*

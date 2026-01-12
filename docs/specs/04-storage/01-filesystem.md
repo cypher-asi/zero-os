@@ -806,4 +806,4 @@ pub enum FsError {
 
 ---
 
-*[← Three-Phase Action Model](05-three-phase-action-model.md) | [Networking →](07-networking.md)*
+*[← Process Manager](../03-capability/02-processes.md) | [Networking →](../05-network/01-networking.md)*

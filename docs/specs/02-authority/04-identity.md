@@ -1,54 +1,39 @@
-# Identity and Key Management Specification
+# Identity Service Specification
 
 **Version:** 1.0  
 **Status:** Specification  
-**Component:** Identity and Cryptography
+**Component:** Layer 2 - Core Authority
 
 ---
 
 ## 1. Overview
 
-Orbital OS provides first-class cryptographic identity for all principals (users, services, nodes). All key operations are policy-controlled and audited through the Axiom.
+The Identity Service manages **cryptographic identities** for all principals in Orbital OS — users, services, nodes, and organizations. Every entity that can act in the system has an identity with associated credentials.
 
-This specification defines:
-- Identity model and hierarchy
-- Key derivation and management
-- Credential types and authentication
-- Policy integration
-- Secure boundary requirements
+### 1.1 Position in Architecture
 
----
+| Layer | Component | Relationship |
+|-------|-----------|--------------|
+| Layer 2 | Axiom | Records all identity events |
+| Layer 2 | Policy Engine | Authorizes identity operations |
+| **Layer 2** | **Identity Service** | **Manages principals and credentials** |
+| Layer 2 | Key Derivation Service | Derives keys for identities |
 
-## 2. Design Principles
+### 1.2 Responsibilities
 
-### 2.1 Guiding Principles
-
-| Principle | Description |
-|-----------|-------------|
-| **Keys are derived, not stored** | Private keys are deterministically derived on-demand, never persisted |
-| **Policy controls all operations** | Every key operation requires Policy Engine approval |
-| **Everything is audited** | All operations are recorded in the Axiom |
-| **Minimal TCB** | Key operations occur within a minimal secure boundary |
-| **Hierarchical authority** | Child identities derive from parent identities |
-
-### 2.2 Threat Model
-
-**Trusted:**
-- Key Derivation Service (within secure boundary)
-- Policy Engine (for authorization decisions)
-- Axiom (for audit trail)
-
-**Untrusted:**
-- All other services
-- Network
-- Storage (except for root seed)
-- User input
+| Responsibility | Description |
+|----------------|-------------|
+| **Identity Management** | Create, suspend, revoke identities |
+| **Credential Management** | Add, revoke, validate credentials |
+| **Authentication** | Challenge-response authentication flow |
+| **Token Issuance** | Issue and validate authentication tokens |
+| **Hierarchy Enforcement** | Maintain parent-child identity relationships |
 
 ---
 
-## 3. Identity Model
+## 2. Identity Model
 
-### 3.1 Identity Hierarchy
+### 2.1 Identity Hierarchy
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -84,7 +69,7 @@ This specification defines:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Identity Structure
+### 2.2 Identity Structure
 
 ```rust
 /// Unique identity identifier
@@ -189,160 +174,81 @@ pub struct IdentityMetadata {
 
 ---
 
-## 4. Key Derivation
-
-### 4.1 Key Path Structure
+## 3. Identity Service Interface
 
 ```rust
-/// Hierarchical key derivation path
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct KeyPath {
-    /// Path segments
-    pub segments: Vec<String>,
-}
-
-impl KeyPath {
-    /// System key paths
-    pub const SYSTEM_ROOT: &'static str = "/orbital";
-    pub const SERVICES: &'static str = "/orbital/services";
-    pub const NODES: &'static str = "/orbital/nodes";
-    pub const ORGS: &'static str = "/orbital/orgs";
+/// Identity Service interface
+pub trait IdentityService {
+    /// Create a new identity
+    fn create_identity(
+        &mut self,
+        request: CreateIdentityRequest,
+        auth: AuthToken,
+    ) -> Result<Identity, IdentityError>;
     
-    /// Parse from string
-    pub fn parse(path: &str) -> Result<Self, ParseError> {
-        if !path.starts_with('/') {
-            return Err(ParseError::MustStartWithSlash);
-        }
-        
-        let segments: Vec<String> = path
-            .split('/')
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .collect();
-        
-        if segments.is_empty() {
-            return Err(ParseError::EmptyPath);
-        }
-        
-        Ok(Self { segments })
-    }
+    /// Get identity by ID
+    fn get_identity(
+        &self,
+        id: IdentityId,
+    ) -> Result<Identity, IdentityError>;
     
-    /// Check if this path is a descendant of another
-    pub fn is_descendant_of(&self, ancestor: &KeyPath) -> bool {
-        if self.segments.len() <= ancestor.segments.len() {
-            return false;
-        }
-        
-        self.segments.iter()
-            .zip(ancestor.segments.iter())
-            .all(|(a, b)| a == b)
-    }
+    /// Get identity by fully qualified name
+    fn get_identity_by_fqn(
+        &self,
+        fqn: &str,
+    ) -> Result<Identity, IdentityError>;
     
-    /// Get parent path
-    pub fn parent(&self) -> Option<KeyPath> {
-        if self.segments.len() <= 1 {
-            return None;
-        }
-        
-        Some(KeyPath {
-            segments: self.segments[..self.segments.len() - 1].to_vec(),
-        })
-    }
+    /// Update identity status
+    fn update_status(
+        &mut self,
+        id: IdentityId,
+        new_status: IdentityStatus,
+        reason: String,
+        auth: AuthToken,
+    ) -> Result<(), IdentityError>;
     
-    /// Append a segment
-    pub fn child(&self, segment: &str) -> KeyPath {
-        let mut segments = self.segments.clone();
-        segments.push(segment.to_string());
-        KeyPath { segments }
-    }
-}
-
-/// Example paths:
-/// /orbital                              - System root
-/// /orbital/services/axiom               - Axiom service
-/// /orbital/orgs/example.org             - Organization
-/// /orbital/orgs/example.org/users/alice - User
-/// /orbital/orgs/example.org/users/alice/credentials/passkey-1 - Credential
-```
-
-### 4.2 Key Derivation Algorithm
-
-```rust
-/// Root seed (protected, never exposed)
-pub struct RootSeed {
-    /// 256-bit seed
-    seed: [u8; 32],
-}
-
-impl RootSeed {
-    /// Derive master key from seed
-    fn master_key(&self) -> [u8; 32] {
-        hkdf_sha256(
-            &self.seed,
-            b"",
-            b"orbital-master-key-v1"
-        )
-    }
-}
-
-/// Key derivation engine
-pub struct KeyDeriver {
-    master_key: [u8; 32],
-}
-
-impl KeyDeriver {
-    /// Derive a key from path
-    pub fn derive(&self, path: &KeyPath) -> DerivedKeyPair {
-        let mut current = self.master_key;
-        
-        // Derive through each path segment
-        for segment in &path.segments {
-            current = hkdf_sha256(
-                &current,
-                segment.as_bytes(),
-                b"orbital-key-derivation-v1"
-            );
-        }
-        
-        // Generate Ed25519 keypair from derived bytes
-        let secret_key = ed25519_dalek::SecretKey::from_bytes(&current)
-            .expect("valid key bytes");
-        let public_key = ed25519_dalek::PublicKey::from(&secret_key);
-        
-        DerivedKeyPair {
-            path: path.clone(),
-            secret_key,
-            public_key,
-        }
-    }
-}
-
-/// HKDF-SHA256 implementation
-fn hkdf_sha256(ikm: &[u8], salt: &[u8], info: &[u8]) -> [u8; 32] {
-    use hkdf::Hkdf;
-    use sha2::Sha256;
+    /// List child identities
+    fn list_children(
+        &self,
+        parent_id: IdentityId,
+        filter: IdentityFilter,
+    ) -> Result<Vec<Identity>, IdentityError>;
     
-    let hk = Hkdf::<Sha256>::new(Some(salt), ikm);
-    let mut okm = [0u8; 32];
-    hk.expand(info, &mut okm).expect("valid length");
-    okm
+    /// Add a credential to an identity
+    fn add_credential(
+        &mut self,
+        identity_id: IdentityId,
+        credential: CredentialRequest,
+        auth: AuthToken,
+    ) -> Result<Credential, IdentityError>;
+    
+    /// Revoke a credential
+    fn revoke_credential(
+        &mut self,
+        credential_id: CredentialId,
+        reason: String,
+        auth: AuthToken,
+    ) -> Result<(), IdentityError>;
+    
+    /// Authenticate with a credential
+    fn authenticate(
+        &mut self,
+        request: AuthRequest,
+    ) -> Result<AuthToken, IdentityError>;
+    
+    /// Validate an auth token
+    fn validate_token(
+        &self,
+        token: &AuthToken,
+    ) -> Result<TokenValidation, IdentityError>;
 }
 ```
-
-### 4.3 Key Properties
-
-| Property | Guarantee |
-|----------|-----------|
-| **Deterministic** | Same path + same root → same key, always |
-| **Hierarchical** | Knowing parent key doesn't reveal child keys |
-| **One-way** | Cannot derive parent key from child key |
-| **Collision-resistant** | Different paths → different keys (cryptographically) |
 
 ---
 
-## 5. Credentials
+## 4. Credentials
 
-### 5.1 Credential Types
+### 4.1 Credential Types
 
 ```rust
 /// A credential for authentication
@@ -467,7 +373,7 @@ pub enum CredentialStatus {
 }
 ```
 
-### 5.2 Credential Lifecycle
+### 4.2 Credential Lifecycle
 
 ```mermaid
 stateDiagram-v2
@@ -488,9 +394,9 @@ stateDiagram-v2
 
 ---
 
-## 6. Authentication
+## 5. Authentication
 
-### 6.1 Authentication Flow
+### 5.1 Authentication Flow
 
 ```mermaid
 sequenceDiagram
@@ -520,7 +426,7 @@ sequenceDiagram
     I-->>C: AuthToken
 ```
 
-### 6.2 Challenge-Response Protocol
+### 5.2 Challenge-Response Protocol
 
 ```rust
 /// Authentication challenge
@@ -578,7 +484,7 @@ pub enum AuthProof {
 }
 ```
 
-### 6.3 Authentication Token
+### 5.3 Authentication Token
 
 ```rust
 /// Authentication token
@@ -636,9 +542,9 @@ pub enum TokenRestriction {
 
 ---
 
-## 7. Policy Integration
+## 6. Policy Integration
 
-### 7.1 Identity-Related Policies
+### 6.1 Identity-Related Policies
 
 ```rust
 /// Policy rules for identity operations
@@ -669,37 +575,9 @@ pub enum IdentityPolicyRule {
         allowed_by: IdentityPattern,
     },
 }
-
-/// Policy rules for key operations
-pub enum KeyPolicyRule {
-    /// Who can derive keys (get public key)
-    DerivePublicKey {
-        path_pattern: KeyPathPattern,
-        allowed_by: IdentityPattern,
-    },
-    
-    /// Who can sign with a key
-    Sign {
-        path_pattern: KeyPathPattern,
-        allowed_by: IdentityPattern,
-        requires_approval: bool,
-        approval_quorum: Option<u32>,
-    },
-    
-    /// Who can encrypt/decrypt
-    Encrypt {
-        path_pattern: KeyPathPattern,
-        allowed_by: IdentityPattern,
-    },
-    
-    Decrypt {
-        path_pattern: KeyPathPattern,
-        allowed_by: IdentityPattern,
-    },
-}
 ```
 
-### 7.2 Default Policies
+### 6.2 Default Policies
 
 ```rust
 /// Default identity policies
@@ -725,104 +603,15 @@ pub fn default_identity_policies() -> Vec<PolicyRule> {
             credential_type: CredentialType::Any,
             allowed_by: IdentityPattern::Self_,
         }),
-        
-        // Users can sign with their own keys
-        PolicyRule::key(KeyPolicyRule::Sign {
-            path_pattern: KeyPathPattern::SelfAndDescendants,
-            allowed_by: IdentityPattern::Self_,
-            requires_approval: false,
-            approval_quorum: None,
-        }),
     ]
 }
 ```
 
 ---
 
-## 8. Secure Boundary
+## 7. Axiom Integration
 
-### 8.1 Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        SECURE BOUNDARY                              │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                    ISOLATED ADDRESS SPACE                      │ │
-│  │                                                                │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │ │
-│  │  │  Root Seed  │  │    Key      │  │   Crypto    │            │ │
-│  │  │  (mlock'd)  │  │   Deriver   │  │  Operations │            │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘            │ │
-│  │                                                                │ │
-│  │  Memory properties:                                           │ │
-│  │  • mlocked (cannot swap to disk)                              │ │
-│  │  • guard pages (detect overflow)                              │ │
-│  │  • zeroed on free                                             │ │
-│  │                                                                │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                              │                                      │
-│                              ▼                                      │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                     IPC GATEWAY                                │ │
-│  │                                                                │ │
-│  │  • Validates all incoming requests                            │ │
-│  │  • Checks Policy Engine authorization                         │ │
-│  │  • Logs all operations to Axiom                               │ │
-│  │  • Returns only public data (signatures, public keys)         │ │
-│  │                                                                │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 8.2 Security Properties
-
-| Property | Implementation |
-|----------|----------------|
-| **Memory isolation** | Separate address space, no shared memory |
-| **No persistence** | Keys derived on-demand, never stored |
-| **Memory protection** | mlock(), guard pages, zeroing |
-| **Capability-gated** | Only authorized services can call |
-| **Audit logging** | All operations recorded in Axiom |
-| **Policy enforcement** | Every operation checked against policy |
-
-### 8.3 Optional Hardware Enhancement
-
-```rust
-/// Hardware security module interface
-pub trait HsmInterface {
-    /// Seal data to hardware
-    fn seal(&self, data: &[u8]) -> Result<Vec<u8>, HsmError>;
-    
-    /// Unseal data from hardware
-    fn unseal(&self, sealed: &[u8]) -> Result<Vec<u8>, HsmError>;
-    
-    /// Get attestation
-    fn attest(&self, challenge: &[u8]) -> Result<Attestation, HsmError>;
-}
-
-/// Platform-specific HSM implementations
-pub enum HsmProvider {
-    /// No hardware - software only
-    Software,
-    
-    /// TPM 2.0
-    Tpm2 { device_path: String },
-    
-    /// Intel SGX
-    Sgx { enclave_path: String },
-    
-    /// ARM TrustZone
-    TrustZone,
-}
-```
-
----
-
-## 9. Axiom Integration
-
-### 9.1 Identity Events
+### 7.1 Identity Events
 
 ```rust
 /// Axiom entry types for identity operations
@@ -868,53 +657,11 @@ pub enum IdentityAxiomEntry {
 }
 ```
 
-### 9.2 Key Events
-
-```rust
-/// Axiom entry types for key operations
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum KeyAxiomEntry {
-    /// Signing operation
-    SigningOperation {
-        key_path: KeyPath,
-        message_hash: Hash,
-        signature_hash: Hash,
-        requested_by: IdentityId,
-        authorized_by: PolicyDecision,
-    },
-    
-    /// Encryption operation
-    EncryptionOperation {
-        key_path: KeyPath,
-        plaintext_hash: Hash,
-        ciphertext_hash: Hash,
-        requested_by: IdentityId,
-        authorized_by: PolicyDecision,
-    },
-    
-    /// Decryption operation
-    DecryptionOperation {
-        key_path: KeyPath,
-        ciphertext_hash: Hash,
-        requested_by: IdentityId,
-        authorized_by: PolicyDecision,
-    },
-    
-    /// Key rotation (new derivation path)
-    KeyRotation {
-        old_path: KeyPath,
-        new_path: KeyPath,
-        rotated_by: IdentityId,
-        reason: String,
-    },
-}
-```
-
 ---
 
-## 10. State Machine Diagrams
+## 8. State Machine Diagrams
 
-### 10.1 Identity Lifecycle
+### 8.1 Identity Lifecycle
 
 ```mermaid
 stateDiagram-v2
@@ -931,7 +678,7 @@ stateDiagram-v2
     Revoked --> [*]: cleanup
 ```
 
-### 10.2 Authentication Flow
+### 8.2 Authentication Flow
 
 ```mermaid
 stateDiagram-v2
@@ -957,66 +704,6 @@ stateDiagram-v2
     Authenticated --> [*]
 ```
 
-### 10.3 Signing Flow
-
-```mermaid
-stateDiagram-v2
-    [*] --> ReceiveRequest
-    ReceiveRequest --> ValidateRequest
-    
-    ValidateRequest --> CheckPolicy: valid
-    ValidateRequest --> Rejected: invalid
-    
-    CheckPolicy --> DeriveKey: authorized
-    CheckPolicy --> Rejected: denied
-    
-    DeriveKey --> Sign
-    Sign --> ZeroKey
-    ZeroKey --> RecordAudit
-    
-    RecordAudit --> ReturnSignature: audit_recorded
-    
-    Rejected --> RecordAudit
-    RecordAudit --> ReturnError: rejected
-    
-    ReturnSignature --> [*]
-    ReturnError --> [*]
-```
-
 ---
 
-## 11. Implementation Notes
-
-### 11.1 Cryptographic Algorithms
-
-| Purpose | Algorithm |
-|---------|-----------|
-| Key derivation | HKDF-SHA256 |
-| Signing | Ed25519 |
-| Hashing | BLAKE3 |
-| Encryption | XChaCha20-Poly1305 |
-| Key exchange | X25519 |
-
-### 11.2 Dependencies
-
-```toml
-[dependencies]
-ed25519-dalek = "2"
-x25519-dalek = "2"
-hkdf = "0.12"
-sha2 = "0.10"
-blake3 = "1"
-chacha20poly1305 = "0.10"
-zeroize = { version = "1", features = ["derive"] }
-```
-
-### 11.3 Security Considerations
-
-1. **Zeroization**: All key material must be zeroized after use
-2. **Timing attacks**: Use constant-time comparison for secrets
-3. **Side channels**: Avoid branching on secret data
-4. **Memory safety**: Use Rust's memory safety guarantees
-
----
-
-*[← Visual OS](10-visual-os.md) | [Back to Index](../implementation/00-roadmap.md)*
+*[← Key Derivation Service](03-keys.md) | [Capability Service →](../03-capability/01-capabilities.md)*

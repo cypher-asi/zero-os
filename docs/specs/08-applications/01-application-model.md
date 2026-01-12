@@ -820,4 +820,4 @@ Future versions may support nondeterministic applications with:
 
 ---
 
-*[← Userland Services](03-userland-services.md) | [Three-Phase Action Model →](05-three-phase-action-model.md)*
+*[← Update Manager](../07-services/02-update-manager.md) | [Visual OS →](02-visual-os.md)*

@@ -814,4 +814,4 @@ pub enum NetError {
 
 ---
 
-*[← Filesystem and Storage](06-filesystem-and-storage.md) | [Terminal →](08-terminal.md)*
+*[← Filesystem](../04-storage/01-filesystem.md) | [Three-Phase Action Model →](../06-execution/01-three-phase.md)*
