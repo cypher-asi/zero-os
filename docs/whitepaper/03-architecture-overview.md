@@ -1,4 +1,4 @@
-# Orbital OS — Architecture Overview
+# Orbital OS - Architecture Overview
 
 **Version:** 2.0  
 **Status:** Whitepaper  
@@ -8,53 +8,155 @@
 
 ## 1. System Layers (Most Fundamental First)
 
-Orbital OS is structured in nine distinct layers, ordered from most fundamental (Layer 0) to least fundamental (Layer 8):
+Orbital OS is structured in nine distinct layers, ordered from most fundamental (Layer 0) to least fundamental (Layer 8), all built on the Hardware Abstraction Layer (HAL):
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  LAYER 8: APPLICATIONS                                              │
-│    Deterministic Jobs, Visual OS                                    │
-├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 7: USER-FACING SERVICES                                      │
-│    Terminal Service, Update Manager                                 │
-├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 6: EXECUTION INFRASTRUCTURE                                  │
-│    Three-Phase Action Model, Verification & Receipts                │
-├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 5: NETWORK & DEVICE                                          │
-│    Driver Manager, Network Service                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 4: STORAGE                                                   │
-│    Block Storage, Filesystem, Content-Addressed Store               │
-├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 3: PROCESS & CAPABILITY                                      │
-│    Capability Service, Process Manager                              │
-├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 2: CORE AUTHORITY                                            │
-│    Axiom Sequencer, Policy Engine, Key Service, Identity Service    │
-├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 1: BOOTSTRAP                                                 │
-│    Supervisor                                                       │
-├─────────────────────────────────────────────────────────────────────┤
-│  LAYER 0: KERNEL                                                    │
-│    Scheduler (SMP), Memory Manager, Capability Enforcer,            │
-│    IPC Primitives, Interrupt Handler                                │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌─────────────────┐
-                    │    HARDWARE     │
-                    │  (x86_64 first) │
-                    └─────────────────┘
+LAYER 8: APPLICATIONS
+  Deterministic Jobs, Visual OS
+
+LAYER 7: USER-FACING SERVICES
+  Terminal Service, Update Manager
+
+LAYER 6: EXECUTION INFRASTRUCTURE
+  Three-Phase Action Model, Verification and Receipts
+
+LAYER 5: NETWORK and DEVICE
+  Driver Manager, Network Service
+
+LAYER 4: STORAGE
+  Block Storage, Filesystem, Content-Addressed Store
+
+LAYER 3: PROCESS and CAPABILITY
+  Capability Service, Process Manager
+
+LAYER 2: CORE AUTHORITY
+  Axiom Sequencer, Policy Engine, Key Derivation Service, Identity Service
+
+LAYER 1: BOOTSTRAP
+  Init, Supervisor
+
+LAYER 0: KERNEL
+  Scheduler (SMP), Memory Manager, Capability Enforcer,
+  IPC Primitives, Interrupt Handler
+
+HARDWARE ABSTRACTION LAYER (HAL)
+  Zero-cost platform abstraction trait
+
+        │
+        ├─────────────────┬─────────────────┐
+        ▼                 ▼                 ▼
+    ┌───────┐        ┌───────┐        ┌───────────┐
+    │ WASM  │        │ QEMU  │        │ Bare Metal│
+    │Browser│        │virtio │        │  x86_64   │
+    └───────┘        └───────┘        └───────────┘
 ```
 
 ---
 
-## 2. Layer 0: The Kernel
+## 2. Hardware Abstraction Layer (HAL)
 
-The kernel is the **most fundamental component** — everything else depends on it.
+The HAL is the foundation that enables Orbital OS to run on multiple platforms from a **single codebase**. It provides a zero-cost compile-time abstraction over the execution substrate.
 
-### 2.1 Kernel Responsibilities
+### 2.1 HAL Design Principles
+
+| Principle | Description |
+|-----------|-------------|
+| **Zero-Cost Abstraction** | All HAL calls are monomorphized and inlined at compile time — no runtime overhead |
+| **Minimal Interface** | Defines only the primitives that all platforms can provide |
+| **Full Hardware Access** | Does not limit what native platforms can do (SMP, DMA, SIMD, etc.) |
+| **Graceful Degradation** | WASM adapts to browser limitations while preserving core functionality |
+
+### 2.2 HAL Trait
+
+The HAL defines the interface between Orbital OS and its execution substrate:
+
+```rust
+pub trait HAL: Send + Sync + 'static {
+    // Associated types for platform-specific handles
+    type ThreadHandle: Clone + Send;
+    type StorageHandle: StorageDevice;
+    type NetworkHandle: NetworkDevice;
+    
+    // Execution primitives
+    fn spawn_thread(&self, entry: fn()) -> Result<Self::ThreadHandle, HalError>;
+    fn yield_now(&self);
+    fn sleep(&self, duration: Duration);
+    fn num_cpus(&self) -> usize;
+    
+    // Memory primitives
+    fn allocate(&self, size: usize, align: usize) -> Result<*mut u8, HalError>;
+    fn deallocate(&self, ptr: *mut u8, size: usize, align: usize);
+    
+    // Time and entropy
+    fn now(&self) -> Instant;
+    fn random_bytes(&self, buf: &mut [u8]) -> Result<(), HalError>;
+    
+    // I/O devices
+    fn storage_devices(&self) -> Vec<Self::StorageHandle>;
+    fn network_devices(&self) -> Vec<Self::NetworkHandle>;
+    
+    // Lifecycle
+    fn shutdown(&self, code: i32) -> !;
+}
+```
+
+### 2.3 Platform Implementations
+
+```mermaid
+flowchart TB
+    subgraph orbital [Orbital OS Core - Single Codebase]
+        kernel[Kernel]
+        services[Services]
+        apps[Applications]
+    end
+    
+    kernel --> hal[HAL Trait]
+    
+    hal --> wasm[WasmHAL]
+    hal --> qemu[QemuHAL]
+    hal --> bare[BareMetalHAL]
+    
+    wasm --> browser[Browser APIs]
+    wasm --> wasi[WASI Runtime]
+    
+    qemu --> virtio[virtio Devices]
+    
+    bare --> hardware[x86_64 Hardware]
+```
+
+### 2.4 Platform Capabilities
+
+| Capability | WASM | QEMU | Bare Metal |
+|------------|------|------|------------|
+| **Threading** | Web Workers | Full SMP | Full SMP |
+| **Preemption** | Cooperative | Timer interrupt | Timer interrupt |
+| **Memory Protection** | WASM sandbox | Page tables | Page tables |
+| **Storage** | IndexedDB/OPFS | virtio-blk | AHCI/NVMe |
+| **Network** | WebSocket/Fetch | virtio-net | Real NIC |
+| **SIMD** | WASM SIMD | AVX-512 | AVX-512 |
+| **DMA** | N/A | virtio | Yes |
+
+### 2.5 Build Targets
+
+The same Orbital OS codebase compiles to all platforms:
+
+```bash
+# WASM build (browser or WASI)
+cargo build --target wasm32-unknown-unknown --release
+
+# QEMU/Bare metal build
+cargo build --target x86_64-unknown-none --release
+```
+
+Both builds produce functionally equivalent systems — the Axiom, Policy Engine, and all services behave identically. Only the HAL implementation differs.
+
+---
+
+## 3. Layer 0: The Kernel
+
+The kernel is built on the HAL and provides the **core system services** that all other layers depend on.
+
+### 3.1 Kernel Responsibilities
 
 The kernel provides exactly five services:
 
@@ -66,7 +168,7 @@ The kernel provides exactly five services:
 | **IPC Primitives** | Fast synchronous/asynchronous message passing |
 | **Interrupt Handler** | Hardware interrupt routing, timer management |
 
-### 2.2 Kernel Prohibitions
+### 3.2 Kernel Prohibitions
 
 The kernel MUST NOT contain:
 
@@ -80,12 +182,15 @@ The kernel MUST NOT contain:
 - Key derivation
 - Resource accounting (beyond enforcement)
 
-### 2.3 Kernel State
+### 3.3 Kernel State
 
-The kernel maintains minimal state:
+The kernel is generic over the HAL and maintains minimal state:
 
 ```rust
-struct KernelState {
+struct Kernel<H: HAL> {
+    // Reference to the HAL
+    hal: H,
+    
     // Process management
     processes: BTreeMap<ProcessId, Process>,
     threads: BTreeMap<ThreadId, Thread>,
@@ -100,11 +205,11 @@ struct KernelState {
     endpoints: BTreeMap<EndpointId, Endpoint>,
     
     // Scheduler state
-    run_queues: PerCpu<RunQueue>,
+    scheduler: Scheduler<H>,
 }
 ```
 
-### 2.4 Kernel Boot Sequence
+### 3.4 Kernel Boot Sequence
 
 ```mermaid
 stateDiagram-v2
@@ -120,25 +225,39 @@ stateDiagram-v2
 
 ---
 
-## 3. Layer 1: Bootstrap (Supervisor)
+## 4. Layer 1: Bootstrap (Init and Supervisor)
 
-The **Supervisor** is the first user-space process and the second most fundamental component.
+The first user-space process (PID 1) operates in two phases:
 
-### 3.1 Role
+### 4.1 Init Phase (Boot-Time)
+
+**Init** is the boot-time phase that starts all system services:
 
 | Responsibility | Description |
 |----------------|-------------|
-| **Service Boot** | Starts all system services in dependency order |
+| **Kernel Handoff** | Receives capabilities and control from kernel |
+| **Service Bootstrap** | Starts all system services in dependency order |
+| **Capability Distribution** | Grants initial capabilities to services |
+| **Boot Verification** | Ensures critical services are running before proceeding |
+| **Transition** | Hands off to Supervisor once boot completes |
+
+### 4.2 Supervisor Phase (Runtime)
+
+**Supervisor** is the runtime phase that manages services:
+
+| Responsibility | Description |
+|----------------|-------------|
 | **Health Monitoring** | Watches for service failures |
 | **Restart Management** | Restarts failed services with backoff |
-| **System Capabilities** | Holds full system capabilities from kernel |
+| **Shutdown Coordination** | Gracefully stops all services |
+| **Service Discovery** | Helps services find each other |
 
-### 3.2 Boot Sequence
+### 4.3 Boot Sequence
 
-The Supervisor boots services in layer order:
+Init boots services in layer order:
 
 ```rust
-impl Supervisor {
+impl Init {
     pub fn boot(&mut self) -> Result<(), BootError> {
         // Layer 2: Core Authority Services (must be first)
         self.start_service("axiom")?;
@@ -146,7 +265,7 @@ impl Supervisor {
         self.start_service("keys")?;
         self.start_service("identity")?;
         
-        // Layer 3: Process & Capability Services
+        // Layer 3: Process and Capability Services
         self.start_service("capability_service")?;
         self.start_service("process_manager")?;
         
@@ -154,7 +273,7 @@ impl Supervisor {
         self.start_service("block_storage")?;
         self.start_service("filesystem")?;
         
-        // Layer 5: Network & Device Services
+        // Layer 5: Network and Device Services
         self.start_service("driver_manager")?;
         self.start_service("network")?;
         
@@ -169,15 +288,15 @@ impl Supervisor {
 
 ---
 
-## 4. Layer 2: Core Authority Services
+## 5. Layer 2: Core Authority Services
 
 Layer 2 forms the **"authority spine"** of the system. These services must start first because all other services depend on them for authorization.
 
-### 4.1 Service Dependency
+### 5.1 Service Dependency
 
 ```mermaid
 flowchart TD
-    init[Supervisor]
+    init[Init]
     axiom[Axiom Sequencer]
     policy[Policy Engine]
     keys[Key Derivation Service]
@@ -193,182 +312,137 @@ flowchart TD
     identity --> policy
 ```
 
-### 4.2 Axiom Sequencer
+### 5.2 Axiom Sequencer
 
 The Axiom is the **single source of truth** for all system state.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      AXIOM SUBSYSTEM                                 │
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                  AXIOM SEQUENCER                             │   │
-│  │                                                              │   │
-│  │  • Receives proposals from Policy Engine                    │   │
-│  │  • Validates proposals are policy-approved                  │   │
-│  │  • Assigns sequence numbers                                 │   │
-│  │  • Commits entries atomically                               │   │
-│  │  • Notifies subscribers                                     │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                           │                                         │
-│                           ▼                                         │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                   AXIOM STORE                                │   │
-│  │                                                              │   │
-│  │  Entry 0: Genesis                                           │   │
-│  │  Entry 1: ─────────────────────────────────────────────────▶│   │
-│  │  Entry 2: ─────────────────────────────────────────────────▶│   │
-│  │  Entry N: ─────────────────────────────────────────────────▶│   │
-│  │           (hash-chained, append-only)                       │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                           │                                         │
-│                           ▼                                         │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                   REDUCER                                    │   │
-│  │                                                              │   │
-│  │  reduce(axiom) → control_state                              │   │
-│  │                                                              │   │
-│  │  • Pure function                                            │   │
-│  │  • Deterministic                                            │   │
-│  │  • Produces: policy_state, identity_state, capability_state │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+AXIOM SUBSYSTEM
+
+  AXIOM SEQUENCER
+    - Receives proposals from Policy Engine
+    - Validates proposals are policy-approved
+    - Assigns sequence numbers
+    - Commits entries atomically
+    - Notifies subscribers
+        |
+        v
+  AXIOM STORE
+    Entry 0: Genesis
+    Entry 1: ...
+    Entry 2: ...
+    Entry N: ...
+    (hash-chained, append-only)
+        |
+        v
+  REDUCER
+    reduce(axiom) -> control_state
+    - Pure function
+    - Deterministic
+    - Produces: policy_state, identity_state, capability_state
 ```
 
-### 4.3 Policy Engine
+### 5.3 Policy Engine
 
 The Policy Engine is the **gatekeeper** of all consequential operations.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         POLICY ENGINE                               │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                    REQUEST INTAKE                              │ │
-│  │  • Parse and validate request                                  │ │
-│  │  • Extract identity of requestor                               │ │
-│  │  • Identify target resource                                    │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                              │                                      │
-│                              ▼                                      │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                    AUTHENTICATION                              │ │
-│  │  • Verify requestor identity                                   │ │
-│  │  • Validate credentials/signatures                             │ │
-│  │  • Check identity is not revoked                               │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                              │                                      │
-│                              ▼                                      │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                    AUTHORIZATION                               │ │
-│  │  • Evaluate policy rules against request                       │ │
-│  │  • Check capabilities                                          │ │
-│  │  • Apply resource limits                                       │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                              │                                      │
-│                              ▼                                      │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                    DECISION                                    │ │
-│  │  • Allow or Deny                                               │ │
-│  │  • Attach conditions/restrictions                              │ │
-│  │  • Record decision in Axiom                                    │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+POLICY ENGINE
+
+  REQUEST INTAKE
+    - Parse and validate request
+    - Extract identity of requestor
+    - Identify target resource
+        |
+        v
+  AUTHENTICATION
+    - Verify requestor identity
+    - Validate credentials/signatures
+    - Check identity is not revoked
+        |
+        v
+  AUTHORIZATION
+    - Evaluate policy rules against request
+    - Check capabilities
+    - Apply resource limits
+        |
+        v
+  DECISION
+    - Allow or Deny
+    - Attach conditions/restrictions
+    - Record decision in Axiom
 ```
 
-### 4.4 Key Derivation Service
+### 5.4 Key Derivation Service
 
 The Key Derivation Service (KDS) manages all cryptographic key operations:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    KEY DERIVATION SERVICE                           │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                    SECURE BOUNDARY                             │ │
-│  │                                                                │ │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │ │
-│  │  │  Root Seed  │  │   Derive    │  │   Signing   │            │ │
-│  │  │  (protected)│  │   Engine    │  │   Engine    │            │ │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘            │ │
-│  │                                                                │ │
-│  │  [keys derived on-demand, zeroed after use]                   │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                              │                                      │
-│                              ▼                                      │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                    IPC INTERFACE                               │ │
-│  │  • derive_public_key(path) → PublicKey                        │ │
-│  │  • sign(path, message, authorization) → Signature             │ │
-│  │  • verify(public_key, message, signature) → bool              │ │
-│  │  • encrypt(path, plaintext, authorization) → Ciphertext       │ │
-│  │  • decrypt(path, ciphertext, authorization) → Plaintext       │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-│  Note: Private keys NEVER leave the secure boundary                │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+KEY DERIVATION SERVICE
+
+  SECURE BOUNDARY
+    [Root Seed]   [Derive]    [Signing]
+    (protected)    Engine      Engine
+    
+    [keys derived on-demand, zeroed after use]
+        |
+        v
+  IPC INTERFACE
+    - derive_public_key(path) -> PublicKey
+    - sign(path, message, authorization) -> Signature
+    - verify(public_key, message, signature) -> bool
+    - encrypt(path, plaintext, authorization) -> Ciphertext
+    - decrypt(path, ciphertext, authorization) -> Plaintext
+
+Note: Private keys NEVER leave the secure boundary
 ```
 
-### 4.5 Identity Service
+### 5.5 Identity Service
 
 The Identity Service manages all principal identities:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       IDENTITY SERVICE                              │
-│                                                                     │
-│  ┌───────────────────────────────────────────────────────────────┐ │
-│  │                    IDENTITY REGISTRY                           │ │
-│  │                                                                │ │
-│  │  System Identity (root)                                        │ │
-│  │  ├── orbital.services.axiom                                   │ │
-│  │  ├── orbital.services.policy                                  │ │
-│  │  ├── orbital.services.keys                                    │ │
-│  │  └── orbital.services.filesystem                              │ │
-│  │                                                                │ │
-│  │  Organization: example.org                                     │ │
-│  │  ├── alice@example.org                                        │ │
-│  │  │   ├── credential: passkey-1                                │ │
-│  │  │   └── credential: recovery-key                             │ │
-│  │  └── api-service@example.org                                  │ │
-│  │      └── credential: service-key                              │ │
-│  │                                                                │ │
-│  └───────────────────────────────────────────────────────────────┘ │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+IDENTITY SERVICE
+
+  IDENTITY REGISTRY
+  
+    System Identity (root)
+      orbital.services.axiom
+      orbital.services.policy
+      orbital.services.keys
+      orbital.services.filesystem
+    
+    Organization: example.org
+      alice@example.org
+        credential: passkey-1
+        credential: recovery-key
+      api-service@example.org
+        credential: service-key
 ```
 
 ---
 
-## 5. Layer 3: Process & Capability
+## 6. Layer 3: Process and Capability
 
-### 5.1 Capability Service
+### 6.1 Capability Service
 
 Manages capability delegation and revocation:
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                    CAPABILITY DELEGATION                      │
-│                                                              │
-│   ┌─────────┐         ┌─────────┐         ┌─────────┐       │
-│   │ Parent  │ ──────▶ │  Child  │ ──────▶ │  Grand  │       │
-│   │ Process │ grants  │ Process │ grants  │  Child  │       │
-│   │(alice)  │         │(alice)  │(attenuated)       │       │
-│   └─────────┘         └─────────┘         └─────────┘       │
-│                                                              │
-│   [RW, file.txt] ───▶ [R, file.txt] ───▶ [R, file.txt]     │
-│   (full access)      (reduced to        (cannot delegate    │
-│                       read-only)         further)           │
-│                                                              │
-│   All delegations recorded in Axiom with identity chain     │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
+CAPABILITY DELEGATION
+
+  Parent      grants     Child       grants     Grand
+  Process  ---------->  Process  ---------->   Child
+  (alice)               (alice)    (attenuated)
+
+  [RW, file.txt] ---> [R, file.txt] ---> [R, file.txt]
+  (full access)       (reduced to        (cannot delegate
+                       read-only)         further)
+
+  All delegations recorded in Axiom with identity chain
 ```
 
-### 5.2 Process Manager
+### 6.2 Process Manager
 
 Creates and manages processes, enforces resource limits:
 
@@ -383,69 +457,53 @@ pub trait ProcessManagerService {
 
 ---
 
-## 6. Layer 4: Storage
+## 7. Layer 4: Storage
 
-### 6.1 Storage Architecture
+### 7.1 Storage Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    STORAGE LAYER                             │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              FILESYSTEM SERVICE                      │   │
-│  │  • Namespace management (paths)                     │   │
-│  │  • Metadata operations                              │   │
-│  │  • Permission enforcement via Policy                │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                         │                                   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │          CONTENT-ADDRESSED STORE                     │   │
-│  │  • Immutable blobs by BLAKE3 hash                   │   │
-│  │  • Deduplication                                    │   │
-│  │  • Verification                                     │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                         │                                   │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │              BLOCK STORAGE SERVICE                   │   │
-│  │  • Block device abstraction                         │   │
-│  │  • I/O scheduling                                   │   │
-│  │  • Allocation management                            │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+STORAGE LAYER
+
+  FILESYSTEM SERVICE
+    - Namespace management (paths)
+    - Metadata operations
+    - Permission enforcement via Policy
+        |
+        v
+  CONTENT-ADDRESSED STORE
+    - Immutable blobs by BLAKE3 hash
+    - Deduplication
+    - Verification
+        |
+        v
+  BLOCK STORAGE SERVICE
+    - Block device abstraction
+    - I/O scheduling
+    - Allocation management
 ```
 
 ---
 
-## 7. Layer 5: Network & Device
+## 8. Layer 5: Network and Device
 
-### 7.1 Driver Model
+### 8.1 Driver Model
 
 All device drivers run in user space as isolated processes:
 
 ```
-┌────────────────────────────────────────────────────────────┐
-│                     DRIVER PROCESS                          │
-│                                                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │   Driver     │  │   DMA        │  │  Interrupt   │     │
-│  │   Logic      │  │   Buffer     │  │   Handler    │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-│                                                            │
-│  Capabilities: [IO_PORT, IRQ_N, DMA_REGION]               │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
-         │                    │                    │
-         ▼                    ▼                    ▼
-┌────────────────────────────────────────────────────────────┐
-│                        KERNEL                               │
-│  • Maps DMA region into driver address space               │
-│  • Routes interrupt N to driver                            │
-│  • Validates I/O port access via capability                │
-└────────────────────────────────────────────────────────────┘
+DRIVER PROCESS
+  [Driver Logic]  [DMA Buffer]  [Interrupt Handler]
+  
+  Capabilities: [IO_PORT, IRQ_N, DMA_REGION]
+        |
+        v
+KERNEL
+  - Maps DMA region into driver address space
+  - Routes interrupt N to driver
+  - Validates I/O port access via capability
 ```
 
-### 7.2 Network Service
+### 8.2 Network Service
 
 TCP/IP stack with policy-gated connections:
 
@@ -455,39 +513,39 @@ TCP/IP stack with policy-gated connections:
 
 ---
 
-## 8. Layer 6: Execution Infrastructure
+## 9. Layer 6: Execution Infrastructure
 
-### 8.1 The Three-Phase Action Model
+### 9.1 The Three-Phase Action Model
 
 Every meaningful action follows this pattern:
 
 ```
 Phase 1: Pre-Commit (Proposal)
-├── Work is tentative
-├── Effects are prepared but not executed
-├── Crash here → work is lost (acceptable)
-└── Produces proposal for Policy Engine
+  - Work is tentative
+  - Effects are prepared but not executed
+  - Crash here -> work is lost (acceptable)
+  - Produces proposal for Policy Engine
 
 Policy Gate (between Phase 1 and 2)
-├── Authentication — verify requestor identity
-├── Authorization — evaluate policy rules
-└── Decision recorded in Axiom
+  - Authentication: verify requestor identity
+  - Authorization: evaluate policy rules
+  - Decision recorded in Axiom
 
 Phase 2: Commit
-├── Policy-approved proposals submitted to Axiom Sequencer
-├── Sequencer orders and accepts/rejects
-├── Accepted proposals become Axiom entries
-└── Crash here → entry either committed or not (atomic)
+  - Policy-approved proposals submitted to Axiom Sequencer
+  - Sequencer orders and accepts/rejects
+  - Accepted proposals become Axiom entries
+  - Crash here -> entry either committed or not (atomic)
 
 Phase 3: Effect Materialization
-├── Axiom entry authorizes effects
-├── Effects are executed
-├── Effects MUST be idempotent (safe to retry)
-├── Crash here → retry from last committed receipt
-└── Completion produces receipt
+  - Axiom entry authorizes effects
+  - Effects are executed
+  - Effects MUST be idempotent (safe to retry)
+  - Crash here -> retry from last committed receipt
+  - Completion produces receipt
 ```
 
-### 8.2 Verification & Receipts
+### 9.2 Verification and Receipts
 
 Receipts bind inputs to outputs cryptographically:
 
@@ -512,9 +570,9 @@ struct Receipt {
 
 ---
 
-## 9. Layer 7: User-Facing Services
+## 10. Layer 7: User-Facing Services
 
-### 9.1 Terminal Service
+### 10.1 Terminal Service
 
 User interaction and command execution:
 
@@ -522,7 +580,7 @@ User interaction and command execution:
 - Command authorization via Policy Engine
 - Output and history management
 
-### 9.2 Update Manager
+### 10.2 Update Manager
 
 Atomic system image updates:
 
@@ -533,9 +591,9 @@ Atomic system image updates:
 
 ---
 
-## 10. Layer 8: Applications
+## 11. Layer 8: Applications
 
-### 10.1 Deterministic Jobs (v0)
+### 11.1 Deterministic Jobs (v0)
 
 Applications execute as discrete jobs:
 
@@ -558,80 +616,60 @@ struct JobManifest {
 }
 ```
 
-### 10.2 Visual OS (Future)
+### 11.2 Visual OS (Future)
 
 Deterministic UI layer for interactive applications.
 
 ---
 
-## 11. The Determinism Boundary
+## 12. The Determinism Boundary
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    NONDETERMINISTIC ZONE                        │
-│                                                                 │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐         │
-│  │  Scheduling   │ │   Interrupts  │ │    Caching    │         │
-│  │    Order      │ │    Timing     │ │   Behavior    │         │
-│  └───────────────┘ └───────────────┘ └───────────────┘         │
-│                                                                 │
-│         │                    │                    │             │
-│         ▼                    ▼                    ▼             │
-│     [Proposals]          [Proposals]         [Proposals]        │
-│                                                                 │
-└─────────────────────────────────┬───────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      DETERMINISM BOUNDARY                        │
-│                                                                 │
-│                    ┌─────────────────┐                          │
-│                    │  POLICY ENGINE  │                          │
-│                    └────────┬────────┘                          │
-│                             │                                   │
-│                    ┌────────┴────────┐                          │
-│                    │ AXIOM SEQUENCER │                          │
-│                    └────────┬────────┘                          │
-│                             │                                   │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     DETERMINISTIC ZONE                           │
-│                                                                 │
-│  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐         │
-│  │    Axiom      │ │   Control     │ │ Verification  │         │
-│  │   Ordering    │ │    State      │ │    Inputs     │         │
-│  └───────────────┘ └───────────────┘ └───────────────┘         │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+NONDETERMINISTIC ZONE
+  [Scheduling Order]  [Interrupts Timing]  [Caching Behavior]
+        |                   |                    |
+        v                   v                    v
+    [Proposals]         [Proposals]          [Proposals]
+                            |
+                            v
+DETERMINISM BOUNDARY
+                    [POLICY ENGINE]
+                            |
+                    [AXIOM SEQUENCER]
+                            |
+                            v
+DETERMINISTIC ZONE
+  [Axiom Ordering]  [Control State]  [Verification Inputs]
 ```
 
 ---
 
-## 12. Summary
+## 13. Summary
 
 Orbital OS architecture is characterized by:
 
 | Layer | Components | Role |
 |-------|------------|------|
-| **0** | Kernel | Hardware abstraction, isolation, IPC |
-| **1** | Supervisor | Bootstrap, service management |
-| **2** | Axiom, Policy, Keys, Identity | Authority spine — source of truth |
-| **3** | Capabilities, Process Manager | Access control, process lifecycle |
+| **HAL** | WasmHAL, QemuHAL, BareMetalHAL | Platform abstraction - single codebase, multiple targets |
+| **0** | Kernel | Process isolation, IPC, capabilities |
+| **1** | Init, Supervisor | Bootstrap (Init), runtime management (Supervisor) |
+| **2** | Axiom, Policy, Key Derivation Service, Identity Service | Authority spine - source of truth |
+| **3** | Capability Service, Process Manager | Access control, process lifecycle |
 | **4** | Block Storage, Filesystem | Persistent storage |
-| **5** | Drivers, Network | Device and network access |
-| **6** | Three-Phase Model, Verification | Execution infrastructure |
-| **7** | Terminal, Update Manager | User-facing services |
-| **8** | Jobs, Visual OS | Applications |
+| **5** | Driver Manager, Network Service | Device and network access |
+| **6** | Three-Phase Action Model, Verification & Receipts | Execution infrastructure |
+| **7** | Terminal Service, Update Manager | User-facing services |
+| **8** | Deterministic Jobs, Visual OS | Applications |
 
 The layered architecture ensures:
 
-- **Clear dependencies** — each layer only depends on layers below
-- **Isolation** — failures in higher layers don't crash lower layers
-- **Auditability** — all significant operations flow through Layer 2's authority spine
-- **Verifiability** — deterministic state derivation from Axiom
+- **Platform portability** - runs on WASM, QEMU, and bare metal from single codebase
+- **Zero-cost abstraction** - HAL compiles away to direct platform calls
+- **Clear dependencies** - each layer only depends on layers below
+- **Isolation** - failures in higher layers do not crash lower layers
+- **Auditability** - all significant operations flow through Layer 2's authority spine
+- **Verifiability** - deterministic state derivation from Axiom
 
 ---
 
-*← [Core Principles](02-core-principles.md) | [Comparative Analysis](04-comparative-analysis.md) →*
+*[Core Principles](02-core-principles.md) | [Comparative Analysis](04-comparative-analysis.md)*

@@ -1,0 +1,237 @@
+.terminalApp {
+  display: flex;
+  height: 100%;
+  font-family: 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+}
+
+/* Dashboard Panel */
+.dashboard {
+  width: 280px;
+  background: #12121e;
+  border-right: 1px solid #333;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.panel {
+  border-bottom: 1px solid #333;
+}
+
+.panelHeader {
+  background: #1a1a2e;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: #4ade80;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.badge {
+  background: #2a2a3a;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  color: #888;
+  font-weight: normal;
+}
+
+.panelContent {
+  padding: 10px 12px;
+}
+
+/* Process List */
+.processItem {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid #1a1a2e;
+  gap: 6px;
+}
+
+.processItem:last-child {
+  border-bottom: none;
+}
+
+.processPid {
+  color: #888;
+  width: 25px;
+  font-size: 11px;
+}
+
+.processName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.processMem {
+  color: #60a5fa;
+  width: 50px;
+  text-align: right;
+  font-size: 11px;
+}
+
+.processState {
+  width: 45px;
+  text-align: center;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.stateRunning {
+  background: #14532d;
+  color: #4ade80;
+}
+
+.stateBlocked {
+  background: #713f12;
+  color: #facc15;
+}
+
+.stateZombie {
+  background: #7f1d1d;
+  color: #f87171;
+}
+
+.btnKill {
+  background: transparent;
+  border: 1px solid #f87171;
+  color: #f87171;
+  padding: 2px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.15s;
+}
+
+.btnKill:hover {
+  background: #f87171;
+  color: #fff;
+}
+
+/* Quick Actions */
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.quickBtn {
+  background: #1a1a2e;
+  border: 1px solid #333;
+  color: #888;
+  padding: 5px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.quickBtn:hover {
+  background: #222238;
+  color: #eee;
+  border-color: #4ade80;
+}
+
+/* Memory Bar */
+.memBar {
+  height: 16px;
+  background: #1a1a2e;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+}
+
+.memSegment {
+  height: 100%;
+  transition: width 0.3s;
+}
+
+/* Axiom Stats */
+.axiomStats {
+  font-size: 11px;
+  color: #666;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Terminal Panel */
+.terminalPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.terminal {
+  flex: 1;
+  background: #0f0f1a;
+  padding: 12px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #c0c0c0;
+}
+
+.outputText {
+  color: #c0c0c0;
+}
+
+.inputEcho {
+  color: #60a5fa;
+}
+
+.errorText {
+  color: #f87171;
+}
+
+.successText {
+  color: #4ade80;
+}
+
+/* Input Area */
+.inputArea {
+  display: flex;
+  align-items: center;
+  background: #1a1a2e;
+  border-top: 1px solid #333;
+  padding: 10px 12px;
+  flex-shrink: 0;
+}
+
+.prompt {
+  color: #4ade80;
+  font-weight: 600;
+  margin-right: 8px;
+  user-select: none;
+}
+
+.input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.input::placeholder {
+  color: #555;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .dashboard {
+    display: none;
+  }
+}

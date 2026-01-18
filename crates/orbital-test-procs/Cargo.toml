@@ -1,0 +1,40 @@
+[package]
+name = "orbital-test-procs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Test processes for Orbital OS kernel validation"
+
+[lib]
+# Library provides shared types and utilities
+name = "orbital_test_procs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "memhog"
+path = "src/bin/memhog.rs"
+
+[[bin]]
+name = "sender"
+path = "src/bin/sender.rs"
+
+[[bin]]
+name = "receiver"
+path = "src/bin/receiver.rs"
+
+[[bin]]
+name = "pingpong"
+path = "src/bin/pingpong.rs"
+
+[[bin]]
+name = "idle"
+path = "src/bin/idle.rs"
+
+[dependencies]
+orbital-process.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+orbital-wasm-rt.workspace = true
+
+[features]
+default = []

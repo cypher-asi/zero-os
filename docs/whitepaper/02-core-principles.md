@@ -1,4 +1,4 @@
-# Orbital OS — Core Principles
+# Orbital OS - Core Principles
 
 **Version:** 1.0  
 **Status:** Whitepaper  
@@ -8,7 +8,7 @@
 
 ## Overview
 
-Orbital OS is built upon seven foundational invariants. These are not guidelines or best practices — they are **non-negotiable architectural constraints** that must hold at all times.
+Orbital OS is built upon seven foundational invariants. These are not guidelines or best practices - they are **non-negotiable architectural constraints** that must hold at all times.
 
 Violation of any invariant constitutes system failure.
 
@@ -88,11 +88,11 @@ Control state answers: *"Who can do what? What exists? What is authorized?"*
 The reduction function must be:
 
 ```
-reduce : Axiom → ControlState
+reduce : Axiom -> ControlState
 
 Properties:
   - Pure: No side effects
-  - Deterministic: Same input → same output
+  - Deterministic: Same input -> same output
   - Total: Defined for all valid Axiom instances
   - Incremental: Can be computed entry-by-entry
 ```
@@ -122,27 +122,20 @@ The key insight: **execution nondeterminism is acceptable as long as authority r
 ### The Two Realms
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   EXECUTION REALM                       │
-│                                                         │
-│  • Parallel, preemptive, nondeterministic              │
-│  • Scheduling order varies                              │
-│  • Interrupt timing varies                              │
-│  • Cache behavior varies                                │
-│  • All work is tentative (proposals)                   │
-│                                                         │
-└────────────────────────┬────────────────────────────────┘
-                         │ Proposals
-                         ▼
-┌─────────────────────────────────────────────────────────┐
-│                   AUTHORITY REALM                       │
-│                                                         │
-│  • Sequential, deterministic, auditable                │
-│  • Axiom imposes total order                           │
-│  • Same Axiom → same state (always)                    │
-│  • This is what verification audits                    │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+EXECUTION REALM
+  - Parallel, preemptive, nondeterministic
+  - Scheduling order varies
+  - Interrupt timing varies
+  - Cache behavior varies
+  - All work is tentative (proposals)
+        |
+        | Proposals
+        v
+AUTHORITY REALM
+  - Sequential, deterministic, auditable
+  - Axiom imposes total order
+  - Same Axiom -> same state (always)
+  - This is what verification audits
 ```
 
 ### Allowed Nondeterminism
@@ -197,7 +190,7 @@ An effect is any action that:
 2. Process submits proposal P describing E
 3. Policy Engine evaluates P against current policy
 4. If approved: Proposal P enters Axiom sequencer
-5. Sequencer accepts P → becomes Axiom entry C
+5. Sequencer accepts P -> becomes Axiom entry C
 6. Entry C authorizes effect E
 7. Effect E is materialized
 8. Receipt R is committed to Axiom
@@ -230,24 +223,24 @@ Every meaningful action follows:
 
 ```
 Phase 1: Pre-Commit (Proposal)
-├── Work is tentative
-├── Effects are prepared but not executed
-├── Crash here → work is lost (acceptable)
-└── Produces proposal for Policy Engine
+  - Work is tentative
+  - Effects are prepared but not executed
+  - Crash here -> work is lost (acceptable)
+  - Produces proposal for Policy Engine
 
 Phase 2: Commit
-├── Policy Engine evaluates proposal
-├── If approved: submitted to Axiom sequencer
-├── Sequencer orders and accepts/rejects
-├── Accepted proposals become Axiom entries
-└── Crash here → entry either committed or not (atomic)
+  - Policy Engine evaluates proposal
+  - If approved: submitted to Axiom sequencer
+  - Sequencer orders and accepts/rejects
+  - Accepted proposals become Axiom entries
+  - Crash here -> entry either committed or not (atomic)
 
 Phase 3: Effect Materialization
-├── Axiom entry authorizes effects
-├── Effects are executed
-├── Effects MUST be idempotent (safe to retry)
-├── Crash here → retry from last committed receipt
-└── Completion produces receipt
+  - Axiom entry authorizes effects
+  - Effects are executed
+  - Effects MUST be idempotent (safe to retry)
+  - Crash here -> retry from last committed receipt
+  - Completion produces receipt
 ```
 
 ### Idempotency Requirement
@@ -274,7 +267,7 @@ The Axiom uses write-ahead logging with:
 
 ### Statement
 
-> Any computation whose result becomes authoritative MUST be verifiable. Verification MUST be possible using only: content-addressed canonical inputs, pinned execution environment identity, explicit determinism declaration, and committed receipts binding inputs → outputs.
+> Any computation whose result becomes authoritative MUST be verifiable. Verification MUST be possible using only: content-addressed canonical inputs, pinned execution environment identity, explicit determinism declaration, and committed receipts binding inputs to outputs.
 
 ### Rationale
 
@@ -287,7 +280,7 @@ If results cannot be verified, they cannot be trusted. Supply-chain attacks, com
 | **Content-addressed inputs** | Immutable, verifiable input identity |
 | **Pinned environment** | Known, reproducible execution context |
 | **Determinism declaration** | Explicit contract of reproducibility |
-| **Receipt** | Binding commitment of inputs → outputs |
+| **Receipt** | Binding commitment of inputs to outputs |
 
 ### Verification Protocol
 
@@ -343,26 +336,23 @@ Identity is foundational to authorization. Without cryptographic identity:
 ### Identity Hierarchy
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    IDENTITY MODEL                       │
-│                                                         │
-│  Root Identity (System)                                 │
-│  └── Organization Identity                              │
-│      ├── User Identity                                  │
-│      │   └── Credential (derived keys)                  │
-│      │   └── Credential (derived keys)                  │
-│      ├── Service Identity                               │
-│      │   └── Service Keys (derived)                     │
-│      └── Node Identity                                  │
-│          └── Node Keys (derived)                        │
-│                                                         │
-│  Each identity has:                                     │
-│  • Unique identifier (content-addressed from public key)│
-│  • Derivation path from root                           │
-│  • Policy governing key usage                           │
-│  • Audit trail of operations                           │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+IDENTITY MODEL
+
+Root Identity (System)
+  Organization Identity
+    User Identity
+      Credential (derived keys)
+      Credential (derived keys)
+    Service Identity
+      Service Keys (derived)
+    Node Identity
+      Node Keys (derived)
+
+Each identity has:
+  - Unique identifier (content-addressed from public key)
+  - Derivation path from root
+  - Policy governing key usage
+  - Audit trail of operations
 ```
 
 ### Key Derivation Model
@@ -386,8 +376,8 @@ struct KeyPath {
 ```
 
 **Properties:**
-- **Deterministic**: Same root + path → same key, always
-- **Hierarchical**: Parent path doesn't reveal child keys
+- **Deterministic**: Same root + path -> same key, always
+- **Hierarchical**: Parent path does not reveal child keys
 - **Never stored**: Keys derived on-demand, used, then discarded
 - **Audit-friendly**: Derivation path recorded with every operation
 
@@ -396,20 +386,15 @@ struct KeyPath {
 All signing operations require policy approval:
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Request   │────▶│   Policy    │────▶│     Key     │
-│ (what, who, │     │   Engine    │     │  Derivation │
-│   why)      │     │             │     │   Service   │
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │                   │
-                    ┌──────┴──────┐            │
-                    │ Policy      │            │
-                    │ Decision    │            ▼
-                    │ (allow/deny)│     ┌─────────────┐
-                    │ recorded in │     │   Secure    │
-                    │ Axiom       │     │  Boundary   │
-                    └─────────────┘     │  (signing)  │
-                                        └─────────────┘
+Request         Policy          Key
+(what, who, ->  ENGINE      ->  Derivation
+ why)                           Service
+                    |               |
+              Policy Decision       |
+              (allow/deny)          v
+              recorded in       Secure
+              Axiom             Boundary
+                                (signing)
 ```
 
 ### Secure Boundary
@@ -496,7 +481,7 @@ From these principles, several design decisions follow necessarily:
 
 ### Corollary 1: Minimal Kernel
 
-The kernel cannot contain Axiom logic, filesystem code, or network stacks — these must be auditable user-space services.
+The kernel cannot contain Axiom logic, filesystem code, or network stacks - these must be auditable user-space services.
 
 ### Corollary 2: Capability-Based Security
 
@@ -524,4 +509,4 @@ Cryptographic identity (I7) requires a Key Derivation Service to derive and use 
 
 ---
 
-*← [Background](01-background.md) | [Architecture Overview](03-architecture-overview.md) →*
+*[Background](01-background.md) | [Architecture Overview](03-architecture-overview.md)*

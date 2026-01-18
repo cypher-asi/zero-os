@@ -1,0 +1,12 @@
+[package]
+name = "orbital-wasm-rt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "WASM-specific runtime for Orbital OS processes"
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []

@@ -1,0 +1,146 @@
+.window {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: #0f0f1a;
+  border: 1px solid #333;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.window.focused {
+  border-color: #4ade80;
+  box-shadow: 0 8px 32px rgba(74, 222, 128, 0.15);
+}
+
+.titleBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: #1a1a2e;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.focused .titleBar {
+  background: #222238;
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focused .title {
+  color: #e0e0e0;
+}
+
+.buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: transparent;
+  transition: color 0.15s;
+}
+
+.btn:hover {
+  color: #000;
+}
+
+.minimize {
+  background: #facc15;
+}
+
+.maximize {
+  background: #4ade80;
+}
+
+.close {
+  background: #f87171;
+}
+
+.content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Resize handles - invisible but show cursor on hover */
+.resizeHandle {
+  position: absolute;
+  z-index: 10;
+}
+
+/* Edge handles - leave space for larger corner handles (12px) */
+.resizeN {
+  top: 0;
+  left: 12px;
+  right: 12px;
+  cursor: ns-resize;
+}
+
+.resizeS {
+  bottom: 0;
+  left: 12px;
+  right: 12px;
+  cursor: ns-resize;
+}
+
+.resizeE {
+  top: 12px;
+  right: 0;
+  bottom: 12px;
+  cursor: ew-resize;
+}
+
+.resizeW {
+  top: 12px;
+  left: 0;
+  bottom: 12px;
+  cursor: ew-resize;
+}
+
+/* Corner handles */
+.resizeNE {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.resizeNW {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.resizeSE {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.resizeSW {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}

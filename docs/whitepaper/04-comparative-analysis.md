@@ -1,4 +1,4 @@
-# Orbital OS — Comparative Analysis
+# Orbital OS - Comparative Analysis
 
 **Version:** 1.0  
 **Status:** Whitepaper  
@@ -10,10 +10,10 @@
 
 This document provides a detailed technical comparison between Orbital OS and existing operating system approaches. We examine four categories:
 
-1. **Verified Microkernels** — seL4, L4, QNX, Mach
-2. **Unix-like Systems** — Linux, BSD, Plan 9
-3. **Deterministic Systems** — Urbit
-4. **Key Management Systems** — Turnkey, HSMs, Cloud KMS
+1. **Verified Microkernels** - seL4, L4, QNX, Mach
+2. **Unix-like Systems** - Linux, BSD, Plan 9
+3. **Deterministic Systems** - Urbit
+4. **Key Management Systems** - Turnkey, HSMs, Cloud KMS
 
 For each category, we analyze: architecture, verification model, crash safety, performance characteristics, and suitability for the Orbital goals.
 
@@ -29,21 +29,15 @@ seL4 is a formally verified microkernel with machine-checked proofs of correctne
 **Architecture:**
 
 ```
-┌─────────────────────────────────────────────────┐
-│              USER SPACE                         │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐           │
-│  │  Apps   │ │ Drivers │ │Services │           │
-│  └─────────┘ └─────────┘ └─────────┘           │
-└─────────────────────────────────────────────────┘
-                      │
-┌─────────────────────────────────────────────────┐
-│              seL4 KERNEL                        │
-│  • Capability-based access control             │
-│  • IPC primitives                              │
-│  • Memory management                           │
-│  • Scheduling                                  │
-│  (Formally verified: ~10K lines of C)          │
-└─────────────────────────────────────────────────┘
+USER SPACE
+  [Apps]  [Drivers]  [Services]
+
+seL4 KERNEL
+  - Capability-based access control
+  - IPC primitives
+  - Memory management
+  - Scheduling
+  (Formally verified: ~10K lines of C)
 ```
 
 **What seL4 Proves:**
@@ -143,20 +137,14 @@ Linux is the dominant server/embedded OS kernel with massive hardware support an
 **Architecture:**
 
 ```
-┌─────────────────────────────────────────────────┐
-│              USER SPACE                         │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐           │
-│  │  Apps   │ │ Daemons │ │  Shells │           │
-│  └─────────┘ └─────────┘ └─────────┘           │
-└─────────────────────────────────────────────────┘
-                      │ syscalls
-┌─────────────────────────────────────────────────┐
-│              LINUX KERNEL                       │
-│  ┌─────────────────────────────────────────┐   │
-│  │  VFS │ Net │ Scheduler │ MM │ Drivers  │   │
-│  └─────────────────────────────────────────┘   │
-│  (Monolithic: ~30M+ lines of code)             │
-└─────────────────────────────────────────────────┘
+USER SPACE
+  [Apps]  [Daemons]  [Shells]
+        |
+        | syscalls
+        v
+LINUX KERNEL
+  [VFS | Net | Scheduler | MM | Drivers]
+  (Monolithic: ~30M+ lines of code)
 ```
 
 **What Linux Provides:**
@@ -168,7 +156,7 @@ Linux is the dominant server/embedded OS kernel with massive hardware support an
 
 **What Linux Lacks:**
 
-| Gap | Description |
+| Gap | Consequence |
 |-----|-------------|
 | Authoritative history | Logs are advisory, may be incomplete/tampered |
 | Deterministic state | Cannot derive state from logs |
@@ -182,34 +170,30 @@ Linux is the dominant server/embedded OS kernel with massive hardware support an
 
 ```
 Linux Logging:
-┌──────────────────────────────────────────────────────────┐
-│  /var/log/syslog:                                        │
-│    Jan 10 12:00:01 host kernel: [INFO] Something happened│
-│    Jan 10 12:00:02 host app: User logged in              │
-│    (may be rotated, filtered, or modified)               │
-│                                                          │
-│  • Advisory only                                         │
-│  • No integrity guarantee                                │
-│  • Cannot reconstruct state                              │
-│  • Sampling for audit                                    │
-└──────────────────────────────────────────────────────────┘
+  /var/log/syslog:
+    Jan 10 12:00:01 host kernel: [INFO] Something happened
+    Jan 10 12:00:02 host app: User logged in
+    (may be rotated, filtered, or modified)
+    
+    - Advisory only
+    - No integrity guarantee
+    - Cannot reconstruct state
+    - Sampling for audit
 
 Orbital Axiom:
-┌──────────────────────────────────────────────────────────┐
-│  Axiom:                                                  │
-│    Entry 1: [hash] PolicyChange{...} ─────────────────▶ │
-│    Entry 2: [hash] FileCreate{by: alice}  ────────────▶ │
-│    Entry 3: [hash] JobComplete{...}  ─────────────────▶ │
-│                                                          │
-│  • Authoritative (defines reality)                       │
-│  • Hash-chained (integrity proven)                       │
-│  • State = reduce(Axiom)                                 │
-│  • Complete audit trail with identity                    │
-└──────────────────────────────────────────────────────────┘
+  Axiom:
+    Entry 1: [hash] PolicyChange{...}
+    Entry 2: [hash] FileCreate{by: alice}
+    Entry 3: [hash] JobComplete{...}
+    
+    - Authoritative (defines reality)
+    - Hash-chained (integrity proven)
+    - State = reduce(Axiom)
+    - Complete audit trail with identity
 ```
 
 **Key Insight:**
-> Linux provides "probably okay" — Orbital provides "provably correct."
+> Linux provides "probably okay" - Orbital provides "provably correct."
 
 ---
 
@@ -237,21 +221,19 @@ BSD systems are Unix derivatives known for clean code, security focus (OpenBSD),
 ### 2.3 Plan 9
 
 **Overview:**
-Plan 9 from Bell Labs represents "Unix done right" — everything is a file, per-process namespaces, network transparency.
+Plan 9 from Bell Labs represents "Unix done right" - everything is a file, per-process namespaces, network transparency.
 
 **Architecture:**
 
 ```
-┌─────────────────────────────────────────────────┐
-│              Per-Process Namespace              │
-│                                                 │
-│  /dev/    → device servers                      │
-│  /net/    → network stack                       │
-│  /proc/   → process control                     │
-│  /srv/    → service connections                 │
-│                                                 │
-│  (Everything is a file server)                  │
-└─────────────────────────────────────────────────┘
+Per-Process Namespace
+
+  /dev/    -> device servers
+  /net/    -> network stack
+  /proc/   -> process control
+  /srv/    -> service connections
+
+  (Everything is a file server)
 ```
 
 **What Plan 9 Got Right:**
@@ -262,9 +244,9 @@ Plan 9 from Bell Labs represents "Unix done right" — everything is a file, per
 
 **What Plan 9 Lacks:**
 
-| Gap | Description |
+| Gap | Consequence |
 |-----|-------------|
-| Authoritative history | None — namespace mutations are ephemeral |
+| Authoritative history | None - namespace mutations are ephemeral |
 | Transaction semantics | Operations are not atomic |
 | Crash recovery | Same as Unix |
 | Verification | None |
@@ -297,26 +279,21 @@ Urbit is a personal server with a deterministic event log and functional operati
 **Architecture:**
 
 ```
-┌─────────────────────────────────────────────────┐
-│                    ARVO                          │
-│           (Purely functional OS)                 │
-│                                                 │
-│  state' = apply(state, event)                   │
-│                                                 │
-│  • Deterministic                                │
-│  • Replayable                                   │
-│  • Single-threaded                              │
-└─────────────────────────────────────────────────┘
-                      │
-┌─────────────────────────────────────────────────┐
-│                  EVENT LOG                       │
-│                                                 │
-│  Event 1 ─────────────────────────────────────▶│
-│  Event 2 ─────────────────────────────────────▶│
-│  Event N ─────────────────────────────────────▶│
-│                                                 │
-│  (Append-only, deterministic replay)            │
-└─────────────────────────────────────────────────┘
+ARVO
+  (Purely functional OS)
+  
+  state' = apply(state, event)
+  
+  - Deterministic
+  - Replayable
+  - Single-threaded
+
+EVENT LOG
+  Event 1 ...
+  Event 2 ...
+  Event N ...
+  
+  (Append-only, deterministic replay)
 ```
 
 **What Urbit Achieves:**
@@ -349,7 +326,7 @@ Urbit is a personal server with a deterministic event log and functional operati
 | Policy engine | No | Yes |
 
 **Key Insight:**
-> Urbit proves deterministic event logs are feasible. Orbital proves they don't require sacrificing parallelism.
+> Urbit proves deterministic event logs are feasible. Orbital proves they do not require sacrificing parallelism.
 
 The fundamental difference: Urbit makes execution deterministic. Orbital makes authority deterministic while allowing nondeterministic execution.
 
@@ -365,32 +342,23 @@ Turnkey provides secure key management infrastructure with policy-controlled sig
 **Turnkey Architecture:**
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      TURNKEY INFRASTRUCTURE                      │
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                   POLICY ENGINE ENCLAVE                    │ │
-│  │  • Request parsing                                         │ │
-│  │  • Authentication                                          │ │
-│  │  • Authorization (policy evaluation)                       │ │
-│  │  • Verifiable policy decisions                             │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                              │                                   │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                   SIGNING ENCLAVE                          │ │
-│  │  • Key derivation                                          │ │
-│  │  • Cryptographic operations                                │ │
-│  │  • Attestation                                             │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                                                                 │
-│  ┌───────────────────────────────────────────────────────────┐ │
-│  │                   QUORUM OS                                │ │
-│  │  • Minimal OS for enclaves                                 │ │
-│  │  • Verifiable (reproducible builds)                        │ │
-│  │  • Minimal TCB                                             │ │
-│  └───────────────────────────────────────────────────────────┘ │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+TURNKEY INFRASTRUCTURE
+
+  POLICY ENGINE ENCLAVE
+    - Request parsing
+    - Authentication
+    - Authorization (policy evaluation)
+    - Verifiable policy decisions
+
+  SIGNING ENCLAVE
+    - Key derivation
+    - Cryptographic operations
+    - Attestation
+
+  QUORUM OS
+    - Minimal OS for enclaves
+    - Verifiable (reproducible builds)
+    - Minimal TCB
 ```
 
 **What Turnkey Achieves:**
@@ -402,10 +370,10 @@ Turnkey provides secure key management infrastructure with policy-controlled sig
 - Minimal trusted computing base
 
 **Turnkey's Key Innovations:**
-1. **Verifiable Policy Decisions** — Every policy evaluation can be proven correct
-2. **Enclave-based isolation** — Keys never leave secure boundary
-3. **Quorum Sets** — Multi-party approval for sensitive operations
-4. **Minimal TCB** — QuorumOS reduces attack surface
+1. **Verifiable Policy Decisions** - Every policy evaluation can be proven correct
+2. **Enclave-based isolation** - Keys never leave secure boundary
+3. **Quorum Sets** - Multi-party approval for sensitive operations
+4. **Minimal TCB** - QuorumOS reduces attack surface
 
 **Turnkey vs. Orbital:**
 
@@ -442,7 +410,7 @@ HSMs are physical devices that safeguard cryptographic keys and perform signing 
 
 **Comparison:**
 
-| Aspect | HSM | Orbital Key Service |
+| Aspect | HSM | Orbital Key Derivation Service |
 |--------|-----|---------------------|
 | Key protection | Hardware tamper-resistant | Software boundary + optional hardware |
 | Policy | Limited, static | Full policy engine, dynamic |
@@ -463,7 +431,7 @@ Cloud providers offer key management as a service with API-based access.
 
 **Comparison:**
 
-| Aspect | Cloud KMS | Orbital Key Service |
+| Aspect | Cloud KMS | Orbital Key Derivation Service |
 |--------|-----------|---------------------|
 | Key protection | Provider's infrastructure | Local secure boundary |
 | Trust model | Trust the cloud provider | Trust local system |
@@ -488,19 +456,15 @@ Blockchain VMs execute smart contracts with global consensus on state transition
 **Architecture:**
 
 ```
-┌─────────────────────────────────────────────────┐
-│               BLOCKCHAIN NETWORK                 │
-│                                                 │
-│  Node 1 ◄────────────────────────────▶ Node 2  │
-│     │              Consensus              │     │
-│     ▼                                     ▼     │
-│  ┌─────────┐                         ┌─────────┐│
-│  │   VM    │                         │   VM    ││
-│  │ (state) │                         │ (state) ││
-│  └─────────┘                         └─────────┘│
-│                                                 │
-│  Global consensus on every state transition     │
-└─────────────────────────────────────────────────┘
+BLOCKCHAIN NETWORK
+
+  Node 1 <-------> Node 2
+     |    Consensus    |
+     v                 v
+  [VM]              [VM]
+  (state)           (state)
+
+  Global consensus on every state transition
 ```
 
 **What Blockchains Achieve:**
@@ -543,62 +507,62 @@ Blockchain VMs execute smart contracts with global consensus on state transition
 
 | Feature | seL4 | Linux | Plan 9 | Urbit | Turnkey | Orbital |
 |---------|------|-------|--------|-------|---------|---------|
-| Minimal kernel | ✓ | ✗ | ✗ | N/A | N/A | ✓ |
-| Formal kernel verification | ✓ | ✗ | ✗ | ✗ | ✗ | Optional |
-| Authoritative history | ✗ | ✗ | ✗ | ✓ | Partial | ✓ |
-| Deterministic state | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ |
-| Parallel execution | ✓ | ✓ | ✓ | ✗ | N/A | ✓ |
-| Bare metal support | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ |
-| Crash safety | App-level | FS-level | FS-level | ✓ | N/A | ✓ |
-| Computation verification | ✗ | ✗ | ✗ | ✓ | Partial | ✓ |
-| User-space drivers | ✓ | Limited | ✓ | N/A | N/A | ✓ |
-| Capability security | ✓ | Limited | ✗ | ✗ | N/A | ✓ |
-| Policy engine | ✗ | Scattered | ✗ | ✗ | ✓ | ✓ |
-| Crypto identity | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
-| Key management | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
-| Verifiable policy | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Minimal kernel | Yes | No | No | N/A | N/A | Yes |
+| Formal kernel verification | Yes | No | No | No | No | Optional |
+| Authoritative history | No | No | No | Yes | Partial | Yes |
+| Deterministic state | No | No | No | Yes | No | Yes |
+| Parallel execution | Yes | Yes | Yes | No | N/A | Yes |
+| Bare metal support | Yes | Yes | Yes | No | No | Yes |
+| Crash safety | App-level | FS-level | FS-level | Yes | N/A | Yes |
+| Computation verification | No | No | No | Yes | Partial | Yes |
+| User-space drivers | Yes | Limited | Yes | N/A | N/A | Yes |
+| Capability security | Yes | Limited | No | No | N/A | Yes |
+| Policy engine | No | Scattered | No | No | Yes | Yes |
+| Crypto identity | No | No | No | Yes | Yes | Yes |
+| Key management | No | No | No | No | Yes | Yes |
+| Verifiable policy | No | No | No | No | Yes | Yes |
 
 ### 6.2 Trade-off Analysis
 
 ```
-                    Verification ──────────────────────▶
+                    Verification
                     Low                              High
-                     │                                 │
-           ┌─────────┼─────────────────────────────────┤
-    High   │         │                                 │
-           │  Linux  │                          Orbital│
-           │  BSD    │                                 │
-Performance│         │                                 │
-           │  seL4   │                                 │
-           │  L4     │                                 │
-           │         │                                 │
-           ├─────────┼─────────────────────────────────┤
-    Low    │         │      Urbit                      │
-           │         │      Blockchain                 │
-           │         │                                 │
-           └─────────┴─────────────────────────────────┘
+                     |                                 |
+           +---------+---------------------------------+
+    High   |         |                                 |
+           |  Linux  |                          Orbital|
+           |  BSD    |                                 |
+Performance|         |                                 |
+           |  seL4   |                                 |
+           |  L4     |                                 |
+           |         |                                 |
+           +---------+---------------------------------+
+    Low    |         |      Urbit                      |
+           |         |      Blockchain                 |
+           |         |                                 |
+           +---------+---------------------------------+
 ```
 
 Orbital occupies the unique position of **high performance + high verification**.
 
-### 6.3 Identity & Key Management Comparison
+### 6.3 Identity and Key Management Comparison
 
 ```
-                    Policy Richness ───────────────────▶
+                    Policy Richness
                     Limited                         Full
-                     │                                 │
-           ┌─────────┼─────────────────────────────────┤
-   High    │   HSM   │                                 │
-  Security │         │                         Orbital │
-           │ Cloud   │                                 │
-           │  KMS    │                         Turnkey │
-           │         │                                 │
-           ├─────────┼─────────────────────────────────┤
-   Low     │         │                                 │
-           │  File-  │                                 │
-           │  based  │      App-specific               │
-           │  keys   │                                 │
-           └─────────┴─────────────────────────────────┘
+                     |                                 |
+           +---------+---------------------------------+
+   High    |   HSM   |                                 |
+  Security |         |                         Orbital |
+           | Cloud   |                                 |
+           |  KMS    |                         Turnkey |
+           |         |                                 |
+           +---------+---------------------------------+
+   Low     |         |                                 |
+           |  File-  |                                 |
+           |  based  |      App-specific               |
+           |  keys   |                                 |
+           +---------+---------------------------------+
 ```
 
 ---
@@ -609,7 +573,7 @@ Orbital occupies the unique position of **high performance + high verification**
 
 | System | Verification Approach | Limitation |
 |--------|----------------------|------------|
-| seL4 | Formal proof of kernel | Doesn't extend to applications |
+| seL4 | Formal proof of kernel | Does not extend to applications |
 | Linux | Trust + audit logs | Logs are not authoritative |
 | Urbit | Deterministic replay | Sacrifices parallelism |
 | Blockchain | N-way redundant execution | Sacrifices performance |
@@ -638,7 +602,7 @@ Orbital occupies the unique position of **high performance + high verification**
 | Turnkey | N/A (stateless) | N/A |
 | **Orbital** | **Three-phase + idempotent** | **Semantic consistency, local** |
 
-### 7.4 For Identity & Key Management
+### 7.4 For Identity and Key Management
 
 | System | Identity Model | Key Management |
 |--------|---------------|----------------|
@@ -674,8 +638,8 @@ What Orbital **avoids**:
 | **Cloud KMS** | Provider trust, network dependency |
 | **All** | Opacity of system behavior |
 
-**The result**: A system that is verifiable like a blockchain, performant like Linux, composable like Plan 9, secure like seL4, and key-safe like Turnkey — without the limitations of any.
+**The result**: A system that is verifiable like a blockchain, performant like Linux, composable like Plan 9, secure like seL4, and key-safe like Turnkey - without the limitations of any.
 
 ---
 
-*← [Architecture Overview](03-architecture-overview.md) | [Specifications →](../specs/README.md)*
+*[Architecture Overview](03-architecture-overview.md) | [Specifications](../spec/README.md) | [Roadmap](../roadmap/README.md)*

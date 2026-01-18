@@ -1,0 +1,18 @@
+[package]
+name = "orbital-kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core kernel for Orbital OS"
+
+[features]
+default = []
+std = []
+
+[dependencies]
+orbital-axiom.workspace = true
+orbital-hal.workspace = true
+serde = { workspace = true, optional = true }
+
+[dev-dependencies]
+orbital-hal-mock.workspace = true
