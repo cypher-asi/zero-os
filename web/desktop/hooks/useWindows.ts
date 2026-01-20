@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSupervisor } from './useSupervisor';
+import { useDesktopController, useSupervisor } from './useSupervisor';
 
 // =============================================================================
 // Window Types
@@ -16,6 +16,8 @@ export interface WindowInfo {
   state: 'normal' | 'minimized' | 'maximized' | 'fullscreen';
   focused: boolean;
   zOrder: number;
+  opacity: number;
+  contentInteractive: boolean;
   screenRect: {
     x: number;
     y: number;
@@ -46,15 +48,15 @@ export interface WindowData {
 
 // Hook to get all windows data
 export function useWindows(): WindowData[] {
-  const supervisor = useSupervisor();
+  const desktop = useDesktopController();
   const [windows, setWindows] = useState<WindowData[]>([]);
 
   useEffect(() => {
-    if (!supervisor) return;
+    if (!desktop) return;
 
     const update = () => {
       try {
-        const json = supervisor.get_windows_json();
+        const json = desktop.get_windows_json();
         const parsed = JSON.parse(json) as WindowData[];
         setWindows(parsed);
       } catch (e) {
@@ -66,92 +68,105 @@ export function useWindows(): WindowData[] {
     update();
     const interval = setInterval(update, 100);
     return () => clearInterval(interval);
-  }, [supervisor]);
+  }, [desktop]);
 
   return windows;
 }
 
 // Hook to get focused window ID
 export function useFocusedWindow(): number | null {
-  const supervisor = useSupervisor();
+  const desktop = useDesktopController();
   const [focusedId, setFocusedId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!supervisor) return;
+    if (!desktop) return;
 
     const update = () => {
-      const id = supervisor.get_focused_window();
+      const id = desktop.get_focused_window();
       setFocusedId(id !== undefined ? Number(id) : null);
     };
 
     update();
     const interval = setInterval(update, 100);
     return () => clearInterval(interval);
-  }, [supervisor]);
+  }, [desktop]);
 
   return focusedId;
 }
 
 // Hook for window actions
 export function useWindowActions() {
+  const desktop = useDesktopController();
   const supervisor = useSupervisor();
 
   const createWindow = useCallback(
-    (title: string, x: number, y: number, w: number, h: number, appId: string) => {
-      if (!supervisor) return null;
-      return Number(supervisor.create_window(title, x, y, w, h, appId));
+    (title: string, x: number, y: number, w: number, h: number, appId: string, contentInteractive: boolean = false) => {
+      if (!desktop) return null;
+      return Number(desktop.create_window(title, x, y, w, h, appId, contentInteractive));
     },
-    [supervisor]
+    [desktop]
   );
 
   const closeWindow = useCallback(
     (id: number) => {
-      supervisor?.close_window(BigInt(id));
+      if (!desktop) return;
+      
+      // Get the process ID associated with this window (if any)
+      const processId = desktop.get_window_process_id(BigInt(id));
+      
+      // Close the window
+      desktop.close_window(BigInt(id));
+      
+      // Kill the associated process if it exists
+      if (processId !== undefined && supervisor) {
+        console.log(`[useWindows] Killing process ${processId} for window ${id}`);
+        supervisor.kill_process(Number(processId));
+      }
     },
-    [supervisor]
+    [desktop, supervisor]
   );
 
   const focusWindow = useCallback(
     (id: number) => {
-      supervisor?.focus_window(BigInt(id));
+      desktop?.focus_window(BigInt(id));
     },
-    [supervisor]
+    [desktop]
   );
 
   const panToWindow = useCallback(
     (id: number) => {
-      supervisor?.pan_to_window(BigInt(id));
+      desktop?.pan_to_window(BigInt(id));
     },
-    [supervisor]
+    [desktop]
   );
 
   const minimizeWindow = useCallback(
     (id: number) => {
-      supervisor?.minimize_window(BigInt(id));
+      desktop?.minimize_window(BigInt(id));
     },
-    [supervisor]
+    [desktop]
   );
 
   const maximizeWindow = useCallback(
     (id: number) => {
-      supervisor?.maximize_window(BigInt(id));
+      desktop?.maximize_window(BigInt(id));
     },
-    [supervisor]
+    [desktop]
   );
 
   const restoreWindow = useCallback(
     (id: number) => {
-      supervisor?.restore_window(BigInt(id));
+      desktop?.restore_window(BigInt(id));
     },
-    [supervisor]
+    [desktop]
   );
 
   const launchApp = useCallback(
     (appId: string) => {
-      if (!supervisor) return null;
-      return Number(supervisor.launch_app(appId));
+      if (!desktop) return null;
+      return Number(desktop.launch_app(appId));
     },
-    [supervisor]
+    [desktop]
   );
 
   return {

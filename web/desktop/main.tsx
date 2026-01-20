@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Desktop } from '../components/Desktop/Desktop';
-import { Supervisor } from './hooks/useSupervisor';
+import { Supervisor, DesktopController } from './hooks/useSupervisor';
 import '@cypher-asi/zui/styles';
 import '../styles/global.css';
 
@@ -27,14 +27,25 @@ function showError(message: string) {
 // Initialize the application
 async function init() {
   try {
-    showLoading('Loading WASM module...');
+    showLoading('Loading WASM modules...');
 
-    // Dynamic import of the WASM module
-    const { default: wasmInit, Supervisor: WasmSupervisor } = await import('../pkg/orbital_web.js');
-    await wasmInit();
+    // Load both WASM modules in parallel
+    const [supervisorModule, desktopModule] = await Promise.all([
+      import('../pkg/orbital_web.js'),
+      import('../pkg-desktop/orbital_desktop.js'),
+    ]);
+
+    // Initialize both modules
+    await Promise.all([
+      supervisorModule.default(),
+      desktopModule.default(),
+    ]);
 
     showLoading('Creating supervisor...');
-    const supervisor = new WasmSupervisor() as Supervisor;
+    const supervisor = new supervisorModule.Supervisor() as Supervisor;
+
+    showLoading('Creating desktop controller...');
+    const desktop = new desktopModule.DesktopController() as DesktopController;
 
     // Set up spawn callback for loading WASM processes
     supervisor.set_spawn_callback((procType: string, name: string) => {
@@ -89,6 +100,12 @@ async function init() {
       await supervisor.sync_axiom_log();
     }, 2000);
 
+    // Clean up all processes when page unloads/reloads
+    window.addEventListener('beforeunload', () => {
+      console.log('[main] Page unloading, cleaning up all processes...');
+      supervisor.kill_all_processes();
+    });
+
     // Render React app
     hideLoading();
 
@@ -99,7 +116,7 @@ async function init() {
 
     createRoot(root).render(
       <StrictMode>
-        <Desktop supervisor={supervisor} />
+        <Desktop supervisor={supervisor} desktop={desktop} />
       </StrictMode>
     );
   } catch (e) {

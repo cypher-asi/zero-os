@@ -1,57 +1,11 @@
 import { createContext, useContext } from 'react';
 
-// Type definition for the WASM Supervisor
-// This matches the wasm-bindgen exports from orbital-web
-export interface Supervisor {
-  // Desktop API
-  init_desktop(width: number, height: number): void;
-  resize_desktop(width: number, height: number): void;
-  desktop_pan(dx: number, dy: number): void;
-  desktop_zoom(factor: number, anchor_x: number, anchor_y: number): void;
-  get_window_screen_rects_json(): string;
-  create_window(title: string, x: number, y: number, w: number, h: number, app_id: string): bigint;
-  close_window(id: bigint): void;
-  focus_window(id: bigint): void;
-  pan_to_window(id: bigint): void;
-  move_window(id: bigint, x: number, y: number): void;
-  resize_window(id: bigint, w: number, h: number): void;
-  minimize_window(id: bigint): void;
-  maximize_window(id: bigint): void;
-  restore_window(id: bigint): void;
-  get_focused_window(): bigint | undefined;
-  get_windows_json(): string;
-  create_workspace(name: string): number;
-  switch_workspace(index: number): void;
-  get_workspaces_json(): string;
-  get_workspace_dimensions_json(): string;
-  get_active_workspace(): number;
-  get_active_workspace_background(): string;
-  is_workspace_transitioning(): boolean;
-  get_view_mode(): string;
-  is_in_void(): boolean;
-  enter_void(): void;
-  exit_void(workspace_index: number): void;
-  set_workspace_background(index: number, background_id: string): boolean;
-  set_active_workspace_background(background_id: string): boolean;
-  import_workspace_settings(json: string): boolean;
-  export_workspace_settings(): string;
-  start_window_resize(window_id: bigint, direction: string, x: number, y: number): void;
-  start_window_drag(window_id: bigint, x: number, y: number): void;
-  desktop_pointer_down(x: number, y: number, button: number, ctrl: boolean, shift: boolean): string;
-  desktop_pointer_move(x: number, y: number): string;
-  desktop_pointer_up(): string;
-  desktop_wheel(dx: number, dy: number, x: number, y: number, ctrl: boolean): string;
-  launch_app(app_id: string): bigint;
-  get_viewport_json(): string;
-  tick_desktop_transition(): boolean;
-  get_visual_active_workspace(): number;
-  is_animating(): boolean;
-  
-  // Unified frame tick - updates all animation state and returns complete frame data
-  // This is the preferred method for the render loop as it guarantees consistent state
-  tick_frame(): string;
+// =============================================================================
+// Supervisor Type - Kernel/Process management (from orbital-web)
+// =============================================================================
 
-  // Existing Supervisor API
+export interface Supervisor {
+  // Kernel API
   boot(): void;
   spawn_init(): void;
   send_input(input: string): void;
@@ -63,6 +17,8 @@ export interface Supervisor {
   poll_syscalls(): number;
   process_worker_messages(): number;
   deliver_pending_messages(): number;
+  kill_process(pid: number): void;
+  kill_all_processes(): void;
   get_uptime_ms(): number;
   get_process_count(): number;
   get_total_memory(): number;
@@ -78,13 +34,88 @@ export interface Supervisor {
   get_syslog_json(count: number): string;
 }
 
-// Context for the Supervisor instance
+// =============================================================================
+// DesktopController Type - Desktop/Window management (from orbital-desktop)
+// =============================================================================
+
+export interface DesktopController {
+  // Initialization
+  init(width: number, height: number): void;
+  resize(width: number, height: number): void;
+
+  // Viewport
+  pan(dx: number, dy: number): void;
+  zoom_at(factor: number, anchor_x: number, anchor_y: number): void;
+  get_viewport_json(): string;
+
+  // Windows
+  create_window(title: string, x: number, y: number, w: number, h: number, app_id: string, content_interactive: boolean): bigint;
+  close_window(id: bigint): void;
+  get_window_process_id(id: bigint): bigint | undefined;
+  focus_window(id: bigint): void;
+  move_window(id: bigint, x: number, y: number): void;
+  resize_window(id: bigint, w: number, h: number): void;
+  minimize_window(id: bigint): void;
+  maximize_window(id: bigint): void;
+  restore_window(id: bigint): void;
+  get_focused_window(): bigint | undefined;
+  pan_to_window(id: bigint): void;
+  get_windows_json(): string;
+  get_window_screen_rects_json(): string;
+  launch_app(app_id: string): bigint;
+
+  // Desktops (workspaces)
+  create_desktop(name: string): number;
+  switch_desktop(index: number): void;
+  get_active_desktop(): number;
+  get_visual_active_desktop(): number;
+  get_desktops_json(): string;
+  get_desktop_dimensions_json(): string;
+
+  // Void mode
+  get_view_mode(): string;
+  is_in_void(): boolean;
+  enter_void(): void;
+  exit_void(desktop_index: number): void;
+
+  // Animation state
+  is_animating(): boolean;
+  is_animating_viewport(): boolean;
+  is_transitioning(): boolean;
+  tick_transition(): boolean;
+
+  // Input handling
+  pointer_down(x: number, y: number, button: number, ctrl: boolean, shift: boolean): string;
+  pointer_move(x: number, y: number): string;
+  pointer_up(): string;
+  wheel(dx: number, dy: number, x: number, y: number, ctrl: boolean): string;
+  start_window_resize(window_id: bigint, direction: string, x: number, y: number): void;
+  start_window_drag(window_id: bigint, x: number, y: number): void;
+
+  // Unified frame tick
+  tick_frame(): string;
+}
+
+// =============================================================================
+// Contexts and Hooks
+// =============================================================================
+
+// Supervisor context (kernel operations)
 export const SupervisorContext = createContext<Supervisor | null>(null);
+
+// DesktopController context (desktop operations)
+export const DesktopControllerContext = createContext<DesktopController | null>(null);
 
 // Hook to access the Supervisor
 export function useSupervisor(): Supervisor | null {
   return useContext(SupervisorContext);
 }
 
-// Provider component
+// Hook to access the DesktopController
+export function useDesktopController(): DesktopController | null {
+  return useContext(DesktopControllerContext);
+}
+
+// Provider components
 export const SupervisorProvider = SupervisorContext.Provider;
+export const DesktopControllerProvider = DesktopControllerContext.Provider;

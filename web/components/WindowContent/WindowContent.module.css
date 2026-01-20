@@ -6,7 +6,10 @@
   position: absolute;
   left: 0;
   top: 0;
-  will-change: transform, width, height;
+  will-change: transform, width, height, opacity;
+  
+  /* CRITICAL: Disable ALL CSS transitions - opacity is controlled by Rust for smooth crossfades */
+  transition: none !important;
   
   /* Isolation for layout optimization - NOT paint (would clip border-future pseudo-elements) */
   contain: layout style;

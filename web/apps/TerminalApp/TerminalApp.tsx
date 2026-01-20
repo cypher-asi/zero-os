@@ -45,7 +45,7 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [processes, setProcesses] = useState<ProcessInfo[]>([]);
   const [axiomStats, setAxiomStats] = useState<AxiomStats | null>(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(true);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Set up console callback
   useEffect(() => {
@@ -109,6 +109,12 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter') {
         handleSubmit();
+      } else if (e.key === 'Escape') {
+        // Blur the input to allow desktop keyboard shortcuts
+        e.preventDefault();
+        if (inputRef.current) {
+          inputRef.current.blur();
+        }
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (commandHistory.length > 0) {
@@ -182,6 +188,7 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
         title="Dashboard"
         showToggle
         transparent
+        noBorder
         defaultSize={280}
         minSize={200}
         maxSize={400}
@@ -191,6 +198,7 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
             title="Processes"
             count={processes.length}
             defaultOpen
+            noBorder
             className={styles.collapsibleGroup}
           >
             <div className={styles.panelContent}>
@@ -231,6 +239,7 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
             title="Memory"
             stats={formatBytes(processes.reduce((s, p) => s + p.memory, 0))}
             defaultOpen
+            noBorder
             className={styles.collapsibleGroup}
           >
             <div className={styles.panelContent}>
@@ -256,6 +265,7 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
               title="Axiom"
               stats={`${axiomStats.commits} commits`}
               defaultOpen
+              noBorder
               className={styles.collapsibleGroup}
             >
               <div className={styles.panelContent}>

@@ -40,3 +40,8 @@
   pointer-events: none;
   z-index: 2;
 }
+
+.backgroundMenu {
+  /* Container for the background selection menu */
+  /* All styling handled by ZUI Menu component */
+}

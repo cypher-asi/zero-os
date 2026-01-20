@@ -68,25 +68,6 @@ body {
   }
 }
 
-/* Window fade animations for workspace transitions */
-@keyframes windowFadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes windowFadeOut {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
 #loading-status {
   color: #666;
   margin-top: 16px;

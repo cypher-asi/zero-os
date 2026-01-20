@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/orbital-axiom",
+    "crates/orbital-desktop",
     "crates/orbital-hal",
     "crates/orbital-hal-mock",
     "crates/orbital-init",
@@ -23,6 +24,7 @@ repository = "https://github.com/example/orbital-os"
 [workspace.dependencies]
 # Internal crates
 orbital-axiom = { path = "crates/orbital-axiom" }
+orbital-desktop = { path = "crates/orbital-desktop" }
 orbital-hal = { path = "crates/orbital-hal" }
 orbital-hal-mock = { path = "crates/orbital-hal-mock" }
 orbital-init = { path = "crates/orbital-init" }
@@ -44,6 +46,11 @@ web-sys = { version = "0.3", features = [
     "ErrorEvent",
     "HtmlCanvasElement",
     "Document",
+    "Request",
+    "RequestInit",
+    "Headers",
+    "RequestMode",
+    "Response",
 ] }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }

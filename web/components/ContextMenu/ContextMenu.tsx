@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Panel } from '@cypher-asi/zui';
 import styles from './ContextMenu.module.css';
 
 export interface MenuItem {
@@ -85,30 +86,34 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   return (
     <div
       ref={menuRef}
-      className={styles.contextMenu}
+      className={styles.menuWrapper}
       style={{ left: x, top: y }}
       onContextMenu={(e) => e.preventDefault()}
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {items.map((item, index) => {
-        if (item.id === 'separator') {
-          return <div key={`sep-${index}`} className={styles.separator} />;
-        }
+      <Panel className={styles.contextMenu} variant="glass" border="future">
+        {items.map((item, index) => {
+          if (item.id === 'separator') {
+            return <div key={`sep-${index}`} className={styles.separator} />;
+          }
 
-        return (
-          <div
-            key={item.id}
-            className={`${styles.menuItem} ${item.disabled ? styles.disabled : ''} ${
-              item.checked ? styles.checked : ''
-            }`}
-            onClick={() => handleItemClick(item)}
-          >
-            {item.checked && <span className={styles.checkmark}>✓</span>}
-            <span className={styles.label}>{item.label}</span>
-          </div>
-        );
-      })}
+          // Check if this is a header item (disabled with specific IDs)
+          const isHeader = item.disabled && item.id.includes('header');
+
+          return (
+            <div
+              key={item.id}
+              className={`${isHeader ? styles.menuHeader : styles.menuItem} ${
+                item.disabled && !isHeader ? styles.disabled : ''
+              } ${item.checked ? styles.selected : ''}`}
+              onClick={() => !isHeader && handleItemClick(item)}
+            >
+              <span className={styles.label}>{item.label}</span>
+            </div>
+          );
+        })}
+      </Panel>
     </div>
   );
 }
@@ -153,43 +158,47 @@ export function ContextMenuWithSubmenu({
   return (
     <div
       ref={menuRef}
-      className={styles.contextMenu}
+      className={styles.menuWrapper}
       style={{ left: x, top: y }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {items.map((item, index) => {
-        if (item.id === 'separator') {
-          return <div key={`sep-${index}`} className={styles.separator} />;
-        }
+      <Panel className={styles.contextMenu} variant="glass" border="future">
+        {items.map((item, index) => {
+          if (item.id === 'separator') {
+            return <div key={`sep-${index}`} className={styles.separator} />;
+          }
 
-        if (item.submenu) {
+          if (item.submenu) {
+            return (
+              <SubmenuItem
+                key={item.id}
+                item={item}
+                onClose={onClose}
+              />
+            );
+          }
+
+          // Check if this is a header item (disabled with specific IDs)
+          const isHeader = item.disabled && item.id.includes('header');
+
           return (
-            <SubmenuItem
+            <div
               key={item.id}
-              item={item}
-              onClose={onClose}
-            />
+              className={`${isHeader ? styles.menuHeader : styles.menuItem} ${
+                item.disabled && !isHeader ? styles.disabled : ''
+              } ${item.checked ? styles.selected : ''}`}
+              onClick={() => {
+                if (!item.disabled && !isHeader) {
+                  item.onClick?.();
+                  onClose();
+                }
+              }}
+            >
+              <span className={styles.label}>{item.label}</span>
+            </div>
           );
-        }
-
-        return (
-          <div
-            key={item.id}
-            className={`${styles.menuItem} ${item.disabled ? styles.disabled : ''} ${
-              item.checked ? styles.checked : ''
-            }`}
-            onClick={() => {
-              if (!item.disabled) {
-                item.onClick?.();
-                onClose();
-              }
-            }}
-          >
-            {item.checked && <span className={styles.checkmark}>✓</span>}
-            <span className={styles.label}>{item.label}</span>
-          </div>
-        );
-      })}
+        })}
+      </Panel>
     </div>
   );
 }
@@ -222,26 +231,27 @@ function SubmenuItem({ item, onClose }: { item: MenuItem; onClose: () => void })
 
       {showSubmenu && item.submenu && (
         <div
-          className={styles.submenu}
+          className={styles.submenuWrapper}
           style={{ left: submenuPosition.x, top: submenuPosition.y }}
         >
-          {item.submenu.map((subitem) => (
-            <div
-              key={subitem.id}
-              className={`${styles.menuItem} ${subitem.disabled ? styles.disabled : ''} ${
-                subitem.checked ? styles.checked : ''
-              }`}
-              onClick={() => {
-                if (!subitem.disabled) {
-                  subitem.onClick?.();
-                  onClose();
-                }
-              }}
-            >
-              {subitem.checked && <span className={styles.checkmark}>✓</span>}
-              <span className={styles.label}>{subitem.label}</span>
-            </div>
-          ))}
+          <Panel className={styles.submenu} variant="glass" border="future">
+            {item.submenu.map((subitem) => (
+              <div
+                key={subitem.id}
+                className={`${styles.menuItem} ${subitem.disabled ? styles.disabled : ''} ${
+                  subitem.checked ? styles.selected : ''
+                }`}
+                onClick={() => {
+                  if (!subitem.disabled) {
+                    subitem.onClick?.();
+                    onClose();
+                  }
+                }}
+              >
+                <span className={styles.label}>{subitem.label}</span>
+              </div>
+            ))}
+          </Panel>
         </div>
       )}
     </div>

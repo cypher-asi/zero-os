@@ -15,6 +15,8 @@ function Button({
   className = '',
   onClick,
   title,
+  selected,
+  selectedBgColor = 'transparent',
 }: { 
   children?: ReactNode;
   icon?: ReactNode;
@@ -26,12 +28,17 @@ function Button({
   className?: string;
   onClick?: (e: React.MouseEvent) => void;
   title?: string;
+  selected?: boolean;
+  selectedBgColor?: string;
 }) {
+  const buttonStyle = selected ? { backgroundColor: selectedBgColor } : {};
+  
   return (
     <button
-      className={`${styles.button} ${variant === 'glass' ? styles.buttonGlass : ''} ${iconOnly ? styles.buttonIconOnly : ''} ${className}`}
+      className={`${styles.button} ${variant === 'glass' ? styles.buttonGlass : ''} ${iconOnly ? styles.buttonIconOnly : ''} ${selected ? styles.buttonSelected : ''} ${className}`}
       onClick={onClick}
       title={title}
+      style={buttonStyle}
     >
       {icon}
       {children}
@@ -112,11 +119,14 @@ export function Taskbar() {
           variant={beginMenuOpen ? 'glass' : 'transparent'}
           size="sm"
           rounded="none"
-          textCase="uppercase"
-          icon={<Circle size={14} />}
+          iconOnly
+          className={styles.beginBtn}
           onClick={() => setBeginMenuOpen(!beginMenuOpen)}
+          title="Begin Menu (Press Z)"
+          selected={beginMenuOpen}
+          selectedBgColor="transparent"
         >
-          Begin
+          <Circle size={14} />
         </Button>
 
         {beginMenuOpen && <BeginMenu onClose={() => setBeginMenuOpen(false)} />}
@@ -135,6 +145,8 @@ export function Taskbar() {
             className={`${styles.windowItem} ${win.state === 'minimized' ? styles.minimized : ''}`}
             onClick={(e) => handleWindowClick(e, win.id, win.state, win.focused)}
             title={win.title}
+            selected={win.focused}
+            selectedBgColor="transparent"
           >
             <span className={styles.windowTitle}>{win.title}</span>
           </Button>
@@ -153,6 +165,8 @@ export function Taskbar() {
             className={styles.workspaceBtn}
             onClick={() => switchDesktop(i)}
             title={d.name}
+            selected={d.active}
+            selectedBgColor="transparent"
           >
             {i + 1}
           </Button>
@@ -165,6 +179,8 @@ export function Taskbar() {
           className={styles.workspaceAdd}
           onClick={handleAddDesktop}
           title="Add desktop"
+          selected={false}
+          selectedBgColor="transparent"
         >
           <Plus size={14} />
         </Button>
@@ -176,6 +192,8 @@ export function Taskbar() {
           className={styles.walletBtn}
           onClick={() => console.log('[taskbar] Wallet clicked')}
           title="Wallet"
+          selected={false}
+          selectedBgColor="transparent"
         >
           <CreditCard size={14} />
         </Button>
@@ -188,6 +206,8 @@ export function Taskbar() {
             className={styles.neuralKey}
             onClick={() => setIdentityPanelOpen(!identityPanelOpen)}
             title="Neural Link - Identity & Security"
+            selected={identityPanelOpen}
+            selectedBgColor="transparent"
           >
             <KeyRound size={14} />
           </Button>

@@ -1,7 +1,8 @@
 # orbital-web Deprecation Plan
 
-**Status:** Planned  
-**Target:** Replace with `orbital-desktop` crate
+**Status:** In Progress  
+**Target:** Replace with `orbital-desktop` crate  
+**Progress:** See [wasm-desktop progress](../progress/wasm-desktop/progress.md)
 
 ---
 
@@ -144,10 +145,64 @@ During migration:
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| 1 | Backup and parallel setup | Pending |
-| 2 | Feature parity in orbital-desktop | Pending |
-| 3 | Web frontend migration | Pending |
-| 4 | Legacy cleanup | Pending |
+| 1 | Backup and parallel setup | **Complete** |
+| 2 | Feature parity in orbital-desktop | **Complete** |
+| 3 | Web frontend migration | **Complete** |
+| 4 | Legacy cleanup | **In Progress** |
+
+---
+
+## Phase 3 Completion (January 2026)
+
+The web frontend has been successfully migrated to use `orbital-desktop`:
+
+**Changes Made:**
+
+1. **Desktop Controller Migration**
+   - Web frontend now uses `DesktopController` from `orbital-desktop` (not `orbital-web`)
+   - All window management, viewport, and transition logic handled by `orbital-desktop`
+
+2. **Module Cleanup**
+   - Removed `desktop/` module from `orbital-web/src/`
+   - Moved `background/` module to `orbital-desktop/src/`
+   - Updated `lib.rs` with deprecation notice
+   - `orbital-web` now only provides:
+     - `Supervisor` (process/IPC management)
+     - Re-exports `background` module from `orbital-desktop`
+
+3. **API Updates**
+   - Fixed `tick_frame()` data structure to match TypeScript expectations
+   - Added `workspaceInfo` and `workspaceDimensions` fields
+   - Added `backgrounds` array to workspace info
+
+4. **File Structure**
+   ```
+   crates/orbital-web/
+   ├── src/
+   │   ├── lib.rs           (Supervisor + HAL)
+   │   ├── axiom.rs         (Axiom IPC)
+   │   └── worker.rs        (Worker process management)
+   
+   crates/orbital-desktop/
+   ├── src/
+   │   ├── lib.rs           (Public API)
+   │   ├── engine.rs        (DesktopEngine core)
+   │   ├── wasm.rs          (WASM bindings)
+   │   ├── background/      (WebGPU background renderer)
+   │   ├── desktop/         (Desktop management)
+   │   ├── window/          (Window management)
+   │   ├── viewport/        (Camera/viewport)
+   │   ├── input/           (Input handling)
+   │   └── transition/      (Animations)
+   ```
+
+**Verification:**
+
+- System boots successfully
+- Workers spawn correctly
+- No console errors
+- Desktop rendering works
+- Window management functional
 
 ---
 

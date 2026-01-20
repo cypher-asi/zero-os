@@ -10,6 +10,10 @@ all: build
 build: build-processes
 	@echo "Building supervisor WASM module..."
 	cd crates/orbital-web && wasm-pack build --target web --out-dir ../../web/pkg
+	@echo "Building desktop WASM module..."
+	cd crates/orbital-desktop && wasm-pack build --target web --features wasm
+	mkdir -p web/pkg-desktop
+	cp -r crates/orbital-desktop/pkg/* web/pkg-desktop/
 	@echo "Build complete!"
 
 # Build test process WASM binaries

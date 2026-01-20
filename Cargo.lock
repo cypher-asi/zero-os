@@ -799,6 +799,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "orbital-desktop"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "wgpu",
+]
+
+[[package]]
 name = "orbital-hal"
 version = "0.1.0"
 
@@ -853,9 +867,9 @@ version = "0.1.0"
 name = "orbital-web"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "console_error_panic_hook",
  "js-sys",
+ "orbital-desktop",
  "orbital-hal",
  "orbital-kernel",
  "serde",
@@ -864,7 +878,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
- "wgpu",
 ]
 
 [[package]]

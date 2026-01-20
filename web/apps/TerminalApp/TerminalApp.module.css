@@ -14,7 +14,6 @@
 
 /* Collapsible group styling */
 .collapsibleGroup {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .panelContent {
@@ -26,12 +25,7 @@
   display: flex;
   align-items: center;
   padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   gap: 8px;
-}
-
-.processItem:last-child {
-  border-bottom: none;
 }
 
 .processPid {
@@ -89,7 +83,6 @@
   gap: 6px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 /* Memory Bar */

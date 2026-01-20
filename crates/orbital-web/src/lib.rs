@@ -2,9 +2,21 @@
 //!
 //! This crate runs in the browser's main thread and acts as the kernel
 //! supervisor. It manages Web Workers (processes) and routes IPC messages.
+//!
+//! ## Deprecation Notice
+//!
+//! The desktop management functionality has been moved to the `orbital-desktop` crate.
+//! This crate now only provides:
+//! - Supervisor (process/IPC management)
+//! - DesktopBackground (WebGPU background renderer) - re-exported from orbital-desktop
+//!
+//! See [orbital-web-deprecation.md](../../docs/implementation/orbital-web-deprecation.md)
 
-pub mod background;
-pub mod desktop;
+mod axiom;
+mod worker;
+
+// Re-export background renderer from orbital-desktop
+pub use orbital_desktop::background;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,210 +38,9 @@ extern "C" {
     fn date_now() -> f64;
 }
 
-// =============================================================================
-// Axiom Storage - IndexedDB persistence for WASM targets
-// =============================================================================
-
-#[wasm_bindgen]
-extern "C" {
-    /// AxiomStorage JavaScript object for IndexedDB persistence
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
-    async fn init() -> JsValue;
-
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
-    async fn persistEntry(entry: JsValue) -> JsValue;
-
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
-    async fn persistEntries(entries: JsValue) -> JsValue;
-
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
-    async fn loadAll() -> JsValue;
-
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
-    async fn getCount() -> JsValue;
-
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
-    async fn getLastSeq() -> JsValue;
-
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
-    async fn clear() -> JsValue;
-}
-
-/// Serialize a Commit entry to a JavaScript object for IndexedDB storage
-fn commit_to_js(commit: &orbital_kernel::Commit) -> JsValue {
-    let obj = js_sys::Object::new();
-
-    // seq: u64 (as number - safe up to 2^53)
-    let _ = js_sys::Reflect::set(&obj, &"seq".into(), &JsValue::from_f64(commit.seq as f64));
-
-    // timestamp: u64 (as number)
-    let _ = js_sys::Reflect::set(
-        &obj,
-        &"timestamp".into(),
-        &JsValue::from_f64(commit.timestamp as f64),
-    );
-
-    // id: [u8; 32] (as hex string)
-    let id_hex: String = commit.id.iter().map(|b| format!("{:02x}", b)).collect();
-    let _ = js_sys::Reflect::set(&obj, &"id".into(), &JsValue::from_str(&id_hex));
-
-    // prev_commit: [u8; 32] (as hex string)
-    let prev_hex: String = commit
-        .prev_commit
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect();
-    let _ = js_sys::Reflect::set(&obj, &"prev_commit".into(), &JsValue::from_str(&prev_hex));
-
-    // commit_type: CommitType (as type string)
-    let commit_type = commit_type_to_string(&commit.commit_type);
-    let _ = js_sys::Reflect::set(
-        &obj,
-        &"commit_type".into(),
-        &JsValue::from_str(&commit_type),
-    );
-
-    obj.into()
-}
-
-/// Convert CommitType to a human-readable string
-fn commit_type_to_string(ct: &orbital_kernel::CommitType) -> String {
-    match ct {
-        orbital_kernel::CommitType::Genesis => "Genesis".to_string(),
-        orbital_kernel::CommitType::ProcessCreated { pid, parent, name } => format!(
-            "ProcessCreated(pid={}, parent={}, name={})",
-            pid, parent, name
-        ),
-        orbital_kernel::CommitType::ProcessExited { pid, code } => {
-            format!("ProcessExited(pid={}, code={})", pid, code)
-        }
-        orbital_kernel::CommitType::CapInserted {
-            pid, slot, cap_id, ..
-        } => format!("CapInserted(pid={}, slot={}, cap={})", pid, slot, cap_id),
-        orbital_kernel::CommitType::CapRemoved { pid, slot } => {
-            format!("CapRemoved(pid={}, slot={})", pid, slot)
-        }
-        orbital_kernel::CommitType::CapGranted {
-            from_pid,
-            to_pid,
-            from_slot,
-            to_slot,
-            ..
-        } => format!(
-            "CapGranted(from={}.{} to={}.{})",
-            from_pid, from_slot, to_pid, to_slot
-        ),
-        orbital_kernel::CommitType::EndpointCreated { id, owner } => {
-            format!("EndpointCreated(id={}, owner={})", id, owner)
-        }
-        orbital_kernel::CommitType::EndpointDestroyed { id } => {
-            format!("EndpointDestroyed(id={})", id)
-        }
-    }
-}
-
-/// Get short commit type name for dashboard display
-fn commit_type_short(ct: &orbital_kernel::CommitType) -> &'static str {
-    match ct {
-        orbital_kernel::CommitType::Genesis => "Genesis",
-        orbital_kernel::CommitType::ProcessCreated { .. } => "ProcCreate",
-        orbital_kernel::CommitType::ProcessExited { .. } => "ProcExit",
-        orbital_kernel::CommitType::CapInserted { .. } => "CapInsert",
-        orbital_kernel::CommitType::CapRemoved { .. } => "CapRemove",
-        orbital_kernel::CommitType::CapGranted { .. } => "CapGrant",
-        orbital_kernel::CommitType::EndpointCreated { .. } => "EpCreate",
-        orbital_kernel::CommitType::EndpointDestroyed { .. } => "EpDestroy",
-    }
-}
-
-/// Process handle for WASM - wraps a Web Worker
-#[derive(Clone, Debug)]
-pub struct WasmProcessHandle {
-    /// Process ID assigned by the HAL
-    pub id: u64,
-}
-
-impl WasmProcessHandle {
-    fn new(id: u64) -> Self {
-        Self { id }
-    }
-}
-
-// Implement Send + Sync for WasmProcessHandle
-// In WASM, there's only one thread, so this is safe
-unsafe impl Send for WasmProcessHandle {}
-unsafe impl Sync for WasmProcessHandle {}
-
-/// Internal state for a real Web Worker process
-struct WorkerProcess {
-    /// Human-readable name
-    #[allow(dead_code)]
-    name: String,
-    /// The actual Web Worker
-    worker: Worker,
-    /// Whether the process is still alive
-    alive: bool,
-    /// Memory size reported by the Worker
-    memory_size: usize,
-    /// Worker memory context ID (performance.timeOrigin from browser)
-    /// Format: worker:<timestamp> e.g., "worker:1737158400123"
-    worker_id: u64,
-    /// SharedArrayBuffer for syscall mailbox (worker's WASM memory)
-    syscall_buffer: js_sys::SharedArrayBuffer,
-    /// Int32Array view for atomic operations on the mailbox
-    mailbox_view: js_sys::Int32Array,
-    /// Closures must be stored to prevent garbage collection
-    #[allow(dead_code)]
-    onerror_closure: Closure<dyn FnMut(JsValue)>,
-    #[allow(dead_code)]
-    _onmessage_closure: Closure<dyn FnMut(MessageEvent)>,
-}
-
-// Safety: In WASM, there is only one thread. These types contain JS references
-// that are not Send/Sync in the general case, but are safe in single-threaded WASM.
-unsafe impl Send for WorkerProcess {}
-unsafe impl Sync for WorkerProcess {}
-
-// Mailbox status values (must match orbital-wasm-rt)
-const STATUS_IDLE: i32 = 0;
-const STATUS_PENDING: i32 = 1;
-const STATUS_READY: i32 = 2;
-
-// Mailbox field offsets in i32 units (must match orbital-wasm-rt)
-const MAILBOX_STATUS: u32 = 0;
-const MAILBOX_SYSCALL_NUM: u32 = 1;
-const MAILBOX_ARG0: u32 = 2;
-const MAILBOX_ARG1: u32 = 3;
-const MAILBOX_ARG2: u32 = 4;
-const MAILBOX_RESULT: u32 = 5;
-const MAILBOX_DATA_LEN: u32 = 6;
-// MAILBOX_DATA starts at offset 7 (byte offset 28)
-
-/// Pending syscall from a worker process
-#[derive(Clone, Debug)]
-pub struct PendingSyscall {
-    pub pid: u64,
-    pub syscall_num: u32,
-    pub args: [u32; 3],
-}
-
-/// Incoming message from a Worker (syscall or status update)
-#[derive(Clone, Debug)]
-pub struct WorkerMessage {
-    pub pid: u64,
-    pub msg_type: WorkerMessageType,
-    pub data: Vec<u8>,
-}
-
-#[derive(Clone, Debug)]
-pub enum WorkerMessageType {
-    Ready { memory_size: usize },
-    MemoryUpdate { memory_size: usize },
-    Syscall { syscall_num: u32, args: [u32; 3] },
-    Error { message: String },
-    Terminated,
-    Yield,
-}
+// Re-export worker types
+pub use worker::{PendingSyscall, WasmProcessHandle, WorkerMessage, WorkerMessageType};
+use worker::WorkerProcess;
 
 /// WASM HAL implementation
 ///
@@ -285,10 +96,10 @@ impl WasmHal {
         name: &str,
         binary: &[u8],
     ) -> Result<WasmProcessHandle, HalError> {
-        let handle = WasmProcessHandle::new(pid);
+        let handle = worker::WasmProcessHandle::new(pid);
 
         // Create the Web Worker
-        let worker = Worker::new("worker.js").map_err(|e| {
+        let worker = Worker::new("/worker.js").map_err(|e| {
             log(&format!("[wasm-hal] Failed to create Worker: {:?}", e));
             HalError::ProcessSpawnFailed
         })?;
@@ -453,19 +264,19 @@ impl WasmHal {
                 }
 
                 // Read status atomically
-                let status = js_sys::Atomics::load(&proc.mailbox_view, MAILBOX_STATUS)
-                    .unwrap_or(STATUS_IDLE);
+                let status = js_sys::Atomics::load(&proc.mailbox_view, worker::MAILBOX_STATUS)
+                    .unwrap_or(worker::STATUS_IDLE);
 
-                if status == STATUS_PENDING {
+                if status == worker::STATUS_PENDING {
                     // Read syscall parameters
-                    let syscall_num = js_sys::Atomics::load(&proc.mailbox_view, MAILBOX_SYSCALL_NUM)
+                    let syscall_num = js_sys::Atomics::load(&proc.mailbox_view, worker::MAILBOX_SYSCALL_NUM)
                         .unwrap_or(0) as u32;
                     let arg0 =
-                        js_sys::Atomics::load(&proc.mailbox_view, MAILBOX_ARG0).unwrap_or(0) as u32;
+                        js_sys::Atomics::load(&proc.mailbox_view, worker::MAILBOX_ARG0).unwrap_or(0) as u32;
                     let arg1 =
-                        js_sys::Atomics::load(&proc.mailbox_view, MAILBOX_ARG1).unwrap_or(0) as u32;
+                        js_sys::Atomics::load(&proc.mailbox_view, worker::MAILBOX_ARG1).unwrap_or(0) as u32;
                     let arg2 =
-                        js_sys::Atomics::load(&proc.mailbox_view, MAILBOX_ARG2).unwrap_or(0) as u32;
+                        js_sys::Atomics::load(&proc.mailbox_view, worker::MAILBOX_ARG2).unwrap_or(0) as u32;
 
                     result.push(PendingSyscall {
                         pid,
@@ -495,13 +306,13 @@ impl WasmHal {
                 }
 
                 // Write result
-                let _ = js_sys::Atomics::store(&proc.mailbox_view, MAILBOX_RESULT, result);
+                let _ = js_sys::Atomics::store(&proc.mailbox_view, worker::MAILBOX_RESULT, result);
 
                 // Set status to READY
-                let _ = js_sys::Atomics::store(&proc.mailbox_view, MAILBOX_STATUS, STATUS_READY);
+                let _ = js_sys::Atomics::store(&proc.mailbox_view, worker::MAILBOX_STATUS, worker::STATUS_READY);
 
                 // Wake the waiting worker
-                let _ = js_sys::Atomics::notify(&proc.mailbox_view, MAILBOX_STATUS);
+                let _ = js_sys::Atomics::notify(&proc.mailbox_view, worker::MAILBOX_STATUS);
             }
         }
     }
@@ -518,7 +329,7 @@ impl WasmHal {
                 }
 
                 // Read data length
-                let data_len = js_sys::Atomics::load(&proc.mailbox_view, MAILBOX_DATA_LEN)
+                let data_len = js_sys::Atomics::load(&proc.mailbox_view, worker::MAILBOX_DATA_LEN)
                     .unwrap_or(0) as usize;
 
                 if data_len > 0 && data_len <= 4068 {
@@ -556,7 +367,7 @@ impl WasmHal {
                 data_view.copy_from(&data[..len]);
 
                 // Store data length
-                let _ = js_sys::Atomics::store(&proc.mailbox_view, MAILBOX_DATA_LEN, len as i32);
+                let _ = js_sys::Atomics::store(&proc.mailbox_view, worker::MAILBOX_DATA_LEN, len as i32);
             }
         }
     }
@@ -672,7 +483,7 @@ impl HAL for WasmHal {
                 .drain(..)
                 .map(|msg| {
                     let handle = WasmProcessHandle::new(msg.pid);
-                    let data = serialize_worker_message(&msg);
+                    let data = worker::serialize_worker_message(&msg);
                     (handle, data)
                 })
                 .collect()
@@ -680,175 +491,6 @@ impl HAL for WasmHal {
             Vec::new()
         }
     }
-}
-
-/// Parse a message received from a Worker
-fn parse_worker_message(pid: u64, event: &MessageEvent) -> Result<WorkerMessage, JsValue> {
-    let data = event.data();
-
-    // Handle object messages
-    if data.is_object() {
-        let obj = data.dyn_ref::<js_sys::Object>().unwrap();
-
-        let msg_type = js_sys::Reflect::get(obj, &"type".into())?
-            .as_string()
-            .unwrap_or_default();
-
-        match msg_type.as_str() {
-            "ready" => {
-                let memory_size = js_sys::Reflect::get(obj, &"memory_size".into())
-                    .ok()
-                    .and_then(|v| v.as_f64())
-                    .map(|v| v as usize)
-                    .unwrap_or(65536);
-
-                log(&format!(
-                    "[wasm-hal] Worker {} ready, memory: {} bytes",
-                    pid, memory_size
-                ));
-
-                Ok(WorkerMessage {
-                    pid,
-                    msg_type: WorkerMessageType::Ready { memory_size },
-                    data: Vec::new(),
-                })
-            }
-            "syscall" => {
-                let syscall_num = js_sys::Reflect::get(obj, &"syscall".into())
-                    .ok()
-                    .and_then(|v| v.as_f64())
-                    .map(|v| v as u32)
-                    .unwrap_or(0);
-
-                let args_val = js_sys::Reflect::get(obj, &"args".into())?;
-                let args_array = args_val.dyn_ref::<js_sys::Array>().unwrap();
-                let args = [
-                    args_array.get(0).as_f64().unwrap_or(0.0) as u32,
-                    args_array.get(1).as_f64().unwrap_or(0.0) as u32,
-                    args_array.get(2).as_f64().unwrap_or(0.0) as u32,
-                ];
-
-                // Extract data bytes if present
-                let data = js_sys::Reflect::get(obj, &"data".into())
-                    .ok()
-                    .and_then(|v| v.dyn_ref::<js_sys::Uint8Array>().map(|a| a.to_vec()))
-                    .unwrap_or_default();
-
-                Ok(WorkerMessage {
-                    pid,
-                    msg_type: WorkerMessageType::Syscall { syscall_num, args },
-                    data,
-                })
-            }
-            "error" => {
-                let message = js_sys::Reflect::get(obj, &"error".into())
-                    .ok()
-                    .and_then(|v| v.as_string())
-                    .unwrap_or_else(|| "Unknown error".to_string());
-
-                Ok(WorkerMessage {
-                    pid,
-                    msg_type: WorkerMessageType::Error { message },
-                    data: Vec::new(),
-                })
-            }
-            "terminated" => Ok(WorkerMessage {
-                pid,
-                msg_type: WorkerMessageType::Terminated,
-                data: Vec::new(),
-            }),
-            "worker_loaded" => {
-                // Worker script loaded, waiting for init
-                log(&format!("[wasm-hal] Worker {} script loaded", pid));
-                Ok(WorkerMessage {
-                    pid,
-                    msg_type: WorkerMessageType::Ready { memory_size: 0 },
-                    data: Vec::new(),
-                })
-            }
-            "memory_update" => {
-                // Memory size update from worker
-                let memory_size = js_sys::Reflect::get(obj, &"memory_size".into())
-                    .ok()
-                    .and_then(|v| v.as_f64())
-                    .map(|v| v as usize)
-                    .unwrap_or(0);
-
-                Ok(WorkerMessage {
-                    pid,
-                    msg_type: WorkerMessageType::MemoryUpdate { memory_size },
-                    data: Vec::new(),
-                })
-            }
-            "yield" => {
-                // Worker yielded control - just acknowledge
-                Ok(WorkerMessage {
-                    pid,
-                    msg_type: WorkerMessageType::Yield,
-                    data: Vec::new(),
-                })
-            }
-            _ => {
-                log(&format!(
-                    "[wasm-hal] Unknown message type from worker {}: {}",
-                    pid, msg_type
-                ));
-                Err(JsValue::from_str("Unknown message type"))
-            }
-        }
-    } else {
-        Err(JsValue::from_str("Invalid message format"))
-    }
-}
-
-/// Serialize a WorkerMessage to bytes for poll_messages
-fn serialize_worker_message(msg: &WorkerMessage) -> Vec<u8> {
-    // Simple binary protocol:
-    // [0]: message type (0=Ready, 1=Syscall, 2=Error, 3=Terminated)
-    // [1-4]: pid (u32 LE)
-    // [5-8]: depends on type
-    // [9+]: data
-
-    let mut result = Vec::new();
-
-    match &msg.msg_type {
-        WorkerMessageType::Ready { memory_size } => {
-            result.push(ProcessMessageType::Ready as u8);
-            result.extend_from_slice(&(msg.pid as u32).to_le_bytes());
-            result.extend_from_slice(&(*memory_size as u32).to_le_bytes());
-        }
-        WorkerMessageType::Syscall { syscall_num, args } => {
-            result.push(ProcessMessageType::Syscall as u8);
-            result.extend_from_slice(&(msg.pid as u32).to_le_bytes());
-            result.extend_from_slice(&syscall_num.to_le_bytes());
-            for arg in args {
-                result.extend_from_slice(&arg.to_le_bytes());
-            }
-            result.extend_from_slice(&msg.data);
-        }
-        WorkerMessageType::Error { message } => {
-            result.push(ProcessMessageType::Error as u8);
-            result.extend_from_slice(&(msg.pid as u32).to_le_bytes());
-            result.extend_from_slice(message.as_bytes());
-        }
-        WorkerMessageType::Terminated => {
-            result.push(ProcessMessageType::Terminate as u8);
-            result.extend_from_slice(&(msg.pid as u32).to_le_bytes());
-        }
-        WorkerMessageType::MemoryUpdate { memory_size } => {
-            // Use Ready type for memory updates (same format)
-            result.push(ProcessMessageType::Ready as u8);
-            result.extend_from_slice(&(msg.pid as u32).to_le_bytes());
-            result.extend_from_slice(&(*memory_size as u32).to_le_bytes());
-        }
-        WorkerMessageType::Yield => {
-            // Yield is just a notification, minimal data
-            result.push(7u8); // Use 7 for yield
-            result.extend_from_slice(&(msg.pid as u32).to_le_bytes());
-        }
-    }
-
-    result
 }
 
 // ============================================================================
@@ -899,6 +541,9 @@ impl Default for PingPongTestState {
 }
 
 /// Supervisor - manages the kernel and processes
+///
+/// Note: Desktop functionality has been moved to the `orbital-desktop` crate.
+/// Load `DesktopController` from `orbital_desktop.js` for desktop operations.
 #[wasm_bindgen]
 pub struct Supervisor {
     kernel: Kernel<WasmHal>,
@@ -914,8 +559,6 @@ pub struct Supervisor {
     axiom_storage_ready: bool,
     /// Whether init process has been spawned
     init_spawned: bool,
-    /// Desktop environment engine
-    desktop: desktop::DesktopEngine,
 }
 
 #[wasm_bindgen]
@@ -939,7 +582,6 @@ impl Supervisor {
             last_persisted_axiom_seq: 0,
             axiom_storage_ready: false,
             init_spawned: false,
-            desktop: desktop::DesktopEngine::new(),
         }
     }
 
@@ -953,13 +595,13 @@ impl Supervisor {
     pub async fn init_axiom_storage(&mut self) -> Result<JsValue, JsValue> {
         log("[axiom] Initializing IndexedDB storage...");
 
-        let result = init().await;
+        let result = axiom::init().await;
 
         if result.is_truthy() {
             self.axiom_storage_ready = true;
 
             // Get the last persisted sequence number
-            let last_seq = getLastSeq().await;
+            let last_seq = axiom::getLastSeq().await;
             if let Some(seq) = last_seq.as_f64() {
                 self.last_persisted_axiom_seq = if seq < 0.0 { 0 } else { seq as u64 + 1 };
                 log(&format!(
@@ -969,7 +611,7 @@ impl Supervisor {
             }
 
             // Get count of stored entries
-            let count = getCount().await;
+            let count = axiom::getCount().await;
             if let Some(n) = count.as_f64() {
                 log(&format!("[axiom] {} entries in IndexedDB", n as u64));
             }
@@ -1012,11 +654,11 @@ impl Supervisor {
         // Convert to JS array
         let js_entries = js_sys::Array::new();
         for commit in &commits_to_persist {
-            js_entries.push(&commit_to_js(commit));
+            js_entries.push(&axiom::commit_to_js(commit));
         }
 
         // Persist to IndexedDB
-        let result = persistEntries(js_entries.into()).await;
+        let result = axiom::persistEntries(js_entries.into()).await;
         if let Some(count) = result.as_f64() {
             let persisted = count as u32;
             self.last_persisted_axiom_seq = current_seq;
@@ -1059,6 +701,33 @@ impl Supervisor {
         )
     }
 
+    /// Kill a process by PID (for cleanup when window closes)
+    #[wasm_bindgen]
+    pub fn kill_process(&mut self, pid: u64) {
+        let process_id = ProcessId(pid);
+        log(&format!("[supervisor] Killing process {}", pid));
+        self.kernel.kill_process(process_id);
+        let handle = WasmProcessHandle::new(pid);
+        let _ = self.kernel.hal().kill_process(&handle);
+    }
+
+    /// Kill all processes (for cleanup on page unload)
+    #[wasm_bindgen]
+    pub fn kill_all_processes(&mut self) {
+        log("[supervisor] Killing all processes");
+        // Collect PIDs first to avoid borrow checker issues
+        let pids: Vec<ProcessId> = self.kernel.list_processes()
+            .into_iter()
+            .map(|(pid, _)| pid)
+            .collect();
+        
+        for pid in pids {
+            self.kernel.kill_process(pid);
+            let handle = WasmProcessHandle::new(pid.0);
+            let _ = self.kernel.hal().kill_process(&handle);
+        }
+    }
+
     /// Get recent CommitLog entries as JSON for display
     #[wasm_bindgen]
     pub fn get_commitlog_json(&self, count: usize) -> String {
@@ -1071,8 +740,8 @@ impl Supervisor {
                 json.push(',');
             }
 
-            let commit_type = commit_type_short(&commit.commit_type);
-            let details = commit_type_to_string(&commit.commit_type);
+            let commit_type = axiom::commit_type_short(&commit.commit_type);
+            let details = axiom::commit_type_to_string(&commit.commit_type);
 
             json.push_str(&format!(
                 r#"{{"seq":{},"timestamp":{},"type":"{}","details":"{}"}}"#,
@@ -1127,7 +796,7 @@ impl Supervisor {
             return false;
         }
 
-        let result = clear().await;
+        let result = axiom::clear().await;
         if result.is_undefined() || result.is_null() {
             // clear() returns undefined on success
             self.last_persisted_axiom_seq = 0;
@@ -3387,578 +3056,11 @@ impl Supervisor {
     }
 
     // =========================================================================
-    // Desktop Environment API
+    // Desktop Environment API - REMOVED
     // =========================================================================
-
-    /// Initialize the desktop environment with screen dimensions
-    #[wasm_bindgen]
-    pub fn init_desktop(&mut self, width: f32, height: f32) {
-        log(&format!(
-            "[desktop] Initializing desktop {}x{}",
-            width, height
-        ));
-        self.desktop.init(width, height);
-
-        // Create default Terminal window on boot (uses viewport-aware positioning)
-        let window_id = self.desktop.launch_app("terminal");
-        log(&format!("[desktop] Created Terminal window {}", window_id));
-    }
-
-    /// Resize the desktop viewport
-    #[wasm_bindgen]
-    pub fn resize_desktop(&mut self, width: f32, height: f32) {
-        self.desktop.resize(width, height);
-    }
-
-    /// Pan the desktop viewport
-    #[wasm_bindgen]
-    pub fn desktop_pan(&mut self, dx: f32, dy: f32) {
-        self.desktop.pan(dx, dy);
-    }
-
-    /// Zoom the desktop viewport at anchor point
-    #[wasm_bindgen]
-    pub fn desktop_zoom(&mut self, factor: f32, anchor_x: f32, anchor_y: f32) {
-        self.desktop.zoom_at(factor, anchor_x, anchor_y);
-    }
-
-    /// Get window screen rects as JSON for React positioning
-    /// Note: Takes &self (not &mut self) to avoid wasm-bindgen RefCell borrow
-    /// conflicts when called concurrently with pointer event handlers.
-    #[wasm_bindgen]
-    pub fn get_window_screen_rects_json(&self) -> String {
-        let rects = self.desktop.get_window_screen_rects();
-        let json_rects: Vec<serde_json::Value> = rects
-            .into_iter()
-            .enumerate()
-            .map(|(z_order, r)| {
-                serde_json::json!({
-                    "id": r.id,
-                    "title": r.title,
-                    "appId": r.app_id,
-                    "state": match r.state {
-                        desktop::WindowState::Normal => "normal",
-                        desktop::WindowState::Minimized => "minimized",
-                        desktop::WindowState::Maximized => "maximized",
-                        desktop::WindowState::Fullscreen => "fullscreen",
-                    },
-                    "focused": r.focused,
-                    "zOrder": z_order,
-                    "opacity": r.opacity,
-                    "screenRect": {
-                        "x": r.screen_rect.x,
-                        "y": r.screen_rect.y,
-                        "width": r.screen_rect.width,
-                        "height": r.screen_rect.height
-                    }
-                })
-            })
-            .collect();
-        serde_json::to_string(&json_rects).unwrap_or_else(|_| "[]".to_string())
-    }
-
-    /// Create a new window
-    #[wasm_bindgen]
-    pub fn create_window(
-        &mut self,
-        title: &str,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
-        app_id: &str,
-    ) -> u64 {
-        let config = desktop::WindowConfig {
-            title: title.to_string(),
-            position: Some(desktop::Vec2::new(x, y)),
-            size: desktop::Size::new(w, h),
-            min_size: Some(desktop::Size::new(200.0, 150.0)),
-            max_size: None,
-            app_id: app_id.to_string(),
-            process_id: None,
-        };
-        self.desktop.create_window(config)
-    }
-
-    /// Close a window
-    #[wasm_bindgen]
-    pub fn close_window(&mut self, id: u64) {
-        self.desktop.close_window(id);
-    }
-
-    /// Focus a window
-    #[wasm_bindgen]
-    pub fn focus_window(&mut self, id: u64) {
-        web_sys::console::log_1(&format!("[WASM] focus_window called id={}", id).into());
-        self.desktop.focus_window(id);
-    }
-
-    /// Pan the camera to center on a window
-    #[wasm_bindgen]
-    pub fn pan_to_window(&mut self, id: u64) {
-        web_sys::console::log_1(&format!("[WASM] pan_to_window called id={}", id).into());
-        self.desktop.pan_to_window(id);
-    }
-
-    /// Move a window
-    #[wasm_bindgen]
-    pub fn move_window(&mut self, id: u64, x: f32, y: f32) {
-        self.desktop.move_window(id, x, y);
-    }
-
-    /// Resize a window
-    #[wasm_bindgen]
-    pub fn resize_window(&mut self, id: u64, w: f32, h: f32) {
-        self.desktop.resize_window(id, w, h);
-    }
-
-    /// Minimize a window
-    #[wasm_bindgen]
-    pub fn minimize_window(&mut self, id: u64) {
-        self.desktop.minimize_window(id);
-    }
-
-    /// Maximize or restore a window
-    #[wasm_bindgen]
-    pub fn maximize_window(&mut self, id: u64) {
-        self.desktop.maximize_window(id);
-    }
-
-    /// Restore a minimized window
-    #[wasm_bindgen]
-    pub fn restore_window(&mut self, id: u64) {
-        self.desktop.restore_window(id);
-    }
-
-    /// Get the currently focused window ID
-    #[wasm_bindgen]
-    pub fn get_focused_window(&self) -> Option<u64> {
-        self.desktop.windows.focused()
-    }
-
-    /// Get all windows in the active workspace as JSON
-    #[wasm_bindgen]
-    pub fn get_windows_json(&self) -> String {
-        let active_workspace = self.desktop.desktops.active_desktop();
-
-        // Sort by ID (creation order) for stable taskbar ordering
-        // Filter to only windows in the active workspace
-        let mut windows_vec: Vec<_> = self
-            .desktop
-            .windows
-            .all_windows()
-            .filter(|w| active_workspace.contains_window(w.id))
-            .collect();
-        windows_vec.sort_by_key(|w| w.id);
-
-        let focused_id = self.desktop.windows.focused();
-
-        let windows: Vec<serde_json::Value> = windows_vec
-            .iter()
-            .map(|w| {
-                serde_json::json!({
-                    "id": w.id,
-                    "title": w.title,
-                    "appId": w.app_id,
-                    "position": { "x": w.position.x, "y": w.position.y },
-                    "size": { "width": w.size.width, "height": w.size.height },
-                    "state": match w.state {
-                        desktop::WindowState::Normal => "normal",
-                        desktop::WindowState::Minimized => "minimized",
-                        desktop::WindowState::Maximized => "maximized",
-                        desktop::WindowState::Fullscreen => "fullscreen",
-                    },
-                    "zOrder": w.z_order,
-                    "focused": focused_id == Some(w.id)
-                })
-            })
-            .collect();
-        serde_json::to_string(&windows).unwrap_or_else(|_| "[]".to_string())
-    }
-
-    /// Create a new workspace
-    #[wasm_bindgen]
-    pub fn create_workspace(&mut self, name: &str) -> u32 {
-        self.desktop.create_workspace(name)
-    }
-
-    /// Switch to a workspace by index
-    #[wasm_bindgen]
-    pub fn switch_workspace(&mut self, index: u32) {
-        self.desktop.switch_workspace(index as usize);
-    }
-
-    /// Get all workspaces as JSON
-    #[wasm_bindgen]
-    pub fn get_workspaces_json(&self) -> String {
-        let active = self.desktop.desktops.active_index();
-        let workspaces: Vec<serde_json::Value> = self
-            .desktop
-            .desktops
-            .desktops()
-            .iter()
-            .enumerate()
-            .map(|(i, ws)| {
-                serde_json::json!({
-                    "id": ws.id,
-                    "name": ws.name,
-                    "active": i == active,
-                    "windowCount": ws.windows.len(),
-                    "background": ws.background.id()
-                })
-            })
-            .collect();
-        serde_json::to_string(&workspaces).unwrap_or_else(|_| "[]".to_string())
-    }
-
-    /// Get workspace layout dimensions as JSON
-    /// Returns { width, height, gap } - used by background shader for workspace rendering
-    #[wasm_bindgen]
-    pub fn get_workspace_dimensions_json(&self) -> String {
-        let size = self.desktop.desktops.desktop_size();
-        let gap = self.desktop.desktops.desktop_gap();
-        serde_json::to_string(&serde_json::json!({
-            "width": size.width,
-            "height": size.height,
-            "gap": gap
-        }))
-        .unwrap_or_else(|_| r#"{"width":1920,"height":1080,"gap":100}"#.to_string())
-    }
-
-    /// Get the background of the active workspace
-    #[wasm_bindgen]
-    pub fn get_active_workspace_background(&self) -> String {
-        self.desktop.desktops.active_background().id().to_string()
-    }
-
-    /// Set the background of a workspace by index
-    /// Returns true if successful
-    #[wasm_bindgen]
-    pub fn set_workspace_background(&mut self, index: u32, background_id: &str) -> bool {
-        if let Some(bg_type) = background::BackgroundType::from_id(background_id) {
-            self.desktop
-                .desktops
-                .set_background(index as usize, bg_type);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Set the background of the active workspace
-    /// Returns true if successful
-    #[wasm_bindgen]
-    pub fn set_active_workspace_background(&mut self, background_id: &str) -> bool {
-        if let Some(bg_type) = background::BackgroundType::from_id(background_id) {
-            self.desktop.desktops.set_active_background(bg_type);
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Import workspace settings from JSON (for persistence restoration)
-    /// JSON format: [{ "id": 1, "name": "Workspace 1", "background": "grain" }, ...]
-    #[wasm_bindgen]
-    pub fn import_workspace_settings(&mut self, json: &str) -> bool {
-        match serde_json::from_str::<Vec<desktop::desktops::PersistedDesktop>>(json) {
-            Ok(persisted) => {
-                self.desktop.desktops.import_from_persistence(&persisted);
-                log(&format!(
-                    "[desktop] Imported {} workspace settings",
-                    persisted.len()
-                ));
-                true
-            }
-            Err(e) => {
-                log(&format!(
-                    "[desktop] Failed to parse workspace settings: {}",
-                    e
-                ));
-                false
-            }
-        }
-    }
-
-    /// Export workspace settings as JSON (for persistence)
-    /// Returns: [{ "id": 1, "name": "Workspace 1", "background": "grain" }, ...]
-    #[wasm_bindgen]
-    pub fn export_workspace_settings(&self) -> String {
-        let settings: Vec<serde_json::Value> = self
-            .desktop
-            .desktops
-            .desktops()
-            .iter()
-            .map(|ws| {
-                serde_json::json!({
-                    "id": ws.id,
-                    "name": ws.name,
-                    "background": ws.background.id()
-                })
-            })
-            .collect();
-        serde_json::to_string(&settings).unwrap_or_else(|_| "[]".to_string())
-    }
-
-    /// Get active workspace index
-    #[wasm_bindgen]
-    pub fn get_active_workspace(&self) -> u32 {
-        self.desktop.desktops.active_index() as u32
-    }
-
-    /// Get the visual active workspace for rendering purposes.
-    /// During transitions, returns the source workspace during zoom-out/pan,
-    /// and the destination workspace during zoom-in.
-    #[wasm_bindgen]
-    pub fn get_visual_active_workspace(&self) -> u32 {
-        self.desktop.get_visual_active_workspace() as u32
-    }
-
-    /// Check if a workspace transition animation is in progress
-    #[wasm_bindgen]
-    pub fn is_workspace_transitioning(&self) -> bool {
-        self.desktop.is_transitioning()
-    }
-
-    /// Check if any animation is active (transitions OR recent pan/zoom activity)
-    /// Used by frontend to determine render framerate (60fps when true, 15fps when false)
-    #[wasm_bindgen]
-    pub fn is_animating(&self) -> bool {
-        self.desktop.is_animating()
-    }
-
-    /// Get the current view mode as a string
-    /// Returns: "workspace", "void", or "transitioning"
-    /// Note: Use is_animating() to check if viewport is still moving
-    #[wasm_bindgen]
-    pub fn get_view_mode(&self) -> String {
-        // Check if transitioning first (crossfade or legacy transition active)
-        if self.desktop.is_transitioning() {
-            return "transitioning".to_string();
-        }
-
-        match self.desktop.get_view_mode() {
-            desktop::ViewMode::Desktop { .. } => "workspace".to_string(),
-            desktop::ViewMode::Void => "void".to_string(),
-        }
-    }
-
-    /// Check if currently in the void (zoomed out to see all workspaces)
-    #[wasm_bindgen]
-    pub fn is_in_void(&self) -> bool {
-        self.desktop.is_in_void()
-    }
-
-    /// Enter the void (zoom out to see all workspaces)
-    /// Only works when in workspace mode
-    #[wasm_bindgen]
-    pub fn enter_void(&mut self) {
-        self.desktop.enter_void();
-    }
-
-    /// Exit the void into a specific workspace
-    /// Only works when in void mode
-    #[wasm_bindgen]
-    pub fn exit_void(&mut self, workspace_index: u32) {
-        self.desktop.exit_void(workspace_index as usize);
-    }
-
-    /// Handle pointer down event - returns JSON with result
-    #[wasm_bindgen]
-    pub fn desktop_pointer_down(
-        &mut self,
-        x: f32,
-        y: f32,
-        button: u8,
-        ctrl: bool,
-        shift: bool,
-    ) -> String {
-        let result = self.desktop.handle_pointer_down(x, y, button, ctrl, shift);
-        serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"unhandled"}"#.to_string())
-    }
-
-    /// Handle pointer move event - returns JSON with result
-    #[wasm_bindgen]
-    pub fn desktop_pointer_move(&mut self, x: f32, y: f32) -> String {
-        let result = self.desktop.handle_pointer_move(x, y);
-        serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"unhandled"}"#.to_string())
-    }
-
-    /// Handle pointer up event - returns JSON with result
-    #[wasm_bindgen]
-    pub fn desktop_pointer_up(&mut self) -> String {
-        let is_dragging = self.desktop.input.is_dragging();
-        web_sys::console::log_1(
-            &format!(
-                "[WASM] desktop_pointer_up called, is_dragging={}",
-                is_dragging
-            )
-            .into(),
-        );
-        let result = self.desktop.handle_pointer_up();
-        serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"unhandled"}"#.to_string())
-    }
-
-    /// Start a window resize drag operation directly
-    /// Called by React resize handles to bypass hit testing
-    #[wasm_bindgen]
-    pub fn start_window_resize(&mut self, window_id: u64, direction: &str, x: f32, y: f32) {
-        self.desktop.start_resize_drag(window_id, direction, x, y);
-    }
-
-    /// Start a window move drag operation directly
-    /// Called by React title bar to bypass hit testing
-    #[wasm_bindgen]
-    pub fn start_window_drag(&mut self, window_id: u64, x: f32, y: f32) {
-        web_sys::console::log_1(
-            &format!(
-                "[WASM] start_window_drag id={} at ({:.0},{:.0})",
-                window_id, x, y
-            )
-            .into(),
-        );
-        self.desktop.start_move_drag(window_id, x, y);
-    }
-
-    /// Handle wheel event - returns JSON with result
-    #[wasm_bindgen]
-    pub fn desktop_wheel(&mut self, dx: f32, dy: f32, x: f32, y: f32, ctrl: bool) -> String {
-        let result = self.desktop.handle_wheel(dx, dy, x, y, ctrl);
-        serde_json::to_string(&result).unwrap_or_else(|_| r#"{"type":"unhandled"}"#.to_string())
-    }
-
-    /// Launch an application (creates window)
-    #[wasm_bindgen]
-    pub fn launch_app(&mut self, app_id: &str) -> u64 {
-        log(&format!("[desktop] Launching app: {}", app_id));
-        self.desktop.launch_app(app_id)
-    }
-
-    /// Get viewport state as JSON
-    #[wasm_bindgen]
-    pub fn get_viewport_json(&self) -> String {
-        serde_json::to_string(&serde_json::json!({
-            "center": { "x": self.desktop.viewport.center.x, "y": self.desktop.viewport.center.y },
-            "zoom": self.desktop.viewport.zoom,
-            "screenSize": {
-                "width": self.desktop.viewport.screen_size.width,
-                "height": self.desktop.viewport.screen_size.height
-            }
-        }))
-        .unwrap_or_else(|_| "{}".to_string())
-    }
-
-    /// Tick the desktop transition state machine.
-    /// Call this each frame to update viewport during workspace transitions.
-    /// Returns true if a transition is active.
-    #[wasm_bindgen]
-    pub fn tick_desktop_transition(&mut self) -> bool {
-        self.desktop.tick_transition()
-    }
-
-    /// Unified frame tick - updates all animation state and returns complete frame data.
-    ///
-    /// This is the primary method for the render loop. It:
-    /// 1. Ticks the transition state machine (updates viewport atomically)
-    /// 2. Returns all data needed to render the frame
-    ///
-    /// By combining tick + data retrieval, we guarantee the React layer sees
-    /// consistent state - no race conditions between viewport update and window rects.
-    ///
-    /// Returns JSON:
-    /// ```json
-    /// {
-    ///   "viewport": { "center": { "x": f32, "y": f32 }, "zoom": f32 },
-    ///   "windows": [...],  // Window screen rects
-    ///   "animating": bool, // True if any animation is active
-    ///   "viewMode": "workspace" | "void",
-    ///   "workspaceInfo": { "count": n, "active": n, "backgrounds": [...] },
-    ///   "workspaceDimensions": { "width": f32, "height": f32, "gap": f32 }
-    /// }
-    /// ```
-    #[wasm_bindgen]
-    pub fn tick_frame(&mut self) -> String {
-        // 1. Tick transition first - this updates viewport state
-        let _transitioning = self.desktop.tick_transition();
-
-        // 2. Get viewport state (now guaranteed to be updated)
-        let viewport = &self.desktop.viewport;
-
-        // 3. Get window screen rects (using updated viewport)
-        let rects = self.desktop.get_window_screen_rects();
-        let windows: Vec<serde_json::Value> = rects
-            .into_iter()
-            .enumerate()
-            .map(|(z_order, r)| {
-                serde_json::json!({
-                    "id": r.id,
-                    "title": r.title,
-                    "appId": r.app_id,
-                    "state": match r.state {
-                        desktop::WindowState::Normal => "normal",
-                        desktop::WindowState::Minimized => "minimized",
-                        desktop::WindowState::Maximized => "maximized",
-                        desktop::WindowState::Fullscreen => "fullscreen",
-                    },
-                    "focused": r.focused,
-                    "zOrder": z_order,
-                    "opacity": r.opacity,
-                    "screenRect": {
-                        "x": r.screen_rect.x,
-                        "y": r.screen_rect.y,
-                        "width": r.screen_rect.width,
-                        "height": r.screen_rect.height
-                    }
-                })
-            })
-            .collect();
-
-        // 4. Get view mode (check transitioning first)
-        let view_mode = if self.desktop.is_transitioning() {
-            "transitioning"
-        } else {
-            match self.desktop.get_view_mode() {
-                desktop::ViewMode::Desktop { .. } => "workspace",
-                desktop::ViewMode::Void => "void",
-            }
-        };
-
-        // 5. Get workspace info
-        let workspaces = self.desktop.desktops.desktops();
-        let workspace_backgrounds: Vec<String> = workspaces
-            .iter()
-            .map(|ws| ws.background.id().to_string())
-            .collect();
-
-        // 6. Get workspace dimensions
-        let ws_size = self.desktop.desktops.desktop_size();
-        let ws_gap = self.desktop.desktops.desktop_gap();
-
-        // 7. Build complete frame data
-        // Note: "animating" is for framerate (any activity like zoom/pan/drag)
-        //       "transitioning" is specifically for viewport animations (workspace switches)
-        serde_json::to_string(&serde_json::json!({
-            "viewport": {
-                "center": { "x": viewport.center.x, "y": viewport.center.y },
-                "zoom": viewport.zoom
-            },
-            "windows": windows,
-            "animating": self.desktop.is_animating(),
-            "transitioning": self.desktop.is_animating_viewport(),
-            "viewMode": view_mode,
-            "workspaceInfo": {
-                "count": workspaces.len(),
-                "active": self.desktop.get_visual_active_workspace(),
-                "backgrounds": workspace_backgrounds
-            },
-            "workspaceDimensions": {
-                "width": ws_size.width,
-                "height": ws_size.height,
-                "gap": ws_gap
-            }
-        }))
-        .unwrap_or_else(|_| "{}".to_string())
-    }
+    // Desktop functionality has been moved to the `orbital-desktop` crate.
+    // Load `DesktopController` from `orbital_desktop.js` for desktop operations.
+    // =========================================================================
 }
 
 impl Default for Supervisor {

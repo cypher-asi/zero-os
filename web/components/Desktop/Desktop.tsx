@@ -1,13 +1,14 @@
 import { useRef, useEffect, useState, useCallback, createContext, useContext } from 'react';
-import { SupervisorProvider, Supervisor } from '../../desktop/hooks/useSupervisor';
+import { SupervisorProvider, Supervisor, DesktopControllerProvider, DesktopController } from '../../desktop/hooks/useSupervisor';
 import { WindowContent } from '../WindowContent/WindowContent';
 import { Taskbar } from '../Taskbar/Taskbar';
 import { AppRouter } from '../../apps/AppRouter/AppRouter';
-import { ContextMenu, MenuItem } from '../ContextMenu/ContextMenu';
+import { Menu } from '@cypher-asi/zui';
 import styles from './Desktop.module.css';
 
 interface DesktopProps {
   supervisor: Supervisor;
+  desktop: DesktopController;
 }
 
 interface SelectionBox {
@@ -17,7 +18,7 @@ interface SelectionBox {
   currentY: number;
 }
 
-interface ContextMenuState {
+interface BackgroundMenuState {
   x: number;
   y: number;
   visible: boolean;
@@ -46,7 +47,7 @@ interface BackgroundInfo {
 // Context to share background controller
 interface BackgroundContextType {
   backgrounds: BackgroundInfo[];
-  currentBackground: string;
+  getActiveBackground: () => string;
   setBackground: (id: string) => void;
 }
 
@@ -107,6 +108,7 @@ interface WindowInfo {
 interface WorkspaceInfo {
   count: number;
   active: number;
+  actualActive: number;
   backgrounds: string[];
 }
 
@@ -120,7 +122,7 @@ interface WorkspaceDimensions {
  * Complete frame data from Rust's tick_frame() - single source of truth.
  * 
  * The crossfade transition model uses:
- * - `transitioning`: Controls void layer visibility (background shows all desktops)
+ * - `showVoid`: Controls void layer visibility (background shows all desktops)
  * - `window.opacity`: Controls desktop layer visibility (windows fade out)
  * 
  * Both layers render simultaneously during transitions for smooth crossfade effect.
@@ -132,6 +134,8 @@ interface FrameData {
   animating: boolean;
   /** True only during layer transitions (void enter/exit) - for crossfade */
   transitioning: boolean;
+  /** True when void layer should be visible (in void mode or during void transitions) */
+  showVoid: boolean;
   /** Current view mode (desktop/workspace = desktop view, void = all desktops) */
   viewMode: 'desktop' | 'workspace' | 'void' | 'transitioning';
   workspaceInfo: WorkspaceInfo;
@@ -164,15 +168,15 @@ function windowListChanged(newWindows: WindowInfo[], oldIds: Set<number>): boole
 }
 
 function DesktopInner({ 
-  supervisor,
+  desktop,
   backgroundRef,
   onBackgroundReady,
-  activeWorkspaceBackground,
+  workspaceInfoRef,
 }: { 
-  supervisor: Supervisor;
+  desktop: DesktopController;
   backgroundRef: React.MutableRefObject<DesktopBackgroundType | null>;
   onBackgroundReady: () => void;
-  activeWorkspaceBackground: string;
+  workspaceInfoRef: React.MutableRefObject<WorkspaceInfo | null>;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRef = useRef<number | null>(null);
@@ -198,16 +202,10 @@ function DesktopInner({
   
   // Store pending windows when we need to delay React update for fade-out
   const pendingWindowsRef = useRef<WindowInfo[] | null>(null);
-
-  // Sync background renderer with active workspace's background
-  useEffect(() => {
-    if (backgroundRef.current?.is_initialized()) {
-      const current = backgroundRef.current.get_current_background();
-      if (current !== activeWorkspaceBackground) {
-        backgroundRef.current.set_background(activeWorkspaceBackground);
-      }
-    }
-  }, [activeWorkspaceBackground, backgroundRef]);
+  
+  // Track pending background change during transitions
+  const pendingBackgroundRef = useRef<string | null>(null);
+  const backgroundSwitchedRef = useRef<boolean>(false);
 
   // Initialize WebGPU background renderer and run unified render loop
   useEffect(() => {
@@ -270,7 +268,7 @@ function DesktopInner({
             
             try {
               // SINGLE call to Rust - tick + get all data atomically
-              const frameJson = supervisor.tick_frame();
+              const frameJson = desktop.tick_frame();
               const frame: FrameData = JSON.parse(frameJson);
               
               // Update adaptive framerate based on animation state
@@ -297,18 +295,41 @@ function DesktopInner({
                 workspaceDimensions.gap
               );
               
+              // Sync background renderer with active desktop's background from Rust state
+              // Switch backgrounds during the blackout period (40-60% of transition)
+              const targetBackground = workspaceInfo.backgrounds[workspaceInfo.actualActive] || 'grain';
+              const currentRendererBg = backgroundRef.current.get_current_background();
+              
+              if (frame.transitioning) {
+                // During transition: Switch background when visual workspace changes
+                // This happens during the extended blackout period where windows are fully transparent
+                if (targetBackground !== currentRendererBg && !backgroundSwitchedRef.current) {
+                  if (workspaceInfo.active === workspaceInfo.actualActive) {
+                    backgroundRef.current.set_background(targetBackground);
+                    backgroundSwitchedRef.current = true;
+                  }
+                }
+              } else {
+                // Transition complete: Ensure background is correct and reset switch flag
+                if (targetBackground !== currentRendererBg) {
+                  backgroundRef.current.set_background(targetBackground);
+                }
+                backgroundSwitchedRef.current = false;
+              }
+              
+              // Store workspace info for parent component access (context menu, etc.)
+              workspaceInfoRef.current = workspaceInfo;
+              
                               // CROSSFADE MODEL: Show void layer (all desktops as tiles) when:
                               // - In void mode (user is viewing all desktops)
-                              // - Transitioning between modes (crossfade in progress)
+                              // - Transitioning TO or FROM void (not during desktop switches)
                               //
-                              // During transitions, both layers render simultaneously:
+                              // During void transitions, both layers render simultaneously:
                               // - Desktop layer (windows) fades out via window.opacity
                               // - Void layer (background) shows all desktop tiles
                               //
-                              // This is NOT triggered by user zoom/pan within a desktop.
-                              backgroundRef.current.set_transitioning(
-                                viewMode === 'void' || frame.transitioning
-                              );
+                              // Desktop switches do NOT show void - they just fade windows.
+                              backgroundRef.current.set_transitioning(frame.showVoid);
               
               backgroundRef.current.render();
               
@@ -322,23 +343,22 @@ function DesktopInner({
               // Build set of current window IDs for quick lookup
               const currentWindowIds = new Set(frame.windows.map(w => w.id));
               
-              // IMPORTANT: Fade out windows that are no longer in the frame
+              // IMPORTANT: Hide windows that are no longer in the frame
               // This handles the case where a window is filtered out during transitions
-              // but React hasn't removed it from the DOM yet
+              // but React hasn't removed it from the DOM yet.
+              // No CSS animation - Rust already faded it to opacity 0 before filtering.
               for (const [id, el] of windowRefsMap.current.entries()) {
                 if (!currentWindowIds.has(id)) {
-                  // Window was filtered out - fade it out (if not already fading)
+                  // Window was filtered out - hide immediately (Rust already faded it)
                   if (!fadingOutWindowsRef.current.has(id)) {
                     fadingOutWindowsRef.current.add(id);
-                    el.style.animation = 'windowFadeOut 150ms ease-out forwards';
+                    el.style.visibility = 'hidden';
                     
                     // Capture id in closure for the timeout
                     const windowId = id;
                     
-                    // After animation completes, hide and clean up
+                    // Small delay to ensure Rust transition completed, then clean up
                     setTimeout(() => {
-                      el.style.visibility = 'hidden';
-                      el.style.animation = '';
                       fadingOutWindowsRef.current.delete(windowId);
                       
                       // If all fade-outs complete and we have pending windows, apply them
@@ -347,7 +367,7 @@ function DesktopInner({
                         setWindows(pendingWindowsRef.current);
                         pendingWindowsRef.current = null;
                       }
-                    }, 150);
+                    }, 50);
                   }
                 }
               }
@@ -377,25 +397,12 @@ function DesktopInner({
                   // Make sure it's visible (in case it was hidden)
                   el.style.visibility = 'visible';
                   
-                  // Fade OUT: opacity going from 1 to 0 (start of workspace transition)
-                  if (prevOpacity > 0 && targetOpacity === 0 && !wasFadingOut) {
-                    fadingOutWindowsRef.current.add(win.id);
+                  // Clear any CSS animations/transitions - opacity is driven directly by Rust
+                  if (el.style.animation !== 'none' && el.style.animation !== '') {
                     el.style.animation = 'none';
-                    void el.offsetHeight; // Force reflow to reset animation
-                    el.style.animation = 'windowFadeOut 100ms ease-out forwards';
-                    
-                    // Remove from fading set after animation completes
-                    const windowId = win.id;
-                    setTimeout(() => {
-                      fadingOutWindowsRef.current.delete(windowId);
-                    }, 100);
                   }
-                  // Fade IN: opacity going from 0 to 1 (end of workspace transition)
-                  else if ((wasHidden || wasFadingOut || prevOpacity === 0) && targetOpacity > 0) {
-                    fadingOutWindowsRef.current.delete(win.id);
-                    el.style.animation = 'none';
-                    void el.offsetHeight; // Force reflow to reset animation
-                    el.style.animation = 'windowFadeIn 150ms ease-out forwards';
+                  if (el.style.transition !== 'none') {
+                    el.style.transition = 'none';
                   }
                   
                   // Update previous opacity tracking
@@ -407,11 +414,15 @@ function DesktopInner({
                   el.style.height = `${win.screenRect.height}px`;
                   el.style.zIndex = String(win.zOrder + 10);
                   
-                  // Don't override opacity while animation is running - let the animation control it
-                  // Only set opacity directly if not currently animating
-                  if (!wasFadingOut && prevOpacity === targetOpacity) {
-                    el.style.opacity = String(win.opacity);
+                  // CRITICAL: Override position to absolute if Panel set it to relative
+                  if (el.style.position !== 'absolute') {
+                    el.style.position = 'absolute';
+                    el.style.left = '0';
+                    el.style.top = '0';
                   }
+                  
+                  // Always set opacity directly - Rust controls the smooth transitions
+                  el.style.opacity = String(win.opacity);
                 }
               }
               
@@ -454,7 +465,7 @@ function DesktopInner({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [supervisor, backgroundRef, onBackgroundReady]);
+  }, [desktop, backgroundRef, onBackgroundReady]);
   
   // Callback to register window DOM refs
   const setWindowRef = useCallback((id: number, el: HTMLDivElement | null) => {
@@ -494,15 +505,17 @@ function DesktopInner({
   );
 }
 
-export function Desktop({ supervisor }: DesktopProps) {
+export function Desktop({ supervisor, desktop }: DesktopProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const backgroundRef = useRef<DesktopBackgroundType | null>(null);
   const [initialized, setInitialized] = useState(false);
   const [selectionBox, setSelectionBox] = useState<SelectionBox | null>(null);
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>({ x: 0, y: 0, visible: false });
+  const [backgroundMenu, setBackgroundMenu] = useState<BackgroundMenuState>({ x: 0, y: 0, visible: false });
   const [backgrounds, setBackgrounds] = useState<BackgroundInfo[]>([]);
-  const [currentBackground, setCurrentBackgroundState] = useState<string>('grain');
   const [settingsRestored, setSettingsRestored] = useState(false);
+  
+  // Ref to track current workspace info (updated by render loop in DesktopInner)
+  const workspaceInfoRef = useRef<WorkspaceInfo | null>(null);
 
   // Initialize desktop engine
   useEffect(() => {
@@ -512,9 +525,13 @@ export function Desktop({ supervisor }: DesktopProps) {
     if (!container) return;
 
     const rect = container.getBoundingClientRect();
-    supervisor.init_desktop(rect.width, rect.height);
+    desktop.init(rect.width, rect.height);
+    
+    // Launch default terminal window
+    desktop.launch_app('terminal');
+    
     setInitialized(true);
-  }, [supervisor, initialized]);
+  }, [desktop, initialized]);
 
   // Handle resize
   useEffect(() => {
@@ -525,12 +542,12 @@ export function Desktop({ supervisor }: DesktopProps) {
       if (!container) return;
 
       const rect = container.getBoundingClientRect();
-      supervisor.resize_desktop(rect.width, rect.height);
+      desktop.resize(rect.width, rect.height);
     };
 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [supervisor, initialized]);
+  }, [desktop, initialized]);
 
   // Prevent browser zoom on Ctrl+scroll at window level (capture phase to intercept early)
   useEffect(() => {
@@ -550,11 +567,11 @@ export function Desktop({ supervisor }: DesktopProps) {
     if (!initialized) return;
 
     const handleGlobalPointerMove = (e: PointerEvent) => {
-      supervisor.desktop_pointer_move(e.clientX, e.clientY);
+      desktop.pointer_move(e.clientX, e.clientY);
     };
 
     const handleGlobalPointerUp = () => {
-      supervisor.desktop_pointer_up();
+      desktop.pointer_up();
     };
 
     window.addEventListener('pointermove', handleGlobalPointerMove);
@@ -563,7 +580,7 @@ export function Desktop({ supervisor }: DesktopProps) {
       window.removeEventListener('pointermove', handleGlobalPointerMove);
       window.removeEventListener('pointerup', handleGlobalPointerUp);
     };
-  }, [supervisor, initialized]);
+  }, [desktop, initialized]);
 
   // Use capture phase for panning so it intercepts before windows
   useEffect(() => {
@@ -574,7 +591,7 @@ export function Desktop({ supervisor }: DesktopProps) {
       const isPanGesture = e.button === 1 || (e.button === 0 && (e.ctrlKey || e.shiftKey));
       if (isPanGesture) {
         const result = JSON.parse(
-          supervisor.desktop_pointer_down(e.clientX, e.clientY, e.button, e.ctrlKey, e.shiftKey)
+          desktop.pointer_down(e.clientX, e.clientY, e.button, e.ctrlKey, e.shiftKey)
         );
         if (result.type === 'handled') {
           e.preventDefault();
@@ -585,7 +602,7 @@ export function Desktop({ supervisor }: DesktopProps) {
 
     container.addEventListener('pointerdown', handleCapturePointerDown, { capture: true });
     return () => container.removeEventListener('pointerdown', handleCapturePointerDown, { capture: true });
-  }, [supervisor]);
+  }, [desktop]);
 
   // Callback when background renderer is ready
   const handleBackgroundReady = useCallback(() => {
@@ -594,64 +611,43 @@ export function Desktop({ supervisor }: DesktopProps) {
         const availableJson = backgroundRef.current.get_available_backgrounds();
         const available = JSON.parse(availableJson) as BackgroundInfo[];
         setBackgrounds(available);
-        
-        // Restore workspace settings from localStorage
-        const WORKSPACE_STORAGE_KEY = 'orbital-workspace-settings';
-        const savedSettings = localStorage.getItem(WORKSPACE_STORAGE_KEY);
-        if (savedSettings && !settingsRestored) {
-          supervisor.import_workspace_settings(savedSettings);
-          setSettingsRestored(true);
-        }
-        
-        // Sync renderer to active workspace's background
-        const activeBackground = supervisor.get_active_workspace_background();
-        if (activeBackground && available.some(bg => bg.id === activeBackground)) {
-          backgroundRef.current.set_background(activeBackground);
-          setCurrentBackgroundState(activeBackground);
-        } else {
-          const current = backgroundRef.current.get_current_background();
-          setCurrentBackgroundState(current);
-        }
+        setSettingsRestored(true);
       } catch (e) {
         console.error('[desktop] Failed to initialize backgrounds:', e);
       }
     }
-  }, [supervisor, settingsRestored]);
+  }, []);
 
-  // Set background - updates renderer, workspace state, and persists
+  // Get active background from workspace info
+  const getActiveBackground = useCallback(() => {
+    if (workspaceInfoRef.current) {
+      return workspaceInfoRef.current.backgrounds[workspaceInfoRef.current.actualActive] || 'grain';
+    }
+    return 'grain';
+  }, []);
+
+  // Set background for active desktop - updates Rust state which will sync to renderer
   const setBackground = useCallback((id: string) => {
-    // Update the renderer
-    if (backgroundRef.current?.set_background(id)) {
-      setCurrentBackgroundState(id);
-    }
-    
-    // Update workspace state in Rust and persist to localStorage
-    if (supervisor.set_active_workspace_background(id)) {
-      const WORKSPACE_STORAGE_KEY = 'orbital-workspace-settings';
-      try {
-        const settings = supervisor.export_workspace_settings();
-        localStorage.setItem(WORKSPACE_STORAGE_KEY, settings);
-      } catch (e) {
-        console.error('[desktop] Failed to persist settings:', e);
-      }
-    }
-  }, [supervisor]);
+    const activeIndex = desktop.get_active_desktop();
+    desktop.set_desktop_background(activeIndex, id);
+    // Background renderer will sync automatically via render loop
+  }, [desktop]);
 
   // Forward pointer events to Rust (bubble phase for normal interactions)
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      // Don't process if the event is from the context menu (it stops propagation)
-      // Close context menu only if clicking directly on the desktop or canvas
+      // Don't process if the event is from the background menu (it stops propagation)
+      // Close background menu only if clicking directly on the desktop or canvas
       const target = e.target as HTMLElement;
       const isDesktopClick = target === containerRef.current || target.tagName === 'CANVAS';
       
-      if (contextMenu.visible && isDesktopClick) {
-        setContextMenu({ ...contextMenu, visible: false });
+      if (backgroundMenu.visible && isDesktopClick) {
+        setBackgroundMenu({ ...backgroundMenu, visible: false });
         return; // Don't process further, just close the menu
       }
 
       const result = JSON.parse(
-        supervisor.desktop_pointer_down(e.clientX, e.clientY, e.button, e.ctrlKey, e.shiftKey)
+        desktop.pointer_down(e.clientX, e.clientY, e.button, e.ctrlKey, e.shiftKey)
       );
       if (result.type === 'handled') {
         e.preventDefault();
@@ -673,12 +669,12 @@ export function Desktop({ supervisor }: DesktopProps) {
         });
       }
     },
-    [supervisor, contextMenu]
+    [desktop, backgroundMenu]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      supervisor.desktop_pointer_move(e.clientX, e.clientY);
+      desktop.pointer_move(e.clientX, e.clientY);
 
       if (selectionBox) {
         setSelectionBox((prev) =>
@@ -686,23 +682,23 @@ export function Desktop({ supervisor }: DesktopProps) {
         );
       }
     },
-    [supervisor, selectionBox]
+    [desktop, selectionBox]
   );
 
   const handlePointerUp = useCallback(() => {
-    supervisor.desktop_pointer_up();
+    desktop.pointer_up();
     setSelectionBox(null);
-  }, [supervisor]);
+  }, [desktop]);
 
   const handlePointerLeave = useCallback(() => {
-    supervisor.desktop_pointer_up();
+    desktop.pointer_up();
     setSelectionBox(null);
-  }, [supervisor]);
+  }, [desktop]);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       if (e.ctrlKey) {
-        supervisor.desktop_wheel(
+        desktop.wheel(
           e.deltaX,
           e.deltaY,
           e.clientX,
@@ -711,16 +707,16 @@ export function Desktop({ supervisor }: DesktopProps) {
         );
       }
     },
-    [supervisor]
+    [desktop]
   );
 
-  // Handle right-click context menu
+  // Handle right-click for background menu
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
-      // Only show context menu when right-clicking on the desktop background itself
+      // Only show background menu when right-clicking on the desktop background itself
       if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'CANVAS') {
         e.preventDefault();
-        setContextMenu({
+        setBackgroundMenu({
           x: e.clientX,
           y: e.clientY,
           visible: true,
@@ -730,25 +726,33 @@ export function Desktop({ supervisor }: DesktopProps) {
     []
   );
 
-  const closeContextMenu = useCallback(() => {
-    setContextMenu({ ...contextMenu, visible: false });
-  }, [contextMenu]);
+  const closeBackgroundMenu = useCallback(() => {
+    setBackgroundMenu({ ...backgroundMenu, visible: false });
+  }, [backgroundMenu]);
 
-  // Build context menu items
-  const contextMenuItems: MenuItem[] = [
-    {
-      id: 'background-header',
-      label: 'Change Background',
-      disabled: true,
-    },
-    { id: 'separator', label: '' },
-    ...backgrounds.map((bg) => ({
-      id: `bg-${bg.id}`,
-      label: bg.name,
-      checked: bg.id === currentBackground,
-      onClick: () => setBackground(bg.id),
-    })),
-  ];
+  const handleBackgroundSelect = useCallback((id: string) => {
+    setBackground(id);
+    closeBackgroundMenu();
+  }, [setBackground, closeBackgroundMenu]);
+
+  // Close background menu when clicking outside
+  useEffect(() => {
+    if (!backgroundMenu.visible) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      closeBackgroundMenu();
+    };
+
+    // Small delay to prevent immediate close on right-click
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside);
+    }, 10);
+
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [backgroundMenu.visible, closeBackgroundMenu]);
 
   // Handle keyboard shortcuts for workspace navigation and void entry/exit
   useEffect(() => {
@@ -762,16 +766,46 @@ export function Desktop({ supervisor }: DesktopProps) {
         return;
       }
       
+      // T key: Create new terminal
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        desktop.launch_app('terminal');
+        return;
+      }
+      
+      // C key: Close focused window
+      if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        try {
+          const focusedId = desktop.get_focused_window();
+          if (focusedId !== undefined) {
+            // Get the process ID associated with this window (if any)
+            const processId = desktop.get_window_process_id(BigInt(focusedId));
+            
+            // Close the window
+            desktop.close_window(BigInt(focusedId));
+            
+            // Kill the associated process if it exists
+            if (processId !== undefined && supervisor) {
+              supervisor.kill_process(Number(processId));
+            }
+          }
+        } catch {
+          // Ignore errors during window close
+        }
+        return;
+      }
+      
       // Ctrl+` (backtick) or F3: Toggle void view
       if ((e.ctrlKey && e.key === '`') || e.key === 'F3') {
         e.preventDefault();
         try {
-          const viewMode = supervisor.get_view_mode();
+          const viewMode = desktop.get_view_mode();
           // Accept both 'desktop' and legacy 'workspace' for entering void
           if (viewMode === 'desktop' || viewMode === 'workspace') {
-            supervisor.enter_void();
+            desktop.enter_void();
           } else if (viewMode === 'void') {
-            supervisor.exit_void(supervisor.get_active_workspace());
+            desktop.exit_void(desktop.get_active_desktop());
           }
         } catch {
           // Ignore errors during view mode toggle
@@ -779,57 +813,78 @@ export function Desktop({ supervisor }: DesktopProps) {
         return;
       }
 
-      // Only handle Ctrl+Arrow (not in input fields)
-      if (!e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
-
+      // Arrow keys: Cycle between windows (without Ctrl) or desktops (with Ctrl)
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
         
-        try {
-          const workspaces = JSON.parse(supervisor.get_workspaces_json()) as Array<{ id: number }>;
-          const count = workspaces.length;
-          if (count <= 1) return;
+        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+          // Ctrl+Arrow: Switch desktops
+          try {
+            const desktops = JSON.parse(desktop.get_desktops_json()) as Array<{ id: number }>;
+            const count = desktops.length;
+            if (count <= 1) return;
 
-          const current = supervisor.get_active_workspace();
-          const next = e.key === 'ArrowLeft'
-            ? (current > 0 ? current - 1 : count - 1)
-            : (current < count - 1 ? current + 1 : 0);
+            const current = desktop.get_active_desktop();
+            const next = e.key === 'ArrowLeft'
+              ? (current > 0 ? current - 1 : count - 1)
+              : (current < count - 1 ? current + 1 : 0);
 
-          // If in void, exit to target workspace; otherwise switch
-          if (supervisor.get_view_mode() === 'void') {
-            supervisor.exit_void(next);
-          } else {
-            supervisor.switch_workspace(next);
+            // If in void, exit to target desktop; otherwise switch
+            if (desktop.get_view_mode() === 'void') {
+              desktop.exit_void(next);
+            } else {
+              desktop.switch_desktop(next);
+            }
+          } catch {
+            // Ignore errors during desktop switch
           }
-        } catch {
-          // Ignore errors during workspace switch
+        } else if (!e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+          // Arrow only: Cycle between windows on current desktop
+          try {
+            const windowsJson = desktop.get_windows_json();
+            const windows = JSON.parse(windowsJson) as Array<{ id: number; state: string; zOrder: number }>;
+            
+            // Filter to only visible windows (not minimized)
+            // Windows are already sorted by ID (creation order) from get_windows_json
+            // This matches the order shown in the taskbar (left to right)
+            const visibleWindows = windows.filter(w => w.state !== 'minimized');
+            
+            if (visibleWindows.length === 0) {
+              return;
+            }
+            
+            const focusedId = desktop.get_focused_window();
+            // Convert BigInt to number for comparison
+            const focusedIdNum = focusedId !== undefined ? Number(focusedId) : undefined;
+            const currentIndex = visibleWindows.findIndex(w => w.id === focusedIdNum);
+            
+            let nextIndex;
+            if (currentIndex === -1) {
+              // No window focused, focus the first window (leftmost in taskbar)
+              nextIndex = 0;
+            } else if (e.key === 'ArrowLeft') {
+              // Previous window (left in taskbar = lower ID)
+              nextIndex = currentIndex > 0 ? currentIndex - 1 : visibleWindows.length - 1;
+            } else {
+              // Next window (right in taskbar = higher ID)
+              nextIndex = currentIndex < visibleWindows.length - 1 ? currentIndex + 1 : 0;
+            }
+            
+            const nextWindow = visibleWindows[nextIndex];
+            
+            // Focus and pan to the next window
+            desktop.focus_window(BigInt(nextWindow.id));
+            desktop.pan_to_window(BigInt(nextWindow.id));
+          } catch (err) {
+            console.error('[Desktop] Error during window cycling:', err);
+          }
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [initialized, supervisor]);
-
-  // Sync React state when active workspace changes (e.g., via keyboard shortcuts)
-  useEffect(() => {
-    if (!initialized || !backgroundRef.current?.is_initialized()) return;
-
-    const syncBackground = () => {
-      try {
-        const activeBackground = supervisor.get_active_workspace_background();
-        if (activeBackground && activeBackground !== currentBackground) {
-          backgroundRef.current?.set_background(activeBackground);
-          setCurrentBackgroundState(activeBackground);
-        }
-      } catch {
-        // Ignore - method may not exist yet
-      }
-    };
-
-    const interval = setInterval(syncBackground, 200);
-    return () => clearInterval(interval);
-  }, [initialized, supervisor, currentBackground]);
+  }, [initialized, desktop]);
 
   // Compute selection box rectangle
   const selectionRect = selectionBox
@@ -843,25 +898,26 @@ export function Desktop({ supervisor }: DesktopProps) {
 
   return (
     <SupervisorProvider value={supervisor}>
-      <BackgroundContext.Provider value={{ backgrounds, currentBackground, setBackground }}>
-        <div
-          ref={containerRef}
-          className={styles.desktop}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerLeave}
-          onWheel={handleWheel}
-          onContextMenu={handleContextMenu}
-        >
-          {initialized && (
-            <DesktopInner 
-              supervisor={supervisor}
-              backgroundRef={backgroundRef}
-              onBackgroundReady={handleBackgroundReady}
-              activeWorkspaceBackground={currentBackground}
-            />
-          )}
+      <DesktopControllerProvider value={desktop}>
+        <BackgroundContext.Provider value={{ backgrounds, getActiveBackground, setBackground }}>
+          <div
+            ref={containerRef}
+            className={styles.desktop}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerLeave}
+            onWheel={handleWheel}
+            onContextMenu={handleContextMenu}
+          >
+            {initialized && (
+              <DesktopInner 
+                desktop={desktop}
+                backgroundRef={backgroundRef}
+                onBackgroundReady={handleBackgroundReady}
+                workspaceInfoRef={workspaceInfoRef}
+              />
+            )}
 
           {/* Selection bounding box */}
           {selectionRect && selectionRect.width > 2 && selectionRect.height > 2 && (
@@ -876,17 +932,37 @@ export function Desktop({ supervisor }: DesktopProps) {
             />
           )}
 
-          {/* Desktop context menu */}
-          {contextMenu.visible && (
-            <ContextMenu
-              x={contextMenu.x}
-              y={contextMenu.y}
-              items={contextMenuItems}
-              onClose={closeContextMenu}
-            />
-          )}
-        </div>
-      </BackgroundContext.Provider>
+            {/* Background selection menu */}
+            {backgroundMenu.visible && (
+              <div
+                className={styles.backgroundMenu}
+                style={{ 
+                  position: 'fixed',
+                  left: backgroundMenu.x,
+                  top: backgroundMenu.y,
+                  zIndex: 10000,
+                }}
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <Menu
+                  title="Background"
+                  items={backgrounds.map((bg) => ({
+                    id: bg.id,
+                    label: bg.name,
+                  }))}
+                  selectedId={getActiveBackground()}
+                  onSelect={handleBackgroundSelect}
+                  variant="glass"
+                  border="future"
+                  rounded="md"
+                  width={200}
+                />
+              </div>
+            )}
+          </div>
+        </BackgroundContext.Provider>
+      </DesktopControllerProvider>
     </SupervisorProvider>
   );
 }

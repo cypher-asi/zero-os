@@ -15,6 +15,7 @@ console_error_panic_hook = ["dep:console_error_panic_hook"]
 [dependencies]
 orbital-hal.workspace = true
 orbital-kernel.workspace = true
+orbital-desktop = { path = "../orbital-desktop", features = ["wasm"] }
 wasm-bindgen.workspace = true
 js-sys.workspace = true
 web-sys.workspace = true
@@ -22,8 +23,6 @@ serde.workspace = true
 serde_json.workspace = true
 console_error_panic_hook = { version = "0.1", optional = true }
 wasm-bindgen-futures = "0.4"
-wgpu = { version = "23", features = ["webgpu", "webgl"] }
-bytemuck = { version = "1.14", features = ["derive"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
