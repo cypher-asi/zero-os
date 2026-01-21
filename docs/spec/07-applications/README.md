@@ -6,195 +6,126 @@
 
 Applications in Orbital OS:
 
-1. **Sandboxed**: Run with minimal capabilities by default
-2. **Capability-Request**: Must request capabilities they need
-3. **Isolated**: Cannot access other apps' data without permission
+1. **Sandboxed**: Run as isolated processes (Web Workers on WASM, hardware processes on native)
+2. **Capability-based**: Must hold capabilities to access system resources
+3. **Platform-agnostic**: Core app logic works across WASM, QEMU, and bare metal
+4. **Axiom-integrated**: All lifecycle events recorded in CommitLog for replay
+
+## Documentation Structure
+
+```
+07-applications/
+├── README.md              (this file - overview)
+├── 00-system-integrity.md (Axiom-first architecture invariant)
+├── 01-architecture.md     (App model, manifest, OrbitalApp trait)
+├── 02-protocol.md         (Backend ↔ UI IPC protocol)
+├── 03-security.md         (Permission model, Init as authority)
+├── 04-runtime.md          (AppRuntime, event loop, platforms)
+└── 05-factory-apps.md     (Clock and Calculator reference apps)
+```
+
+## Quick Reference
+
+### App Layer Model
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│              Platform-Agnostic Core (crates/orbital-apps/)    │
+│                                                               │
+│  - OrbitalApp trait (all apps implement this)                 │
+│  - AppManifest (declarative capabilities)                     │
+│  - AppRuntime (event loop, syscall dispatch)                  │
+│  - UI Protocol (MSG_APP_STATE, MSG_APP_INPUT)                 │
+└───────────────────────────────────────────────────────────────┘
+                              │
+        ┌─────────────────────┼─────────────────────┐
+        ▼                     ▼                     ▼
+┌───────────────┐    ┌───────────────┐    ┌───────────────┐
+│  WASM/Browser │    │    QEMU       │    │  Bare Metal   │
+│               │    │               │    │               │
+│ React UI      │    │ Text/VGA UI   │    │ Framebuffer   │
+│ IndexedDB     │    │ VirtIO Block  │    │ NVMe          │
+│ useSupervisor │    │ Serial I/O    │    │ Native I/O    │
+└───────────────┘    └───────────────┘    └───────────────┘
+```
+
+### OrbitalApp Trait
+
+```rust
+pub trait OrbitalApp {
+    fn manifest() -> &'static AppManifest where Self: Sized;
+    fn init(&mut self, ctx: &AppContext) -> Result<(), AppError>;
+    fn update(&mut self, ctx: &AppContext) -> ControlFlow;
+    fn on_message(&mut self, ctx: &AppContext, msg: Message) -> Result<(), AppError>;
+    fn shutdown(&mut self, ctx: &AppContext);
+}
+```
+
+### AppManifest
+
+```rust
+pub struct AppManifest {
+    pub id: &'static str,           // "com.orbital.clock"
+    pub name: &'static str,         // "Clock"
+    pub version: &'static str,      // "1.0.0"
+    pub description: &'static str,
+    pub capabilities: &'static [CapabilityRequest],
+}
+```
+
+### Permission Authority
+
+All permission grants flow through Init (PID 1):
+
+```
+Kernel Boot ──► Init (PID 1) ──► App Process
+                    │
+              grants via
+           SYS_CAP_GRANT syscall
+           (through Axiom)
+```
 
 ## Application Lifecycle
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      Application Lifecycle                           │
-│                                                                     │
-│  1. Install (future)                                                 │
-│     └─ Store binary in storage                                       │
-│     └─ Register with app manager                                     │
-│                                                                     │
-│  2. Launch                                                           │
-│     └─ User/system requests launch                                   │
-│     └─ ProcessManager spawns with manifest capabilities              │
-│                                                                     │
-│  3. Initialize                                                       │
-│     └─ App receives initial capabilities                             │
-│     └─ App can request additional capabilities                       │
-│                                                                     │
-│  4. Run                                                              │
-│     └─ App uses granted capabilities                                 │
-│     └─ IPC with services (storage, network, etc.)                    │
-│                                                                     │
-│  5. Terminate                                                        │
-│     └─ App exits or is killed                                        │
-│     └─ Capabilities revoked, resources freed                         │
-└─────────────────────────────────────────────────────────────────────┘
+1. Spawn        ──► Kernel creates process (ProcessCreated commit)
+2. Cap Setup    ──► Init grants capabilities (CapabilityInserted commits)
+3. Initialize   ──► AppRuntime calls app.init()
+4. Run Loop     ──► app.update() + app.on_message() in loop
+5. Terminate    ──► Kernel reclaims resources (ProcessTerminated commit)
 ```
 
-## Application Manifest
+## Factory Apps
 
-Applications declare their requirements:
+Two reference implementations demonstrate the framework:
 
-```rust
-/// Application manifest.
-#[derive(Clone, Debug)]
-pub struct AppManifest {
-    /// Application name
-    pub name: String,
-    /// Version
-    pub version: String,
-    /// Description
-    pub description: String,
-    /// Required capabilities
-    pub capabilities: Vec<CapabilityRequest>,
-    /// Optional capabilities
-    pub optional_capabilities: Vec<CapabilityRequest>,
-    /// Entry point
-    pub entry: String,
-}
+| App | Purpose | Demonstrates |
+|-----|---------|--------------|
+| **Clock** | Display time/date | Time syscalls, periodic updates, one-way IPC |
+| **Calculator** | Basic arithmetic | Bidirectional IPC, state management, user input |
 
-/// Capability request.
-#[derive(Clone, Debug)]
-pub struct CapabilityRequest {
-    /// Capability type
-    pub cap_type: String,
-    /// Reason for needing it
-    pub reason: String,
-    /// Minimum permissions needed
-    pub permissions: Permissions,
-}
-```
+## Key Concepts
 
-### Example Manifest
+### System Integrity (00-system-integrity.md)
 
-```toml
-# app.toml
+The Axiom-first invariant: ALL state-mutating operations MUST flow through Axiom Gateway. This enables deterministic replay and complete audit trails.
 
-name = "example-app"
-version = "1.0.0"
-description = "An example application"
-entry = "main.wasm"
+### Architecture (01-architecture.md)
 
-[[capabilities]]
-type = "storage"
-reason = "Save user preferences"
-permissions = { read = true, write = true, grant = false }
+The platform-agnostic app model including process isolation, kernel integration, and the `OrbitalApp` trait contract.
 
-[[capabilities]]
-type = "network"
-reason = "Fetch updates"
-permissions = { read = true, write = true, grant = false }
+### Protocol (02-protocol.md)
 
-[[optional_capabilities]]
-type = "console"
-reason = "Debug output"
-permissions = { read = false, write = true, grant = false }
-```
+Versioned binary protocol for communication between app backends (WASM) and UI surfaces (React). State-based design for loose coupling.
 
-## Capability Request Flow
+### Security (03-security.md)
 
-```
-     Application              ProcessManager            User/System
-          │                         │                        │
-          │  Request: "storage"     │                        │
-          │  with reason            │                        │
-          │────────────────────────▶│                        │
-          │                         │                        │
-          │                         │  (if policy requires   │
-          │                         │   user approval)       │
-          │                         │───────────────────────▶│
-          │                         │                        │  User approves
-          │                         │◀───────────────────────│
-          │                         │                        │
-          │                         │  Grant capability      │
-          │  Capability granted     │                        │
-          │  (slot 3)               │                        │
-          │◀────────────────────────│                        │
-```
+Capability-based security with Init (PID 1) as the sole permission authority. All grants recorded in CommitLog.
 
-## Application Sandbox
+### Runtime (04-runtime.md)
 
-Applications are isolated by:
+The `AppRuntime` component that runs inside each WASM process, providing the event loop and syscall interface.
 
-1. **Separate Process**: Each app runs in its own Web Worker/process
-2. **Limited Capabilities**: Only granted capabilities are accessible
-3. **Namespaced Storage**: Apps access only their storage namespace
-4. **Network Policy**: Network access can be restricted per-app
+### Factory Apps (05-factory-apps.md)
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Application Sandbox                           │
-│                                                                     │
-│  ┌────────────────────────────────────────────────────────────────┐│
-│  │                    Application Process                          ││
-│  │                                                                ││
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        ││
-│  │  │    Code      │  │    Heap      │  │    Stack     │        ││
-│  │  │   (.wasm)    │  │  (malloc)    │  │              │        ││
-│  │  └──────────────┘  └──────────────┘  └──────────────┘        ││
-│  │                                                                ││
-│  │  Capabilities: [storage-rw, network-r]                         ││
-│  └────────────────────────────────────────────────────────────────┘│
-│                              │                                      │
-│                      IPC only│                                      │
-│                              ▼                                      │
-│  ┌────────────────────────────────────────────────────────────────┐│
-│  │                    Runtime Services                             ││
-│  │                                                                ││
-│  │  Storage (namespaced)    Network (policy-limited)              ││
-│  └────────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-## WASM Applications
-
-On WASM, applications are compiled to `wasm32-unknown-unknown`:
-
-```rust
-// my_app/src/lib.rs
-
-#![no_std]
-#![no_main]
-
-extern crate alloc;
-extern crate orbital_process;
-
-use orbital_process::*;
-
-#[no_mangle]
-pub extern "C" fn _start() {
-    debug("app: starting");
-    
-    // Get our process ID
-    let pid = get_pid();
-    debug(&format!("app: running as PID {}", pid));
-    
-    // Use granted capabilities
-    // (capability slots are provided at startup)
-    
-    // Main application loop
-    loop {
-        // Do application work
-        
-        yield_now();
-    }
-}
-```
-
-## Documentation Structure (Future)
-
-```
-07-applications/
-├── README.md           (this file)
-├── 01-manifest.md     (Manifest format)
-├── 02-lifecycle.md    (Lifecycle management)
-├── 03-sandbox.md      (Sandbox details)
-└── 04-sdk.md          (Application SDK)
-```
+Complete specifications for Clock and Calculator reference implementations.
