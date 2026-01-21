@@ -18,7 +18,7 @@
   padding: 8px 16px;
   background: transparent;
   border: none;
-  color: #ccc;
+  color: var(--color-text-secondary, #ccc);
   font-size: 12px;
   cursor: pointer;
   text-align: left;
@@ -27,13 +27,13 @@
 }
 
 .menuItem:hover:not(.disabled):not(.menuHeader) {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: var(--color-overlay-light, rgba(255, 255, 255, 0.1));
+  color: var(--color-text-primary, #fff);
 }
 
 .menuItem.selected {
-  background: rgba(1, 244, 203, 0.15);
-  color: #01f4cb;
+  background: var(--color-accent-muted, rgba(1, 244, 203, 0.15));
+  color: var(--color-accent, #01f4cb);
   position: relative;
 }
 
@@ -44,29 +44,29 @@
   top: 0;
   bottom: 0;
   width: 2px;
-  background: #01f4cb;
+  background: var(--color-accent, #01f4cb);
 }
 
 .menuItem.selected:hover {
-  background: rgba(1, 244, 203, 0.2);
-  color: #01f4cb;
+  background: var(--color-accent-muted, rgba(1, 244, 203, 0.2));
+  color: var(--color-accent, #01f4cb);
 }
 
 .menuItem.disabled {
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.3));
   cursor: not-allowed;
 }
 
 .menuItem.disabled:hover {
   background: transparent;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.3));
 }
 
 .menuHeader {
   padding: 8px 16px;
   font-size: 11px;
   font-weight: 600;
-  color: #01f4cb;
+  color: var(--color-accent, #01f4cb);
   letter-spacing: 1px;
   text-transform: uppercase;
   cursor: default;
@@ -84,7 +84,7 @@
 .separator {
   height: 1px;
   margin: 8px 0;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-overlay-light, rgba(255, 255, 255, 0.1));
   border: none;
 }
 
@@ -96,7 +96,7 @@
   position: absolute;
   right: 8px;
   font-size: 8px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
 }
 
 .submenuWrapper {
@@ -109,4 +109,3 @@
   padding: 8px 0;
   min-width: 160px;
 }
-

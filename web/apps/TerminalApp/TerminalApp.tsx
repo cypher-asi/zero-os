@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useSupervisor } from '../../desktop/hooks/useSupervisor';
-import { Drawer, GroupCollapsible, Button, Text } from '@cypher-asi/zui';
+import { Drawer, GroupCollapsible, Button, Text, Label } from '@cypher-asi/zui';
 import styles from './TerminalApp.module.css';
 
 interface TerminalAppProps {
@@ -208,9 +208,12 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
                     {p.name}
                   </span>
                   <Text as="span" size="xs" variant="muted" className={styles.processMem}>{formatBytes(p.memory)}</Text>
-                  <span className={`${styles.processState} ${styles[`state${p.state}`]}`}>
+                  <Label
+                    variant={p.state === 'Running' ? 'success' : p.state === 'Blocked' ? 'warning' : 'danger'}
+                    size="xs"
+                  >
                     {p.state}
-                  </span>
+                  </Label>
                   {p.pid > 2 && (
                     <Button
                       variant="danger"

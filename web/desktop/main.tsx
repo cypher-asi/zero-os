@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { ThemeProvider } from '@cypher-asi/zui';
 import { Desktop } from '../components/Desktop/Desktop';
 import { Supervisor, DesktopController } from './hooks/useSupervisor';
 import '@cypher-asi/zui/styles';
@@ -106,6 +107,11 @@ async function init() {
       supervisor.kill_all_processes();
     });
 
+    // Disable browser right-click context menu
+    window.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+    });
+
     // Render React app
     hideLoading();
 
@@ -116,7 +122,9 @@ async function init() {
 
     createRoot(root).render(
       <StrictMode>
-        <Desktop supervisor={supervisor} desktop={desktop} />
+        <ThemeProvider defaultTheme="dark" defaultAccent="cyan">
+          <Desktop supervisor={supervisor} desktop={desktop} />
+        </ThemeProvider>
       </StrictMode>
     );
   } catch (e) {

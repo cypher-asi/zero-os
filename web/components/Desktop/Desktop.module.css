@@ -2,7 +2,7 @@
   position: fixed;
   inset: 0;
   /* CSS fallback for when WebGPU is not available */
-  background: linear-gradient(135deg, #0e0e11 0%, #070709 100%);
+  background: linear-gradient(135deg, var(--color-surface, #0e0e11) 0%, var(--color-bg, #070709) 100%);
   overflow: hidden;
   user-select: none;
 }
@@ -35,8 +35,8 @@
 /* Selection bounding box */
 .selectionBox {
   position: fixed;
-  border: 1px solid #01f4cb;
-  background: rgba(1, 244, 203, 0.08);
+  border: 1px solid var(--color-accent, #01f4cb);
+  background: var(--color-accent-muted, rgba(1, 244, 203, 0.08));
   pointer-events: none;
   z-index: 2;
 }
@@ -44,4 +44,11 @@
 .backgroundMenu {
   /* Container for the background selection menu */
   /* All styling handled by ZUI Menu component */
+}
+
+.contextMenu {
+  /* Container for the desktop context menu with multiple sections */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }

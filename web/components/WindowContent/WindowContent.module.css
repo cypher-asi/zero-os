@@ -19,27 +19,32 @@
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.5px;
-  color: #888;
+  color: var(--color-text-muted, #888);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-transform: uppercase;
-  flex: 1;
+  /* Center the title absolutely within the title bar */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 120px); /* Leave space for buttons on right */
 }
 
 .titleFocused {
-  color: #ccc;
+  color: var(--color-text-secondary, #ccc);
 }
 
 .titleBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 10px;
+  justify-content: flex-end; /* Buttons go to the right */
+  padding: 0 0 0 10px;
   background: transparent;
   flex-shrink: 0;
   cursor: default;
   user-select: none;
+  position: relative; /* For absolute positioning of centered title */
 }
 
 .buttons {

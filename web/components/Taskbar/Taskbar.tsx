@@ -1,50 +1,11 @@
-import { useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Button } from '@cypher-asi/zui';
 import { useWindows, useWindowActions } from '../../desktop/hooks/useWindows';
 import { useDesktops, useDesktopActions } from '../../desktop/hooks/useDesktops';
 import { BeginMenu } from '../BeginMenu/BeginMenu';
 import { IdentityPanel } from '../IdentityPanel';
 import { TerminalSquare, AppWindow, Circle, Plus, KeyRound, CreditCard } from 'lucide-react';
 import styles from './Taskbar.module.css';
-
-// Simple button component
-function Button({ 
-  children, 
-  icon, 
-  variant = 'transparent', 
-  iconOnly,
-  className = '',
-  onClick,
-  title,
-  selected,
-  selectedBgColor = 'transparent',
-}: { 
-  children?: ReactNode;
-  icon?: ReactNode;
-  variant?: 'transparent' | 'glass';
-  size?: string;
-  rounded?: string;
-  textCase?: string;
-  iconOnly?: boolean;
-  className?: string;
-  onClick?: (e: React.MouseEvent) => void;
-  title?: string;
-  selected?: boolean;
-  selectedBgColor?: string;
-}) {
-  const buttonStyle = selected ? { backgroundColor: selectedBgColor } : {};
-  
-  return (
-    <button
-      className={`${styles.button} ${variant === 'glass' ? styles.buttonGlass : ''} ${iconOnly ? styles.buttonIconOnly : ''} ${selected ? styles.buttonSelected : ''} ${className}`}
-      onClick={onClick}
-      title={title}
-      style={buttonStyle}
-    >
-      {icon}
-      {children}
-    </button>
-  );
-}
 
 // Get the appropriate icon for a window based on its title
 function getWindowIcon(title: string) {
@@ -59,6 +20,7 @@ function getWindowIcon(title: string) {
 export function Taskbar() {
   const [beginMenuOpen, setBeginMenuOpen] = useState(false);
   const [identityPanelOpen, setIdentityPanelOpen] = useState(false);
+  const beginSectionRef = useRef<HTMLDivElement>(null);
   const windows = useWindows();
   const desktops = useDesktops();
   const { focusWindow, panToWindow, restoreWindow } = useWindowActions();
@@ -114,22 +76,25 @@ export function Taskbar() {
   return (
     <div className={styles.taskbar}>
       {/* Begin Button - Left */}
-      <div className={styles.beginSection}>
+      <div ref={beginSectionRef} className={styles.beginSection}>
         <Button
           variant={beginMenuOpen ? 'glass' : 'transparent'}
           size="sm"
           rounded="none"
           iconOnly
-          className={styles.beginBtn}
+          className={`${styles.beginBtn} ${beginMenuOpen ? styles.beginBtnActive : ''}`}
           onClick={() => setBeginMenuOpen(!beginMenuOpen)}
           title="Begin Menu (Press Z)"
           selected={beginMenuOpen}
           selectedBgColor="transparent"
         >
-          <Circle size={14} />
+          <span className={styles.beginIcon}>
+            <Circle size={14} className={styles.beginCircle} />
+            <span className={styles.beginSlash}>/</span>
+          </span>
         </Button>
 
-        {beginMenuOpen && <BeginMenu onClose={() => setBeginMenuOpen(false)} />}
+        {beginMenuOpen && <BeginMenu onClose={() => setBeginMenuOpen(false)} containerRef={beginSectionRef} />}
       </div>
 
       {/* Active Windows - Center */}

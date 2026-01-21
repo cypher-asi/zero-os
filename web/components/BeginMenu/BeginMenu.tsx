@@ -7,6 +7,7 @@ import styles from './BeginMenu.module.css';
 
 interface BeginMenuProps {
   onClose: () => void;
+  containerRef?: React.RefObject<HTMLDivElement>;
 }
 
 const MENU_ITEMS = [
@@ -16,23 +17,30 @@ const MENU_ITEMS = [
   { id: 'shutdown', label: 'Shutdown', icon: <Power size={14} /> },
 ];
 
-export function BeginMenu({ onClose }: BeginMenuProps) {
+export function BeginMenu({ onClose, containerRef }: BeginMenuProps) {
   const { launchApp } = useWindowActions();
   const supervisor = useSupervisor();
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
+      const target = event.target as Node;
+      // Ignore clicks inside the menu
+      if (menuRef.current && menuRef.current.contains(target)) {
+        return;
       }
+      // Ignore clicks on the container (includes the toggle button)
+      if (containerRef?.current && containerRef.current.contains(target)) {
+        return;
+      }
+      onClose();
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [onClose]);
+  }, [onClose, containerRef]);
 
   const handleSelect = (id: string) => {
     if (id === 'shutdown') {

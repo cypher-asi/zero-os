@@ -234,47 +234,19 @@ export type CrossfadeDirection = 'toVoid' | 'toDesktop';
 // =============================================================================
 // Theme Types
 // =============================================================================
-
-export type Theme = 'light' | 'dark';
-
-export interface ThemeColors {
-  background: string;
-  windowBg: string;
-  windowBorder: string;
-  titleBar: string;
-  titleBarActive: string;
-  titleText: string;
-  shadow: string;
-  accent: string;
-  textPrimary: string;
-  textSecondary: string;
-}
-
-export const DARK_THEME: ThemeColors = {
-  background: '#1a1a2e',
-  windowBg: '#0f0f1a',
-  windowBorder: '#333',
-  titleBar: '#1a1a2e',
-  titleBarActive: '#2a2a4e',
-  titleText: '#e0e0e0',
-  shadow: 'rgba(0,0,0,0.5)',
-  accent: '#01f4cb',
-  textPrimary: '#e0e0e0',
-  textSecondary: '#888',
-};
-
-export const LIGHT_THEME: ThemeColors = {
-  background: '#f0f0f5',
-  windowBg: '#ffffff',
-  windowBorder: '#d0d0d0',
-  titleBar: '#e8e8e8',
-  titleBarActive: '#d0d0d0',
-  titleText: '#333',
-  shadow: 'rgba(0,0,0,0.2)',
-  accent: '#0066cc',
-  textPrimary: '#1a1a1a',
-  textSecondary: '#666',
-};
+// Theme functionality is now provided by @cypher-asi/zui
+// Use: import { useTheme, ThemeProvider, Theme, AccentColor } from '@cypher-asi/zui';
+// 
+// Available themes: 'dark' | 'light' | 'system'
+// Available accents: 'cyan' | 'blue' | 'purple' | 'green' | 'orange' | 'rose'
+//
+// CSS variables provided by zui:
+// - --color-bg, --color-surface, --color-elevated
+// - --color-text-primary, --color-text-secondary, --color-text-muted
+// - --color-accent, --color-accent-hover, --color-accent-muted
+// - --color-border, --color-border-light
+// - --color-overlay-subtle, --color-overlay-light, --color-overlay-medium
+// =============================================================================
 
 // =============================================================================
 // Style Constants

@@ -1,20 +1,10 @@
+import { PageEmptyState } from '@cypher-asi/zui';
+import { Settings, FolderOpen, Construction } from 'lucide-react';
 import { TerminalApp } from '../TerminalApp/TerminalApp';
-import styles from './AppRouter.module.css';
 
 interface AppRouterProps {
   appId: string;
   windowId: number;
-}
-
-// Placeholder components for apps that aren't implemented yet
-function PlaceholderApp({ appId }: { appId: string }) {
-  return (
-    <div className={styles.placeholder}>
-      <div className={styles.placeholderIcon}>🚧</div>
-      <div className={styles.placeholderTitle}>{appId}</div>
-      <div className={styles.placeholderText}>This app is not yet implemented</div>
-    </div>
-  );
 }
 
 export function AppRouter({ appId, windowId }: AppRouterProps) {
@@ -22,10 +12,28 @@ export function AppRouter({ appId, windowId }: AppRouterProps) {
     case 'terminal':
       return <TerminalApp windowId={windowId} />;
     case 'settings':
-      return <PlaceholderApp appId="Settings" />;
+      return (
+        <PageEmptyState
+          icon={<Settings size={48} />}
+          title="Settings"
+          description="System settings are not yet implemented"
+        />
+      );
     case 'files':
-      return <PlaceholderApp appId="Files" />;
+      return (
+        <PageEmptyState
+          icon={<FolderOpen size={48} />}
+          title="Files"
+          description="File manager is not yet implemented"
+        />
+      );
     default:
-      return <PlaceholderApp appId={appId} />;
+      return (
+        <PageEmptyState
+          icon={<Construction size={48} />}
+          title={appId}
+          description="This app is not yet implemented"
+        />
+      );
   }
 }

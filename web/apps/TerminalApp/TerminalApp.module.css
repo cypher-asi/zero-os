@@ -31,7 +31,7 @@
 .processPid {
   width: 24px;
   flex-shrink: 0;
-  font-family: 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace);
 }
 
 .processName {
@@ -39,41 +39,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: 'Monaco', 'Menlo', monospace;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace);
 }
 
 .processMem {
   width: 55px;
   text-align: right;
   flex-shrink: 0;
-  font-family: 'Monaco', 'Menlo', monospace;
-}
-
-.processState {
-  width: 50px;
-  text-align: center;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 3px;
-  flex-shrink: 0;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.stateRunning {
-  background: #0a3d36;
-  color: #01f4cb;
-}
-
-.stateBlocked {
-  background: #713f12;
-  color: #facc15;
-}
-
-.stateZombie {
-  background: #7f1d1d;
-  color: #f87171;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace);
 }
 
 /* Quick Actions */
@@ -88,7 +61,7 @@
 /* Memory Bar */
 .memBar {
   height: 16px;
-  background: #1a1a1a;
+  background: var(--color-surface, #1a1a1a);
   border-radius: 4px;
   overflow: hidden;
   display: flex;
@@ -102,7 +75,7 @@
 /* Axiom Stats */
 .axiomStats {
   font-size: 11px;
-  color: #666;
+  color: var(--color-text-muted, #666);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -124,26 +97,26 @@
   overflow-y: auto;
   white-space: pre-wrap;
   word-wrap: break-word;
-  font-family: 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace);
   font-size: 13px;
   line-height: 1.5;
-  color: #c0c0c0;
+  color: var(--color-text-secondary, #c0c0c0);
 }
 
 .outputText {
-  color: #c0c0c0;
+  color: var(--color-text-secondary, #c0c0c0);
 }
 
 .inputEcho {
-  color: #888;
+  color: var(--color-text-muted, #888);
 }
 
 .errorText {
-  color: #f87171;
+  color: var(--color-error, #f87171);
 }
 
 .successText {
-  color: #01f4cb;
+  color: var(--color-success, #01f4cb);
 }
 
 /* Input Line (inline with output) */
@@ -154,7 +127,7 @@
 }
 
 .prompt {
-  color: #01f4cb;
+  color: var(--color-accent, #01f4cb);
   font-weight: 600;
   margin-right: 4px;
   user-select: none;
@@ -165,7 +138,7 @@
   flex: 1;
   background: transparent;
   border: none;
-  color: #fff;
+  color: var(--color-text-primary, #fff);
   font-family: inherit;
   font-size: 13px;
   outline: none;
@@ -179,4 +152,3 @@
   outline: none;
   box-shadow: none;
 }
-

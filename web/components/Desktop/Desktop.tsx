@@ -3,8 +3,25 @@ import { SupervisorProvider, Supervisor, DesktopControllerProvider, DesktopContr
 import { WindowContent } from '../WindowContent/WindowContent';
 import { Taskbar } from '../Taskbar/Taskbar';
 import { AppRouter } from '../../apps/AppRouter/AppRouter';
-import { Menu } from '@cypher-asi/zui';
+import { Menu, useTheme, THEMES, ACCENT_COLORS, type Theme, type AccentColor } from '@cypher-asi/zui';
 import styles from './Desktop.module.css';
+
+// Human-readable labels for themes
+const THEME_LABELS: Record<Theme, string> = {
+  dark: 'Dark',
+  light: 'Light',
+  system: 'System',
+};
+
+// Human-readable labels for accent colors
+const ACCENT_LABELS: Record<AccentColor, string> = {
+  cyan: 'Cyan',
+  blue: 'Blue',
+  purple: 'Purple',
+  green: 'Green',
+  orange: 'Orange',
+  rose: 'Rose',
+};
 
 interface DesktopProps {
   supervisor: Supervisor;
@@ -514,6 +531,9 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
   const [backgrounds, setBackgrounds] = useState<BackgroundInfo[]>([]);
   const [settingsRestored, setSettingsRestored] = useState(false);
   
+  // Theme state from zui
+  const { theme, accent, setTheme, setAccent } = useTheme();
+  
   // Ref to track current workspace info (updated by render loop in DesktopInner)
   const workspaceInfoRef = useRef<WorkspaceInfo | null>(null);
 
@@ -932,10 +952,10 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
             />
           )}
 
-            {/* Background selection menu */}
+            {/* Desktop context menu */}
             {backgroundMenu.visible && (
               <div
-                className={styles.backgroundMenu}
+                className={styles.contextMenu}
                 style={{ 
                   position: 'fixed',
                   left: backgroundMenu.x,
@@ -953,6 +973,32 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
                   }))}
                   value={getActiveBackground()}
                   onChange={handleBackgroundSelect}
+                  variant="glass"
+                  border="future"
+                  rounded="md"
+                  width={200}
+                />
+                <Menu
+                  title="Theme"
+                  items={THEMES.map((t) => ({
+                    id: t,
+                    label: THEME_LABELS[t],
+                  }))}
+                  value={theme}
+                  onChange={(value) => setTheme(value as Theme)}
+                  variant="glass"
+                  border="future"
+                  rounded="md"
+                  width={200}
+                />
+                <Menu
+                  title="Accent"
+                  items={ACCENT_COLORS.map((c) => ({
+                    id: c,
+                    label: ACCENT_LABELS[c],
+                  }))}
+                  value={accent}
+                  onChange={(value) => setAccent(value as AccentColor)}
                   variant="glass"
                   border="future"
                   rounded="md"
