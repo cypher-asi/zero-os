@@ -242,7 +242,7 @@ orbital-os/
 │   ├── orbital-kernel/          # Microkernel
 │   ├── orbital-process/         # Process library
 │   ├── orbital-init/            # Init process (Phase 1.5+)
-│   ├── orbital-terminal/        # Terminal service
+│   ├── orbital-apps/            # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
 │   ├── orbital-boot/            # Bootloader (Phase 2.1+)
 │   └── orbital-drivers/         # Device drivers (Phase 3.2+)
 ├── apps/

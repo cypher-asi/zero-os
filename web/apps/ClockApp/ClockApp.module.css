@@ -1,0 +1,58 @@
+/* Container - centers the clock */
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Main clock panel */
+.clockPanel {
+  width: 100%;
+  max-width: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 24px !important;
+}
+
+/* Icon container */
+.iconPanel {
+  width: 64px;
+  height: 64px;
+  border-radius: 50% !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent-subtle, rgba(1, 244, 203, 0.1)) !important;
+  border: none !important;
+}
+
+.icon {
+  color: var(--color-accent, #01f4cb);
+}
+
+/* Time display - large monospace */
+.time {
+  font-size: 48px !important;
+  font-weight: 300 !important;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace) !important;
+  letter-spacing: 2px;
+  line-height: 1.2;
+}
+
+/* Info row with labels */
+.infoRow {
+  display: flex;
+  gap: 8px;
+  padding-top: 16px !important;
+  margin-top: 8px;
+  border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  background: transparent !important;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+}

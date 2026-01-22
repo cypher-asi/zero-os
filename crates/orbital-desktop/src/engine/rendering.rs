@@ -1,7 +1,7 @@
 //! Window rendering and screen coordinate calculations
 
 use crate::math::Rect;
-use crate::window::{WindowId, WindowState};
+use crate::window::{WindowId, WindowState, WindowType};
 use super::DesktopEngine;
 
 /// Window with screen-space coordinates for rendering
@@ -10,7 +10,10 @@ pub struct WindowScreenRect {
     pub id: WindowId,
     pub title: String,
     pub app_id: String,
+    /// Associated process ID (if any)
+    pub process_id: Option<u64>,
     pub state: WindowState,
+    pub window_type: WindowType,
     pub focused: bool,
     pub screen_rect: Rect,
     /// Opacity for fade transitions (0.0 = invisible, 1.0 = fully visible)
@@ -53,7 +56,9 @@ impl DesktopEngine {
             id: w.id,
             title: w.title.clone(),
             app_id: w.app_id.clone(),
+            process_id: w.process_id,
             state: w.state,
+            window_type: w.window_type,
             focused: focused_id == Some(w.id),
             screen_rect: Rect::new(
                 screen_pos.x,

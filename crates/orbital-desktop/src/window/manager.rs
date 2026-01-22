@@ -56,6 +56,7 @@ impl WindowManager {
             min_size: config.min_size.unwrap_or(Size::new(200.0, 150.0)),
             max_size: config.max_size,
             state: WindowState::Normal,
+            window_type: config.window_type,
             process_id: config.process_id,
             z_order,
             restore_rect: None,

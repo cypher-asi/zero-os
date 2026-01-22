@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useWindowActions } from '../../desktop/hooks/useWindows';
 import { useSupervisor } from '../../desktop/hooks/useSupervisor';
-import { Panel } from '@cypher-asi/zui';
-import { TerminalSquare, Settings, Folder, Power } from 'lucide-react';
+import { Menu, type MenuItem } from '@cypher-asi/zui';
 import styles from './BeginMenu.module.css';
 
 interface BeginMenuProps {
@@ -10,11 +9,33 @@ interface BeginMenuProps {
   containerRef?: React.RefObject<HTMLDivElement>;
 }
 
-const MENU_ITEMS = [
-  { id: 'terminal', label: 'Terminal', icon: <TerminalSquare size={14} /> },
-  { id: 'settings', label: 'Settings', icon: <Settings size={14} /> },
-  { id: 'files', label: 'Files', icon: <Folder size={14} /> },
-  { id: 'shutdown', label: 'Shutdown', icon: <Power size={14} /> },
+// Programs submenu items (alphabetically sorted)
+const PROGRAM_ITEMS = [
+  { id: 'calculator', label: 'Calculator' },
+  { id: 'clock', label: 'Clock' },
+];
+
+// Settings submenu items
+const SETTINGS_ITEMS = [
+  { id: 'permissions', label: 'Permissions' },
+];
+
+// Main menu structure
+const MENU_ITEMS: MenuItem[] = [
+  {
+    id: 'programs',
+    label: 'Programs',
+    children: PROGRAM_ITEMS,
+  },
+  { id: 'terminal', label: 'Terminal' },
+  { id: 'files', label: 'Files' },
+  {
+    id: 'settings',
+    label: 'Settings',
+    children: SETTINGS_ITEMS,
+  },
+  { type: 'separator' },
+  { id: 'shutdown', label: 'Shutdown' },
 ];
 
 export function BeginMenu({ onClose, containerRef }: BeginMenuProps) {
@@ -43,6 +64,9 @@ export function BeginMenu({ onClose, containerRef }: BeginMenuProps) {
   }, [onClose, containerRef]);
 
   const handleSelect = (id: string) => {
+    // Skip parent menu items (submenus)
+    if (id === 'programs' || id === 'settings') return;
+
     if (id === 'shutdown') {
       onClose();
       if (supervisor) {
@@ -56,19 +80,15 @@ export function BeginMenu({ onClose, containerRef }: BeginMenuProps) {
 
   return (
     <div ref={menuRef} className={styles.menuWrapper}>
-      <Panel className={styles.menu} variant="glass" border="future">
-        <div className={styles.menuTitle}>ZERO OS</div>
-        {MENU_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            className={styles.menuItem}
-            onClick={() => handleSelect(item.id)}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </button>
-        ))}
-      </Panel>
+      <Menu
+        title="ZERO OS"
+        items={MENU_ITEMS}
+        onChange={handleSelect}
+        variant="glass"
+        border="future"
+        rounded="md"
+        width={200}
+      />
     </div>
   );
 }

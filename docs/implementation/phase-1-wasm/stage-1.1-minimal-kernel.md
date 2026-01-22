@@ -15,12 +15,12 @@ This stage is **fully implemented**. All objectives have been achieved.
 | Kernel struct with HAL | ✅ | `crates/orbital-kernel/src/lib.rs` |
 | Debug syscall (SYS_DEBUG) | ✅ | `crates/orbital-kernel/src/lib.rs:602` |
 | HAL trait | ✅ | `crates/orbital-hal/src/lib.rs` |
-| Mock HAL for testing | ✅ | `crates/orbital-hal-mock/src/lib.rs` |
-| WASM runtime (atomics) | ✅ | `crates/orbital-wasm-rt/src/lib.rs` |
+| Mock HAL for testing | ✅ | `crates/orbital-kernel/src/lib.rs` (test module) |
 | Process syscall library | ✅ | `crates/orbital-process/src/lib.rs` |
-| Web Worker bootstrap | ✅ | `apps/orbital-web/www/worker.js` |
-| Browser supervisor | ✅ | `apps/orbital-web/src/lib.rs` |
-| HTML entry point | ✅ | `apps/orbital-web/www/index.html` |
+| WASM runtime (JS atomics) | ✅ | `web/public/worker.js` |
+| Web Worker bootstrap | ✅ | `web/public/worker.js` |
+| Browser supervisor | ✅ | `crates/orbital-web/src/lib.rs` |
+| HTML entry point | ✅ | `web/desktop/index.html` |
 
 ### Key Implementation Details
 
@@ -93,7 +93,6 @@ All tests pass:
 
 ```bash
 cargo test -p orbital-kernel
-cargo test -p orbital-hal-mock
 ```
 
 Key tests:

@@ -48,6 +48,12 @@ async function init() {
     showLoading('Creating desktop controller...');
     const desktop = new desktopModule.DesktopController() as DesktopController;
 
+    // Set up a default console callback to log output before UI is ready
+    // TerminalApp will override this when it mounts
+    supervisor.set_console_callback((text: string) => {
+      console.log('[console-fallback]', JSON.stringify(text));
+    });
+
     // Set up spawn callback for loading WASM processes
     supervisor.set_spawn_callback((procType: string, name: string) => {
       setTimeout(async () => {
@@ -90,10 +96,14 @@ async function init() {
     supervisor.spawn_init();
 
     // Start main processing loop
+    // Process syscalls from workers using SharedArrayBuffer + Atomics.
+    // Workers make syscalls (including SYS_RECEIVE for IPC) which are processed here.
+    // 
+    // Note: deliver_pending_messages() is DEPRECATED and intentionally not called.
+    // See crates/orbital-web/src/supervisor/ipc.rs for details.
     setInterval(() => {
       supervisor.poll_syscalls();
       supervisor.process_worker_messages();
-      supervisor.deliver_pending_messages();
     }, 10);
 
     // Sync Axiom log periodically

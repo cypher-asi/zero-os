@@ -112,6 +112,12 @@ pub trait HAL: Send + Sync + 'static {
     /// On WASM: Uses `performance.now()` converted to nanoseconds
     fn now_nanos(&self) -> u64;
 
+    /// Get wall-clock time in milliseconds since Unix epoch
+    ///
+    /// This is real time-of-day, not monotonic (can jump due to NTP sync).
+    /// On WASM: Uses `Date.now()`
+    fn wallclock_ms(&self) -> u64;
+
     /// Fill buffer with random bytes
     ///
     /// On WASM: Uses `crypto.getRandomValues()`

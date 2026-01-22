@@ -17,20 +17,25 @@ build: build-processes
 	@echo "Build complete!"
 
 # Build test process WASM binaries
+# Requires nightly Rust with rust-src component for atomics/shared memory support
+# Memory config and linker flags are in .cargo/config.toml
 build-processes:
-	@echo "Building process WASM binaries..."
-	cargo build -p orbital-init --target wasm32-unknown-unknown --release
-	cargo build -p orbital-terminal --target wasm32-unknown-unknown --release
-	cargo build -p orbital-test-procs --target wasm32-unknown-unknown --release
+	@echo "Building process WASM binaries with shared memory support (nightly required)..."
+	cargo +nightly build -p orbital-init --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
+	cargo +nightly build -p orbital-system-procs --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
+	cargo +nightly build -p orbital-apps --bins --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
 	@echo "Copying WASM binaries to web/processes..."
 	mkdir -p web/processes
 	cp target/wasm32-unknown-unknown/release/orbital_init.wasm web/processes/init.wasm
-	cp target/wasm32-unknown-unknown/release/orbital_terminal.wasm web/processes/terminal.wasm
+	cp target/wasm32-unknown-unknown/release/terminal.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/permission_manager.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/idle.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/memhog.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/sender.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/receiver.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/pingpong.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/clock.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/calculator.wasm web/processes/
 	@echo "Process binaries ready!"
 
 # Build and run the dev server

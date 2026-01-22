@@ -10,7 +10,7 @@
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| Terminal process | ✅ | `crates/orbital-terminal/src/lib.rs` |
+| Terminal process | ✅ | `crates/orbital-apps/src/bin/terminal.rs` |
 | Terminal commands | ✅ | help, ps, caps, echo, time, clear, exit |
 | Process spawning | ✅ | Via supervisor `spawn` command |
 | Console IPC | ✅ | Console output via IPC endpoint |
@@ -258,25 +258,27 @@ Lookup Response:
 
 ### Task 5: Update Terminal to Register
 
-**File**: `crates/orbital-terminal/src/lib.rs`
+**File**: `crates/orbital-apps/src/bin/terminal.rs`
+
+> **Note**: Terminal is now a canonical `OrbitalApp` in `orbital-apps`.
+> It implements the same `OrbitalApp` trait as Clock and Calculator.
 
 ```rust
-fn run(&mut self) {
-    // Register with init
-    self.register_with_init("terminal");
-    
-    self.println("Orbital OS Terminal");
-    // ... rest of run
-}
+impl OrbitalApp for TerminalApp {
+    fn manifest() -> &'static AppManifest {
+        &TERMINAL_MANIFEST
+    }
 
-fn register_with_init(&self, name: &str) {
-    let mut data = Vec::new();
-    data.push(name.len() as u8);
-    data.extend_from_slice(name.as_bytes());
-    data.extend_from_slice(&CONSOLE_OUTPUT_SLOT.to_le_bytes());
+    fn init(&mut self, ctx: &AppContext) -> Result<(), AppError> {
+        // Print banner and prompt
+        self.println("Orbital OS Terminal");
+        self.print(Self::PROMPT);
+        self.flush_output(ctx)
+    }
     
-    // Send registration to init's well-known endpoint (slot 0)
-    let _ = syscall::send(INIT_ENDPOINT_SLOT, MSG_REGISTER_SERVICE, &data);
+    fn on_message(&mut self, ctx: &AppContext, msg: Message) -> Result<(), AppError> {
+        // Handle console input, execute commands via syscalls
+    }
 }
 ```
 
@@ -299,14 +301,15 @@ members = [
 ```makefile
 build-processes:
 	@echo "Building process WASM binaries..."
-	cargo build -p orbital-test-procs --target wasm32-unknown-unknown --release
 	cargo build -p orbital-init --target wasm32-unknown-unknown --release
-	cargo build -p orbital-terminal --target wasm32-unknown-unknown --release
+	cargo build -p orbital-system-procs --target wasm32-unknown-unknown --release
+	cargo build -p orbital-apps --bins --target wasm32-unknown-unknown --release
 	@echo "Copying WASM binaries..."
-	mkdir -p apps/orbital-web/www/processes
-	cp target/wasm32-unknown-unknown/release/init.wasm apps/orbital-web/www/processes/
-	cp target/wasm32-unknown-unknown/release/orbital_terminal.wasm apps/orbital-web/www/processes/
-	# ... existing copies ...
+	mkdir -p web/processes
+	cp target/wasm32-unknown-unknown/release/orbital_init.wasm web/processes/init.wasm
+	cp target/wasm32-unknown-unknown/release/terminal.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/permission_manager.wasm web/processes/
+	# ... other processes ...
 ```
 
 ## Test Criteria
@@ -373,8 +376,8 @@ fn test_service_registration() {
 |------|-------------|-------|
 | `crates/orbital-init/` | New crate | ~200 |
 | `crates/orbital-kernel/src/lib.rs` | Modify | ~50 |
-| `crates/orbital-terminal/src/lib.rs` | Modify | ~30 |
-| `apps/orbital-web/src/lib.rs` | Modify | ~50 |
+| `crates/orbital-apps/src/bin/terminal.rs` | New file | ~300 |
+| `crates/orbital-web/src/lib.rs` | Modify | ~50 |
 | `Makefile` | Modify | ~10 |
 | Tests | Add | ~50 |
 

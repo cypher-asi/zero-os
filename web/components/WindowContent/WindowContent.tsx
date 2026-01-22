@@ -32,6 +32,8 @@ export const WindowContent = forwardRef(function WindowContent(
   // Track potential drag start position
   const dragStartRef = useRef<{ x: number; y: number; started: boolean } | null>(null);
 
+  const isWidget = win.windowType === 'widget';
+
   // Initial position using GPU-accelerated transform instead of left/top
   // Subsequent position updates happen directly via DOM, bypassing React
   // IMPORTANT: Set initial opacity to match window state to avoid flash during transitions
@@ -85,10 +87,79 @@ export const WindowContent = forwardRef(function WindowContent(
     desktopController?.start_window_drag(BigInt(win.id), e.clientX, e.clientY);
   };
 
+  // Content area event handlers - shared between standard and widget windows
+  const contentPointerDown = (e: React.PointerEvent) => {
+    // Always focus/bring to front when clicking anywhere in content
+    focusWindow(win.id);
+
+    // Don't set up drag tracking for interactive elements (buttons, inputs, etc.)
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+      e.stopPropagation();
+      return;
+    }
+
+    // Check if clicking on content within a selectable text area (e.g., terminal output)
+    // If clicking on a child element inside [data-selectable-text], allow text selection instead of dragging
+    // But if clicking directly on the container itself (background), allow dragging
+    const selectableArea = target.closest('[data-selectable-text]');
+    if (selectableArea && target !== selectableArea) {
+      // Clicked on content (text spans) inside a text-selectable area, allow text selection
+      e.stopPropagation();
+      return;
+    }
+
+    // Track potential drag start
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      started: false,
+    };
+
+    // Capture pointer to track movement even outside element
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    e.stopPropagation();
+  };
+
+  const contentPointerMove = (e: React.PointerEvent) => {
+    if (!dragStartRef.current) return;
+
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // If moved beyond threshold, start dragging
+    if (distance > DRAG_THRESHOLD && !dragStartRef.current.started) {
+      dragStartRef.current.started = true;
+      desktopController?.start_window_drag(BigInt(win.id), dragStartRef.current.x, dragStartRef.current.y);
+    }
+  };
+
+  const contentPointerUp = (e: React.PointerEvent) => {
+    if (dragStartRef.current) {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      dragStartRef.current = null;
+    }
+  };
+
+  const contentPointerCancel = (e: React.PointerEvent) => {
+    if (dragStartRef.current) {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      dragStartRef.current = null;
+    }
+  };
+
+  const contentWheel = (e: React.WheelEvent) => {
+    // Stop wheel events from bubbling to desktop unless Ctrl is held
+    if (!e.ctrlKey) {
+      e.stopPropagation();
+    }
+  };
+
   return (
     <Panel
       ref={ref}
-      className={`${styles.window} ${win.focused ? styles.focused : ''}`}
+      className={`${styles.window} ${win.focused ? styles.focused : ''} ${isWidget ? styles.widget : ''}`}
       variant="glass"
       border="future"
       style={style}
@@ -106,72 +177,33 @@ export const WindowContent = forwardRef(function WindowContent(
       <div className={`${styles.resizeHandle} ${styles.resizeSE}`} style={{ width: cornerSize, height: cornerSize }} onPointerDown={handleResizeStart('se')} />
       <div className={`${styles.resizeHandle} ${styles.resizeSW}`} style={{ width: cornerSize, height: cornerSize }} onPointerDown={handleResizeStart('sw')} />
 
-      {/* Title bar with title and buttons */}
-      <div className={styles.titleBar} style={{ height: FRAME_STYLE.titleBarHeight }} onPointerDown={handleDragStart}>
-        <span className={`${styles.title} ${win.focused ? styles.titleFocused : ''}`}>{win.title} (ID:{win.id} Y:{Math.round(win.screenRect.y)})</span>
-        <div className={styles.buttons} onPointerDown={(e) => e.stopPropagation()}>
-          <ButtonWindow action="minimize" size="sm" rounded="none" onClick={handleMinimize} />
-          <ButtonWindow action="maximize" size="sm" rounded="none" onClick={handleMaximize} />
+      {/* Standard window: Title bar with title and buttons */}
+      {!isWidget && (
+        <div className={styles.titleBar} style={{ height: FRAME_STYLE.titleBarHeight }} onPointerDown={handleDragStart}>
+          <span className={`${styles.title} ${win.focused ? styles.titleFocused : ''}`}>{win.title}</span>
+          <div className={styles.buttons} onPointerDown={(e) => e.stopPropagation()}>
+            <ButtonWindow action="minimize" size="sm" rounded="none" onClick={handleMinimize} />
+            <ButtonWindow action="maximize" size="sm" rounded="none" onClick={handleMaximize} />
+            <ButtonWindow action="close" size="sm" rounded="none" onClick={handleClose} />
+          </div>
+        </div>
+      )}
+
+      {/* Widget window: Floating close button only */}
+      {isWidget && (
+        <div className={styles.widgetCloseButton} onPointerDown={(e) => e.stopPropagation()}>
           <ButtonWindow action="close" size="sm" rounded="none" onClick={handleClose} />
         </div>
-      </div>
+      )}
       
       {/* Content area - supports drag threshold for all windows */}
       <div 
         className={styles.content}
-        onPointerDown={(e) => {
-          // Always focus/bring to front when clicking anywhere in content
-          focusWindow(win.id);
-
-          // Don't set up drag tracking for interactive elements (buttons, inputs, etc.)
-          const target = e.target as HTMLElement;
-          if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
-            e.stopPropagation();
-            return;
-          }
-
-          // Track potential drag start
-          dragStartRef.current = {
-            x: e.clientX,
-            y: e.clientY,
-            started: false,
-          };
-
-          // Capture pointer to track movement even outside element
-          (e.target as HTMLElement).setPointerCapture(e.pointerId);
-          e.stopPropagation();
-        }}
-        onPointerMove={(e) => {
-          if (!dragStartRef.current) return;
-
-          const dx = e.clientX - dragStartRef.current.x;
-          const dy = e.clientY - dragStartRef.current.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
-
-          // If moved beyond threshold, start dragging
-          if (distance > DRAG_THRESHOLD && !dragStartRef.current.started) {
-            dragStartRef.current.started = true;
-            desktopController?.start_window_drag(BigInt(win.id), dragStartRef.current.x, dragStartRef.current.y);
-          }
-        }}
-        onPointerUp={(e) => {
-          if (dragStartRef.current) {
-            (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-            dragStartRef.current = null;
-          }
-        }}
-        onPointerCancel={(e) => {
-          if (dragStartRef.current) {
-            (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-            dragStartRef.current = null;
-          }
-        }}
-        onWheel={(e) => {
-          // Stop wheel events from bubbling to desktop unless Ctrl is held
-          if (!e.ctrlKey) {
-            e.stopPropagation();
-          }
-        }}
+        onPointerDown={contentPointerDown}
+        onPointerMove={contentPointerMove}
+        onPointerUp={contentPointerUp}
+        onPointerCancel={contentPointerCancel}
+        onWheel={contentWheel}
       >
         {children}
       </div>

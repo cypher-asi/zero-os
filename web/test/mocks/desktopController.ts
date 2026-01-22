@@ -8,6 +8,7 @@ export interface MockWindowData {
   position: { x: number; y: number };
   size: { width: number; height: number };
   state: 'normal' | 'minimized' | 'maximized' | 'fullscreen';
+  windowType: 'standard' | 'widget';
   zOrder: number;
   focused: boolean;
 }
@@ -88,6 +89,7 @@ export function createMockDesktopController(
         position: { x, y },
         size: { width: w, height: h },
         state: 'normal',
+        windowType: 'standard',
         zOrder: state.windows.length,
         focused: true,
       };

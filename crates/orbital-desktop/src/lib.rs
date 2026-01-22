@@ -65,7 +65,7 @@ pub mod background;
 
 // Re-export core types for convenience
 pub use math::{Camera, Rect, Size, Vec2, FRAME_STYLE, FrameStyle};
-pub use window::{Window, WindowConfig, WindowId, WindowManager, WindowRegion, WindowState};
+pub use window::{Window, WindowConfig, WindowId, WindowManager, WindowRegion, WindowState, WindowType};
 pub use desktop::{Desktop, DesktopId, DesktopManager, PersistedDesktop, VoidState};
 pub use input::{DragState, InputResult, InputRouter};
 pub use transition::{CameraAnimation, Crossfade, CrossfadeDirection};

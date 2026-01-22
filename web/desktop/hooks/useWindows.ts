@@ -5,6 +5,9 @@ import { useDesktopController, useSupervisor } from './useSupervisor';
 // Window Types
 // =============================================================================
 
+/** Window type determines the chrome/presentation style */
+export type WindowType = 'standard' | 'widget';
+
 // Window info with screen-space rect (for React positioning)
 // Note: This is returned by Rust's tick_frame() in the unified render loop.
 // Components that need screen rects should receive them as props from Desktop.tsx,
@@ -13,7 +16,10 @@ export interface WindowInfo {
   id: number;
   title: string;
   appId: string;
+  /** Associated process ID (for terminal windows) */
+  processId?: number;
   state: 'normal' | 'minimized' | 'maximized' | 'fullscreen';
+  windowType: WindowType;
   focused: boolean;
   zOrder: number;
   opacity: number;
@@ -34,6 +40,7 @@ export interface WindowData {
   position: { x: number; y: number };
   size: { width: number; height: number };
   state: 'normal' | 'minimized' | 'maximized' | 'fullscreen';
+  windowType: WindowType;
   zOrder: number;
   focused: boolean;
 }
@@ -112,15 +119,17 @@ export function useWindowActions() {
       if (!desktop) return;
       
       // Get the process ID associated with this window (if any)
+      // Note: Returns BigInt (u64) from Rust, or undefined
       const processId = desktop.get_window_process_id(BigInt(id));
       
       // Close the window
       desktop.close_window(BigInt(id));
       
       // Kill the associated process if it exists
+      // Note: kill_process takes u64 (BigInt), processId is already BigInt from Rust
       if (processId !== undefined && supervisor) {
         console.log(`[useWindows] Killing process ${processId} for window ${id}`);
-        supervisor.kill_process(Number(processId));
+        supervisor.kill_process(processId);
       }
     },
     [desktop, supervisor]

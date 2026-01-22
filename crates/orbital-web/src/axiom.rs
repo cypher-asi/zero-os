@@ -75,6 +75,14 @@ pub(crate) fn commit_type_to_string(ct: &orbital_kernel::CommitType) -> String {
         orbital_kernel::CommitType::ProcessExited { pid, code } => {
             format!("ProcessExited(pid={}, code={})", pid, code)
         }
+        orbital_kernel::CommitType::ProcessFaulted {
+            pid,
+            reason,
+            description,
+        } => format!(
+            "ProcessFaulted(pid={}, reason={}, desc={})",
+            pid, reason, description
+        ),
         orbital_kernel::CommitType::CapInserted {
             pid, slot, cap_id, ..
         } => format!("CapInserted(pid={}, slot={}, cap={})", pid, slot, cap_id),
@@ -97,6 +105,15 @@ pub(crate) fn commit_type_to_string(ct: &orbital_kernel::CommitType) -> String {
         orbital_kernel::CommitType::EndpointDestroyed { id } => {
             format!("EndpointDestroyed(id={})", id)
         }
+        orbital_kernel::CommitType::MessageSent {
+            from_pid,
+            to_endpoint,
+            tag,
+            size,
+        } => format!(
+            "MessageSent(from={}, ep={}, tag={}, size={})",
+            from_pid, to_endpoint, tag, size
+        ),
     }
 }
 
@@ -106,10 +123,12 @@ pub(crate) fn commit_type_short(ct: &orbital_kernel::CommitType) -> &'static str
         orbital_kernel::CommitType::Genesis => "Genesis",
         orbital_kernel::CommitType::ProcessCreated { .. } => "ProcCreate",
         orbital_kernel::CommitType::ProcessExited { .. } => "ProcExit",
+        orbital_kernel::CommitType::ProcessFaulted { .. } => "ProcFault",
         orbital_kernel::CommitType::CapInserted { .. } => "CapInsert",
         orbital_kernel::CommitType::CapRemoved { .. } => "CapRemove",
         orbital_kernel::CommitType::CapGranted { .. } => "CapGrant",
         orbital_kernel::CommitType::EndpointCreated { .. } => "EpCreate",
         orbital_kernel::CommitType::EndpointDestroyed { .. } => "EpDestroy",
+        orbital_kernel::CommitType::MessageSent { .. } => "MsgSent",
     }
 }

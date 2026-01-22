@@ -1,16 +1,29 @@
 import { PageEmptyState } from '@cypher-asi/zui';
 import { Settings, FolderOpen, Construction } from 'lucide-react';
 import { TerminalApp } from '../TerminalApp/TerminalApp';
+import { ClockApp } from '../ClockApp/ClockApp';
+import { CalculatorApp } from '../CalculatorApp/CalculatorApp';
+import { PermissionsApp } from '../PermissionsApp/PermissionsApp';
 
 interface AppRouterProps {
   appId: string;
   windowId: number;
+  /** Process ID for process-isolated apps like terminal */
+  processId?: number;
 }
 
-export function AppRouter({ appId, windowId }: AppRouterProps) {
+export function AppRouter({ appId, windowId, processId }: AppRouterProps) {
   switch (appId) {
     case 'terminal':
-      return <TerminalApp windowId={windowId} />;
+      return <TerminalApp windowId={windowId} processId={processId} />;
+    case 'clock':
+    case 'com.orbital.clock':
+      return <ClockApp />;
+    case 'calculator':
+    case 'com.orbital.calculator':
+      return <CalculatorApp />;
+    case 'permissions':
+      return <PermissionsApp />;
     case 'settings':
       return (
         <PageEmptyState

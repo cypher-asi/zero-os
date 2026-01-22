@@ -2,13 +2,12 @@
  * Orbital OS Process Worker - Minimal Bootstrap
  * 
  * This script is a thin shim that:
- * 1. Creates shared WASM memory (for syscall mailbox + process data)
- * 2. Provides syscall imports that use SharedArrayBuffer + Atomics
- * 3. Instantiates the WASM binary
- * 4. Reports memory to supervisor for syscall polling
- * 5. Calls _start() - WASM runs forever using native atomics
+ * 1. Instantiates the WASM binary with syscall imports
+ * 2. Uses the WASM module's memory for the syscall mailbox
+ * 3. Reports memory to supervisor for syscall polling
+ * 4. Calls _start() - WASM runs forever using atomics-based syscalls
  * 
- * Mailbox Layout (at offset 0 in shared memory):
+ * Mailbox Layout (at offset 0 in WASM linear memory):
  * | Offset | Size | Field                              |
  * |--------|------|------------------------------------|
  * | 0      | 4    | status (0=idle, 1=pending, 2=ready)|
@@ -80,32 +79,36 @@ self.onmessage = async (event) => {
     workerPid = pid;
     
     try {
-        // Create shared WASM memory
-        // First 4KB (1024 i32s) is reserved for syscall mailbox
-        // Rest is available for process heap/stack
-        const memory = new WebAssembly.Memory({
-            initial: 256,   // 16MB initial
-            maximum: 1024,  // 64MB max
-            shared: true    // Enable SharedArrayBuffer backing
-        });
+        // Compile the WASM module to inspect its imports/exports
+        const module = await WebAssembly.compile(binary);
         
-        // Create views for mailbox access
-        const mailboxView = new Int32Array(memory.buffer);
-        const mailboxBytes = new Uint8Array(memory.buffer);
+        // Check what the module needs
+        const imports = WebAssembly.Module.imports(module);
+        const exports = WebAssembly.Module.exports(module);
+        const importsMemory = imports.some(imp => imp.module === 'env' && imp.name === 'memory' && imp.kind === 'memory');
+        const exportsMemory = exports.some(exp => exp.name === 'memory' && exp.kind === 'memory');
         
-        // Store PID in mailbox for orbital_get_pid
-        Atomics.store(mailboxView, OFFSET_PID, pid);
+        console.log(`[worker:${WORKER_MEMORY_ID}] Module imports memory: ${importsMemory}, exports memory: ${exportsMemory}`);
+        
+        // The memory we'll use for the mailbox - determined after instantiation
+        let wasmMemory = null;
+        let mailboxView = null;
+        let mailboxBytes = null;
+        
+        // Helper to refresh views if memory buffer changes (e.g., after memory.grow())
+        function refreshViews() {
+            if (wasmMemory && mailboxView.buffer !== wasmMemory.buffer) {
+                mailboxView = new Int32Array(wasmMemory.buffer);
+                mailboxBytes = new Uint8Array(wasmMemory.buffer);
+            }
+        }
         
         /**
          * Make a syscall using SharedArrayBuffer + Atomics
-         * 
-         * This function:
-         * 1. Writes syscall parameters to the shared mailbox
-         * 2. Sets status to PENDING
-         * 3. Blocks using Atomics.wait until the supervisor processes it
-         * 4. Reads and returns the result
          */
         function orbital_syscall(syscall_num, arg0, arg1, arg2) {
+            refreshViews();
+            
             // Write syscall parameters
             Atomics.store(mailboxView, OFFSET_SYSCALL_NUM, syscall_num);
             Atomics.store(mailboxView, OFFSET_ARG0, arg0);
@@ -116,16 +119,12 @@ self.onmessage = async (event) => {
             Atomics.store(mailboxView, OFFSET_STATUS, STATUS_PENDING);
             
             // Wait for supervisor to process the syscall
-            // Atomics.wait blocks until status changes from PENDING
             while (true) {
                 const waitResult = Atomics.wait(mailboxView, OFFSET_STATUS, STATUS_PENDING, 1000);
-                // waitResult: "ok" (notified), "not-equal" (value changed), "timed-out"
-                
                 const status = Atomics.load(mailboxView, OFFSET_STATUS);
                 if (status !== STATUS_PENDING) {
                     break;
                 }
-                // Spurious wakeup or timeout, wait again
             }
             
             // Read the result
@@ -142,13 +141,16 @@ self.onmessage = async (event) => {
          * Must be called before orbital_syscall when the syscall needs data
          */
         function orbital_send_bytes(ptr, len) {
+            refreshViews();
+            
             const maxLen = 4068;
             const actualLen = Math.min(len, maxLen);
             
             if (actualLen > 0) {
-                // Copy data from WASM memory to mailbox data buffer
-                const srcBytes = new Uint8Array(memory.buffer, ptr, actualLen);
-                mailboxBytes.set(srcBytes, 28); // Data starts at byte offset 28
+                // Copy data from WASM linear memory (at ptr) to mailbox data buffer (at offset 28)
+                // Both are in the same wasmMemory.buffer
+                const srcBytes = new Uint8Array(wasmMemory.buffer, ptr, actualLen);
+                mailboxBytes.set(srcBytes, 28);
             }
             
             // Store data length
@@ -159,16 +161,15 @@ self.onmessage = async (event) => {
         
         /**
          * Receive bytes from the syscall result buffer
-         * Called after orbital_syscall to retrieve result data
          */
         function orbital_recv_bytes(ptr, maxLen) {
-            // Read data length from mailbox
+            refreshViews();
+            
             const dataLen = Atomics.load(mailboxView, OFFSET_DATA_LEN);
             const actualLen = Math.min(dataLen, maxLen);
             
             if (actualLen > 0) {
-                // Copy data from mailbox to WASM memory
-                const dstBytes = new Uint8Array(memory.buffer, ptr, actualLen);
+                const dstBytes = new Uint8Array(wasmMemory.buffer, ptr, actualLen);
                 dstBytes.set(mailboxBytes.slice(28, 28 + actualLen));
             }
             
@@ -177,11 +178,9 @@ self.onmessage = async (event) => {
         
         /**
          * Yield the current process's time slice
-         * Does a short wait to allow other processes to run
          */
         function orbital_yield() {
-            // Use Atomics.wait with 0 timeout to yield briefly
-            // This allows the event loop to process other tasks
+            refreshViews();
             Atomics.wait(mailboxView, OFFSET_STATUS, 0, 0);
         }
         
@@ -189,36 +188,76 @@ self.onmessage = async (event) => {
          * Get the process's assigned PID
          */
         function orbital_get_pid() {
+            refreshViews();
             return Atomics.load(mailboxView, OFFSET_PID);
         }
         
-        // Compile and instantiate WASM with syscall imports
-        const module = await WebAssembly.compile(binary);
-        const instance = await WebAssembly.instantiate(module, {
+        // Build import object
+        // If module imports memory, we must provide shared memory for atomics to work
+        let sharedMemory = null;
+        const importObject = {
             env: {
-                memory: memory,
                 orbital_syscall: orbital_syscall,
                 orbital_send_bytes: orbital_send_bytes,
                 orbital_recv_bytes: orbital_recv_bytes,
                 orbital_yield: orbital_yield,
                 orbital_get_pid: orbital_get_pid,
             }
-        });
+        };
         
-        // Send shared memory to supervisor for syscall mailbox access
-        // Include worker:memory_id - the browser-assigned context timestamp
+        if (importsMemory) {
+            // Module imports memory - provide shared memory
+            // Memory sizes must match what WASM module declares (set via linker args)
+            // Current config: 4MB initial (64 pages), 16MB max (256 pages)
+            sharedMemory = new WebAssembly.Memory({
+                initial: 64,    // 4MB initial (64 * 64KB)
+                maximum: 256,   // 16MB max (256 * 64KB)
+                shared: true
+            });
+            importObject.env.memory = sharedMemory;
+        }
+        
+        // Instantiate the module
+        const instance = await WebAssembly.instantiate(module, importObject);
+        
+        // Determine which memory to use
+        if (importsMemory && sharedMemory) {
+            // Module imported our shared memory - use it
+            wasmMemory = sharedMemory;
+            console.log(`[worker:${WORKER_MEMORY_ID}] Using imported shared memory`);
+        } else if (exportsMemory && instance.exports.memory) {
+            // Module has its own memory - use the exported memory
+            wasmMemory = instance.exports.memory;
+            console.log(`[worker:${WORKER_MEMORY_ID}] Using module's exported memory`);
+            
+            // Check if it's a SharedArrayBuffer (required for atomics)
+            if (!(wasmMemory.buffer instanceof SharedArrayBuffer)) {
+                console.warn(`[worker:${WORKER_MEMORY_ID}] Module memory is not shared - atomics may not work correctly`);
+            }
+        } else {
+            throw new Error('WASM module has no accessible memory');
+        }
+        
+        // Create typed array views for the mailbox
+        mailboxView = new Int32Array(wasmMemory.buffer);
+        mailboxBytes = new Uint8Array(wasmMemory.buffer);
+        
+        // Store PID in mailbox
+        Atomics.store(mailboxView, OFFSET_PID, pid);
+        
+        // Send the memory buffer to supervisor for syscall mailbox access
+        // The supervisor will use this same buffer to read/write syscall data
         self.postMessage({
             type: 'memory',
             pid: pid,
-            buffer: memory.buffer,  // SharedArrayBuffer
-            workerId: WORKER_MEMORY_ID  // Browser-generated worker context ID
+            buffer: wasmMemory.buffer,
+            workerId: WORKER_MEMORY_ID
         });
         
         // Mark as initialized before running
         initialized = true;
         
-        // Initialize runtime - mailbox is at offset 0
-        // (This may be a no-op if the WASM uses our imported functions instead)
+        // Initialize runtime if the module exports it
         if (instance.exports.__orbital_rt_init) {
             instance.exports.__orbital_rt_init(0);
         }

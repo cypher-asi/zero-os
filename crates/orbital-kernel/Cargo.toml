@@ -15,4 +15,3 @@ orbital-hal.workspace = true
 serde = { workspace = true, optional = true }
 
 [dev-dependencies]
-orbital-hal-mock.workspace = true

@@ -1,9 +1,11 @@
 import { useRef, useEffect, useState, useCallback, createContext, useContext } from 'react';
 import { SupervisorProvider, Supervisor, DesktopControllerProvider, DesktopController } from '../../desktop/hooks/useSupervisor';
+import { usePermissions, PermissionsProvider } from '../../desktop/hooks/usePermissions';
 import { WindowContent } from '../WindowContent/WindowContent';
 import { Taskbar } from '../Taskbar/Taskbar';
 import { AppRouter } from '../../apps/AppRouter/AppRouter';
-import { Menu, useTheme, THEMES, ACCENT_COLORS, type Theme, type AccentColor } from '@cypher-asi/zui';
+import { PermissionDialog } from '../PermissionDialog';
+import { Menu, useTheme, THEMES, ACCENT_COLORS, type Theme, type AccentColor, type MenuItem } from '@cypher-asi/zui';
 import styles from './Desktop.module.css';
 
 // Human-readable labels for themes
@@ -105,7 +107,11 @@ interface WindowInfo {
   id: number;
   title: string;
   appId: string;
+  /** Associated process ID (for process isolation in terminal windows) */
+  processId?: number;
   state: 'normal' | 'minimized' | 'maximized' | 'fullscreen';
+  /** Window type determines the chrome/presentation style */
+  windowType: 'standard' | 'widget';
   focused: boolean;
   zOrder: number;
   /** 
@@ -246,14 +252,26 @@ function DesktopInner({
     const initBackground = async () => {
       try {
         updateCanvasSize();
+        console.log('[Desktop] Starting background initialization...');
         
         // Dynamically import the DesktopBackground from the WASM module
         const { DesktopBackground } = await import('../../pkg/orbital_web.js');
         const background = new DesktopBackground() as DesktopBackgroundType;
-        await background.init(canvas);
-        backgroundRef.current = background;
         
-        onBackgroundReady();
+        // Add timeout for WebGPU init - don't block forever
+        const initPromise = background.init(canvas);
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('WebGPU init timeout')), 5000)
+        );
+        
+        try {
+          await Promise.race([initPromise, timeoutPromise]);
+          backgroundRef.current = background;
+          console.log('[Desktop] Background initialized successfully');
+          onBackgroundReady();
+        } catch (initError) {
+          console.warn('[Desktop] Background init failed/timeout, continuing without GPU background:', initError);
+        }
         
         // =================================================================
         // UNIFIED RENDER LOOP - Direct DOM Updates
@@ -274,11 +292,12 @@ function DesktopInner({
         const render = (time: number) => {
           animationFrameRef.current = requestAnimationFrame(render);
           
-          if (!backgroundRef.current?.is_initialized()) return;
-          
           // Adaptive framerate: 60fps when animating, 15fps when idle
           const fps = lastAnimating ? 60 : 15;
           const interval = 1000 / fps;
+          
+          // Track whether we have a working background renderer
+          const hasBackground = backgroundRef.current?.is_initialized() ?? false;
           
           if (time - lastTime >= interval) {
             lastTime = time - ((time - lastTime) % interval);
@@ -288,67 +307,78 @@ function DesktopInner({
               const frameJson = desktop.tick_frame();
               const frame: FrameData = JSON.parse(frameJson);
               
+              // Debug: Log first frame and any frame with windows
+              if (lastTime === 0 || (frame.windows.length > 0 && windowIdsRef.current.size === 0)) {
+                console.log('[Desktop] Frame data:', { 
+                  windowCount: frame.windows.length, 
+                  viewMode: frame.viewMode,
+                  windows: frame.windows.map(w => ({ id: w.id, appId: w.appId }))
+                });
+              }
+              
               // Update adaptive framerate based on animation state
               lastAnimating = frame.animating;
               
-              // Update background renderer with frame data
-              const { viewport, workspaceInfo, workspaceDimensions, viewMode } = frame;
+              // Update background renderer with frame data (only if available)
+              const { viewport, workspaceInfo, workspaceDimensions } = frame;
               
-              backgroundRef.current.set_viewport(
-                viewport.zoom, 
-                viewport.center.x, 
-                viewport.center.y
-              );
-              
-              backgroundRef.current.set_workspace_info(
-                workspaceInfo.count,
-                workspaceInfo.active,
-                JSON.stringify(workspaceInfo.backgrounds)
-              );
-              
-              backgroundRef.current.set_workspace_dimensions(
-                workspaceDimensions.width, 
-                workspaceDimensions.height, 
-                workspaceDimensions.gap
-              );
-              
-              // Sync background renderer with active desktop's background from Rust state
-              // Switch backgrounds during the blackout period (40-60% of transition)
-              const targetBackground = workspaceInfo.backgrounds[workspaceInfo.actualActive] || 'grain';
-              const currentRendererBg = backgroundRef.current.get_current_background();
-              
-              if (frame.transitioning) {
-                // During transition: Switch background when visual workspace changes
-                // This happens during the extended blackout period where windows are fully transparent
-                if (targetBackground !== currentRendererBg && !backgroundSwitchedRef.current) {
-                  if (workspaceInfo.active === workspaceInfo.actualActive) {
-                    backgroundRef.current.set_background(targetBackground);
-                    backgroundSwitchedRef.current = true;
+              if (hasBackground) {
+                backgroundRef.current!.set_viewport(
+                  viewport.zoom, 
+                  viewport.center.x, 
+                  viewport.center.y
+                );
+                
+                backgroundRef.current!.set_workspace_info(
+                  workspaceInfo.count,
+                  workspaceInfo.active,
+                  JSON.stringify(workspaceInfo.backgrounds)
+                );
+                
+                backgroundRef.current!.set_workspace_dimensions(
+                  workspaceDimensions.width, 
+                  workspaceDimensions.height, 
+                  workspaceDimensions.gap
+                );
+                
+                // Sync background renderer with active desktop's background from Rust state
+                // Switch backgrounds during the blackout period (40-60% of transition)
+                const targetBackground = workspaceInfo.backgrounds[workspaceInfo.actualActive] || 'grain';
+                const currentRendererBg = backgroundRef.current!.get_current_background();
+                
+                if (frame.transitioning) {
+                  // During transition: Switch background when visual workspace changes
+                  // This happens during the extended blackout period where windows are fully transparent
+                  if (targetBackground !== currentRendererBg && !backgroundSwitchedRef.current) {
+                    if (workspaceInfo.active === workspaceInfo.actualActive) {
+                      backgroundRef.current!.set_background(targetBackground);
+                      backgroundSwitchedRef.current = true;
+                    }
                   }
+                } else {
+                  // Transition complete: Ensure background is correct and reset switch flag
+                  if (targetBackground !== currentRendererBg) {
+                    backgroundRef.current!.set_background(targetBackground);
+                  }
+                  backgroundSwitchedRef.current = false;
                 }
-              } else {
-                // Transition complete: Ensure background is correct and reset switch flag
-                if (targetBackground !== currentRendererBg) {
-                  backgroundRef.current.set_background(targetBackground);
-                }
-                backgroundSwitchedRef.current = false;
+                
+                // CROSSFADE MODEL: Show void layer (all desktops as tiles) when:
+                // - In void mode (user is viewing all desktops)
+                // - Transitioning TO or FROM void (not during desktop switches)
+                //
+                // During void transitions, both layers render simultaneously:
+                // - Desktop layer (windows) fades out via window.opacity
+                // - Void layer (background) shows all desktop tiles
+                //
+                // Desktop switches do NOT show void - they just fade windows.
+                backgroundRef.current!.set_transitioning(frame.showVoid);
+                
+                backgroundRef.current!.render();
               }
               
               // Store workspace info for parent component access (context menu, etc.)
               workspaceInfoRef.current = workspaceInfo;
-              
-                              // CROSSFADE MODEL: Show void layer (all desktops as tiles) when:
-                              // - In void mode (user is viewing all desktops)
-                              // - Transitioning TO or FROM void (not during desktop switches)
-                              //
-                              // During void transitions, both layers render simultaneously:
-                              // - Desktop layer (windows) fades out via window.opacity
-                              // - Void layer (background) shows all desktop tiles
-                              //
-                              // Desktop switches do NOT show void - they just fade windows.
-                              backgroundRef.current.set_transitioning(frame.showVoid);
-              
-              backgroundRef.current.render();
               
               // =============================================================
               // DIRECT DOM UPDATES - Bypass React for position changes
@@ -446,6 +476,7 @@ function DesktopInner({
               // Only update React state when window LIST changes (add/remove)
               // This triggers re-render to create/destroy window components
               if (windowListChanged(frame.windows, windowIdsRef.current)) {
+                console.log('[Desktop] Window list changed:', frame.windows.map(w => ({ id: w.id, appId: w.appId, state: w.state })));
                 if (fadingOutWindowsRef.current.size > 0) {
                   // Delay React update until fade-outs complete to keep elements in DOM
                   pendingWindowsRef.current = frame.windows;
@@ -513,7 +544,7 @@ function DesktopInner({
             ref={(el) => setWindowRef(w.id, el)}
             window={w}
           >
-            <AppRouter appId={w.appId} windowId={w.id} />
+            <AppRouter appId={w.appId} windowId={w.id} processId={w.processId} />
           </WindowContent>
         ))}
 
@@ -522,7 +553,17 @@ function DesktopInner({
   );
 }
 
-export function Desktop({ supervisor, desktop }: DesktopProps) {
+// =============================================================================
+// DesktopWithPermissions - Inner component that uses permissions hook
+// =============================================================================
+
+// Cache for terminal WASM binary (shared across all launches)
+let terminalWasmBinaryCache: Uint8Array | null = null;
+
+function DesktopWithPermissions({ 
+  supervisor, 
+  desktop 
+}: DesktopProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const backgroundRef = useRef<DesktopBackgroundType | null>(null);
   const [initialized, setInitialized] = useState(false);
@@ -534,8 +575,45 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
   // Theme state from zui
   const { theme, accent, setTheme, setAccent } = useTheme();
   
+  // Permissions state
+  const permissions = usePermissions();
+  
   // Ref to track current workspace info (updated by render loop in DesktopInner)
   const workspaceInfoRef = useRef<WorkspaceInfo | null>(null);
+
+  // Launch terminal with its own isolated process
+  // This implements the spawn-link flow: spawn process FIRST, then create window with process_id
+  const launchTerminalWithProcess = useCallback(async () => {
+    if (!supervisor || !desktop) return;
+
+    try {
+      // 1. Fetch terminal WASM binary (use cache if available)
+      if (!terminalWasmBinaryCache) {
+        console.log('[Desktop] Fetching terminal.wasm...');
+        const response = await fetch('/processes/terminal.wasm');
+        if (!response.ok) {
+          console.error('[Desktop] Failed to fetch terminal.wasm:', response.status);
+          return;
+        }
+        terminalWasmBinaryCache = new Uint8Array(await response.arrayBuffer());
+        console.log('[Desktop] Loaded terminal.wasm:', terminalWasmBinaryCache.length, 'bytes');
+      }
+
+      // 2. Spawn the terminal process FIRST (before creating window)
+      const pid = supervisor.complete_spawn('terminal', terminalWasmBinaryCache);
+      console.log('[Desktop] Spawned terminal process with PID:', pid);
+
+      // 3. Create the window (it will initially have no processId)
+      const windowId = desktop.launch_app('terminal');
+      console.log('[Desktop] Created terminal window:', windowId);
+
+      // 4. Link window to process immediately
+      desktop.set_window_process_id(windowId, pid);
+      console.log('[Desktop] Linked window', windowId, 'to process', pid);
+    } catch (e) {
+      console.error('[Desktop] Error launching terminal:', e);
+    }
+  }, [supervisor, desktop]);
 
   // Initialize desktop engine
   useEffect(() => {
@@ -547,11 +625,11 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
     const rect = container.getBoundingClientRect();
     desktop.init(rect.width, rect.height);
     
-    // Launch default terminal window
-    desktop.launch_app('terminal');
+    // Launch default terminal window with its own process
+    launchTerminalWithProcess();
     
     setInitialized(true);
-  }, [desktop, initialized]);
+  }, [desktop, initialized, launchTerminalWithProcess]);
 
   // Handle resize
   useEffect(() => {
@@ -568,6 +646,44 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, [desktop, initialized]);
+
+  // Handle orphaned windows (process died but window still exists)
+  useEffect(() => {
+    if (!initialized || !supervisor || !desktop) return;
+
+    const checkOrphanedWindows = () => {
+      try {
+        // Get all windows with process IDs
+        const windows = JSON.parse(desktop.get_windows_json()) as Array<{
+          id: number;
+          processId?: number;
+        }>;
+
+        // Get current processes
+        const processes = JSON.parse(supervisor.get_process_list_json()) as Array<{
+          pid: number;
+        }>;
+        const processPids = new Set(processes.map((p) => p.pid));
+
+        // Check each window with a processId
+        for (const win of windows) {
+          if (win.processId !== undefined && !processPids.has(win.processId)) {
+            // Process died - close the orphaned window
+            console.log(
+              `[Desktop] Process ${win.processId} died, closing orphaned window ${win.id}`
+            );
+            desktop.close_window(BigInt(win.id));
+          }
+        }
+      } catch {
+        // Ignore errors during orphan check
+      }
+    };
+
+    // Check every second
+    const interval = setInterval(checkOrphanedWindows, 1000);
+    return () => clearInterval(interval);
+  }, [initialized, supervisor, desktop]);
 
   // Prevent browser zoom on Ctrl+scroll at window level (capture phase to intercept early)
   useEffect(() => {
@@ -786,10 +902,10 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
         return;
       }
       
-      // T key: Create new terminal
+      // T key: Create new terminal with its own process
       if (e.key === 't' || e.key === 'T') {
         e.preventDefault();
-        desktop.launch_app('terminal');
+        launchTerminalWithProcess();
         return;
       }
       
@@ -800,14 +916,16 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
           const focusedId = desktop.get_focused_window();
           if (focusedId !== undefined) {
             // Get the process ID associated with this window (if any)
+            // Note: Returns BigInt (u64) from Rust, or undefined
             const processId = desktop.get_window_process_id(BigInt(focusedId));
             
             // Close the window
             desktop.close_window(BigInt(focusedId));
             
             // Kill the associated process if it exists
+            // Note: kill_process takes u64 (BigInt), processId is already BigInt from Rust
             if (processId !== undefined && supervisor) {
-              supervisor.kill_process(Number(processId));
+              supervisor.kill_process(processId);
             }
           }
         } catch {
@@ -904,7 +1022,7 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [initialized, desktop]);
+  }, [initialized, desktop, launchTerminalWithProcess]);
 
   // Compute selection box rectangle
   const selectionRect = selectionBox
@@ -917,27 +1035,26 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
     : null;
 
   return (
-    <SupervisorProvider value={supervisor}>
-      <DesktopControllerProvider value={desktop}>
-        <BackgroundContext.Provider value={{ backgrounds, getActiveBackground, setBackground }}>
-          <div
-            ref={containerRef}
-            className={styles.desktop}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerLeave={handlePointerLeave}
-            onWheel={handleWheel}
-            onContextMenu={handleContextMenu}
-          >
-            {initialized && (
-              <DesktopInner 
-                desktop={desktop}
-                backgroundRef={backgroundRef}
-                onBackgroundReady={handleBackgroundReady}
-                workspaceInfoRef={workspaceInfoRef}
-              />
-            )}
+    <PermissionsProvider value={permissions}>
+      <BackgroundContext.Provider value={{ backgrounds, getActiveBackground, setBackground }}>
+        <div
+          ref={containerRef}
+          className={styles.desktop}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerLeave}
+          onWheel={handleWheel}
+          onContextMenu={handleContextMenu}
+        >
+          {initialized && (
+            <DesktopInner 
+              desktop={desktop}
+              backgroundRef={backgroundRef}
+              onBackgroundReady={handleBackgroundReady}
+              workspaceInfoRef={workspaceInfoRef}
+            />
+          )}
 
           {/* Selection bounding box */}
           {selectionRect && selectionRect.width > 2 && selectionRect.height > 2 && (
@@ -952,62 +1069,94 @@ export function Desktop({ supervisor, desktop }: DesktopProps) {
             />
           )}
 
-            {/* Desktop context menu */}
-            {backgroundMenu.visible && (
-              <div
-                className={styles.contextMenu}
-                style={{ 
-                  position: 'fixed',
-                  left: backgroundMenu.x,
-                  top: backgroundMenu.y,
-                  zIndex: 10000,
+          {/* Desktop context menu */}
+          {backgroundMenu.visible && (
+            <div
+              className={styles.contextMenu}
+              style={{ 
+                position: 'fixed',
+                left: backgroundMenu.x,
+                top: backgroundMenu.y,
+                zIndex: 10000,
+              }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <Menu
+                items={[
+                  {
+                    id: 'background',
+                    label: 'Background',
+                    children: backgrounds.map((bg) => ({
+                      id: `bg:${bg.id}`,
+                      label: bg.name,
+                    })),
+                  },
+                  {
+                    id: 'theme',
+                    label: 'Theme',
+                    children: THEMES.map((t) => ({
+                      id: `theme:${t}`,
+                      label: THEME_LABELS[t],
+                    })),
+                  },
+                  {
+                    id: 'accent',
+                    label: 'Accent',
+                    children: ACCENT_COLORS.map((c) => ({
+                      id: `accent:${c}`,
+                      label: ACCENT_LABELS[c],
+                    })),
+                  },
+                ] as MenuItem[]}
+                value={[
+                  `bg:${getActiveBackground()}`,
+                  `theme:${theme}`,
+                  `accent:${accent}`,
+                ]}
+                onChange={(id) => {
+                  const [category, value] = id.split(':');
+                  if (category === 'bg' && value) {
+                    handleBackgroundSelect(value);
+                  } else if (category === 'theme' && value) {
+                    setTheme(value as Theme);
+                    closeBackgroundMenu();
+                  } else if (category === 'accent' && value) {
+                    setAccent(value as AccentColor);
+                    closeBackgroundMenu();
+                  }
                 }}
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <Menu
-                  title="Background"
-                  items={backgrounds.map((bg) => ({
-                    id: bg.id,
-                    label: bg.name,
-                  }))}
-                  value={getActiveBackground()}
-                  onChange={handleBackgroundSelect}
-                  variant="glass"
-                  border="future"
-                  rounded="md"
-                  width={200}
-                />
-                <Menu
-                  title="Theme"
-                  items={THEMES.map((t) => ({
-                    id: t,
-                    label: THEME_LABELS[t],
-                  }))}
-                  value={theme}
-                  onChange={(value) => setTheme(value as Theme)}
-                  variant="glass"
-                  border="future"
-                  rounded="md"
-                  width={200}
-                />
-                <Menu
-                  title="Accent"
-                  items={ACCENT_COLORS.map((c) => ({
-                    id: c,
-                    label: ACCENT_LABELS[c],
-                  }))}
-                  value={accent}
-                  onChange={(value) => setAccent(value as AccentColor)}
-                  variant="glass"
-                  border="future"
-                  rounded="md"
-                  width={200}
-                />
-              </div>
-            )}
-          </div>
-        </BackgroundContext.Provider>
+                variant="glass"
+                border="future"
+                rounded="md"
+                width={200}
+              />
+            </div>
+          )}
+
+          {/* Permission Dialog - shown when an app requests permissions */}
+          {permissions.pendingRequest && (
+            <PermissionDialog
+              app={permissions.pendingRequest.app}
+              onApprove={permissions.pendingRequest.onApprove}
+              onDeny={permissions.pendingRequest.onDeny}
+            />
+          )}
+        </div>
+      </BackgroundContext.Provider>
+    </PermissionsProvider>
+  );
+}
+
+// =============================================================================
+// Desktop - Main export with provider wrappers
+// =============================================================================
+
+export function Desktop({ supervisor, desktop }: DesktopProps) {
+  return (
+    <SupervisorProvider value={supervisor}>
+      <DesktopControllerProvider value={desktop}>
+        <DesktopWithPermissions supervisor={supervisor} desktop={desktop} />
       </DesktopControllerProvider>
     </SupervisorProvider>
   );

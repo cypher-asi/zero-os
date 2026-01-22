@@ -5,6 +5,8 @@ import styles from './TerminalApp.module.css';
 
 interface TerminalAppProps {
   windowId: number;
+  /** Process ID for this terminal instance (for process isolation) */
+  processId?: number;
 }
 
 interface ProcessInfo {
@@ -36,7 +38,7 @@ function formatBytes(bytes: number): string {
   return bytes + ' B';
 }
 
-export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
+export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps) {
   const supervisor = useSupervisor();
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -47,19 +49,38 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
   const [axiomStats, setAxiomStats] = useState<AxiomStats | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  // Set up console callback
+  // Set up console callback - either per-process (if processId provided) or legacy global
   useEffect(() => {
+    console.log('[TerminalApp] useEffect running, supervisor:', supervisor ? 'available' : 'null', 'processId:', processId);
     if (!supervisor) return;
 
-    supervisor.set_console_callback((text: string) => {
+    const handleOutput = (text: string) => {
+      console.log('[TerminalApp] Received:', JSON.stringify(text), 'processId:', processId);
       // Handle clear screen escape sequence
       if (text.includes('\x1B[2J')) {
         setOutput([]);
         return;
       }
       setOutput((prev) => [...prev, { text, className: styles.outputText }]);
-    });
-  }, [supervisor]);
+    };
+
+    if (processId !== undefined) {
+      // Process-isolated mode: register callback for specific PID
+      // Note: Rust u64 maps to JavaScript BigInt in wasm-bindgen
+      console.log('[TerminalApp] Registering per-process callback for PID', processId);
+      supervisor.register_console_callback(BigInt(processId), handleOutput);
+
+      // Cleanup: unregister callback when unmounting
+      return () => {
+        console.log('[TerminalApp] Unregistering callback for PID', processId);
+        supervisor.unregister_console_callback(BigInt(processId));
+      };
+    } else {
+      // Legacy mode: use global callback (backward compatible)
+      console.log('[TerminalApp] Using legacy global console callback');
+      supervisor.set_console_callback(handleOutput);
+    }
+  }, [supervisor, processId]);
 
   // Update dashboard data
   useEffect(() => {
@@ -89,6 +110,15 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
     }
   }, [output]);
 
+  // Auto-focus input when terminal opens
+  useEffect(() => {
+    // Small delay to ensure the window is fully rendered
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
+  }, []);
+
   const handleSubmit = useCallback(() => {
     const input = inputRef.current;
     if (!input || !supervisor) return;
@@ -102,8 +132,14 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
     }
 
     setOutput((prev) => [...prev, { text: `z::> ${line}\n`, className: styles.inputEcho }]);
-    supervisor.send_input(line);
-  }, [supervisor]);
+    
+    // Send input to specific process (if processId provided) or legacy global
+    if (processId !== undefined) {
+      supervisor.send_input_to_process(BigInt(processId), line);
+    } else {
+      supervisor.send_input(line);
+    }
+  }, [supervisor, processId]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -144,14 +180,24 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
   const spawnProcess = (type: string) => {
     if (supervisor) {
       setOutput((prev) => [...prev, { text: `z::> spawn ${type}\n`, className: styles.inputEcho }]);
-      supervisor.send_input(`spawn ${type}`);
+      // Send spawn command to this terminal's process (or legacy global)
+      if (processId !== undefined) {
+        supervisor.send_input_to_process(BigInt(processId), `spawn ${type}`);
+      } else {
+        supervisor.send_input(`spawn ${type}`);
+      }
     }
   };
 
   const killProcess = (pid: number) => {
     if (supervisor) {
       setOutput((prev) => [...prev, { text: `z::> kill ${pid}\n`, className: styles.inputEcho }]);
-      supervisor.send_input(`kill ${pid}`);
+      // Send kill command to this terminal's process (or legacy global)
+      if (processId !== undefined) {
+        supervisor.send_input_to_process(BigInt(processId), `kill ${pid}`);
+      } else {
+        supervisor.send_input(`kill ${pid}`);
+      }
     }
   };
 
@@ -159,7 +205,13 @@ export function TerminalApp({ windowId: _windowId }: TerminalAppProps) {
     <div className={styles.terminalApp}>
       {/* Terminal panel - main content */}
       <div className={styles.terminalPanel}>
-        <div ref={terminalRef} className={styles.terminal} onClick={() => inputRef.current?.focus()}>
+        <div ref={terminalRef} className={styles.terminal} data-selectable-text onClick={() => {
+          // Only focus input if no text is selected (preserve text selection)
+          const selection = window.getSelection();
+          if (!selection || selection.isCollapsed) {
+            inputRef.current?.focus();
+          }
+        }}>
           {output.map((line, i) => (
             <span key={i} className={line.className}>
               {line.text}

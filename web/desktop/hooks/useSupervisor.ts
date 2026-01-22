@@ -8,15 +8,22 @@ export interface Supervisor {
   // Kernel API
   boot(): void;
   spawn_init(): void;
+  /** Legacy: Send input to first terminal (use send_input_to_process for isolation) */
   send_input(input: string): void;
+  /** Send input to a specific process by PID */
+  send_input_to_process(pid: number, input: string): void;
+  /** Legacy: Set global console callback (use register_console_callback for isolation) */
   set_console_callback(callback: (text: string) => void): void;
+  /** Register a console callback for a specific process */
+  register_console_callback(pid: number, callback: (text: string) => void): void;
+  /** Unregister the console callback for a process */
+  unregister_console_callback(pid: number): void;
   set_spawn_callback(callback: (procType: string, name: string) => void): void;
   complete_spawn(name: string, binary: Uint8Array): bigint;
   init_axiom_storage(): Promise<boolean>;
   sync_axiom_log(): Promise<number>;
   poll_syscalls(): number;
   process_worker_messages(): number;
-  deliver_pending_messages(): number;
   kill_process(pid: number): void;
   kill_all_processes(): void;
   get_uptime_ms(): number;
@@ -26,6 +33,8 @@ export interface Supervisor {
   get_pending_messages(): number;
   get_total_ipc_messages(): number;
   get_process_list_json(): string;
+  get_process_capabilities_json(pid: number): string;
+  get_processes_with_capabilities_json(): string;
   get_endpoint_list_json(): string;
   get_ipc_traffic_json(count: number): string;
   get_system_metrics_json(): string;
@@ -52,6 +61,8 @@ export interface DesktopController {
   create_window(title: string, x: number, y: number, w: number, h: number, app_id: string, content_interactive: boolean): bigint;
   close_window(id: bigint): void;
   get_window_process_id(id: bigint): bigint | undefined;
+  /** Link a window to its associated process */
+  set_window_process_id(window_id: bigint, process_id: bigint): void;
   focus_window(id: bigint): void;
   move_window(id: bigint, x: number, y: number): void;
   resize_window(id: bigint, w: number, h: number): void;

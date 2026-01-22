@@ -1,0 +1,30 @@
+[package]
+name = "orbital-apps"
+version = "0.1.0"
+edition = "2021"
+description = "Application framework for Orbital OS - OrbitalApp trait, AppRuntime, and app protocol"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "clock"
+path = "src/bin/clock.rs"
+
+[[bin]]
+name = "calculator"
+path = "src/bin/calculator.rs"
+
+[[bin]]
+name = "terminal"
+path = "src/bin/terminal.rs"
+
+[[bin]]
+name = "permission_manager"
+path = "src/bin/permission_manager.rs"
+
+[dependencies]
+orbital-process = { path = "../orbital-process" }
+
+[features]
+default = []

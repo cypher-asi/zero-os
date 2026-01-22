@@ -1,6 +1,6 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-import { Panel } from '@cypher-asi/zui';
-import { Brain, Cpu, Info, Layers, User, Users, Lock } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { Panel, Menu, type MenuItem } from '@cypher-asi/zui';
+import { Brain, Cpu, Info, Layers, User, Users, Lock, LogOut } from 'lucide-react';
 import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelProps {
@@ -13,12 +13,14 @@ const MOCK_USER = {
   uid: 'UID-7A3F-9B2E-4D1C-8E5F',
 };
 
-const NAV_ITEMS = [
-  { id: 'neural-key', label: 'Neural Key', icon: <Brain size={14} /> },
+const NAV_ITEMS: MenuItem[] = [
+  { id: 'identity-menu', label: 'Identity Menu', icon: <Brain size={14} /> },
   { id: 'machine-keys', label: 'Machine Keys', icon: <Cpu size={14} /> },
   { id: 'linked-accounts', label: 'Linked Accounts', icon: <Users size={14} /> },
   { id: 'vault', label: 'Vault', icon: <Lock size={14} /> },
   { id: 'information', label: 'Information', icon: <Info size={14} /> },
+  { type: 'separator' },
+  { id: 'logout', label: 'Logout', icon: <LogOut size={14} /> },
 ];
 
 // Simple avatar component
@@ -30,19 +32,6 @@ function Avatar({ name }: { size?: string; status?: string; name: string }) {
   );
 }
 
-// Simple menu component  
-function Menu({ items, onSelect }: { items: Array<{id: string; label: string; icon: ReactNode}>; onSelect: (id: string) => void; variant?: string }) {
-  return (
-    <div className={styles.menu}>
-      {items.map((item) => (
-        <button key={item.id} className={styles.menuItem} onClick={() => onSelect(item.id)}>
-          {item.icon}
-          <span>{item.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
 
 export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -62,6 +51,11 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
   const handleSelect = (id: string) => {
     console.log('[identity-panel] Selected:', id);
+    if (id === 'logout') {
+      // TODO: Implement logout functionality
+      console.log('[identity-panel] Logout requested');
+      onClose();
+    }
   };
 
   return (
@@ -90,7 +84,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
         {/* Section 4: Menu */}
         <div className={styles.menuSection}>
-          <Menu items={NAV_ITEMS} onSelect={handleSelect} />
+          <Menu items={NAV_ITEMS} onChange={handleSelect} />
         </div>
       </Panel>
     </div>

@@ -792,6 +792,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
+name = "orbital-apps"
+version = "0.1.0"
+dependencies = [
+ "orbital-process",
+]
+
+[[package]]
 name = "orbital-axiom"
 version = "0.1.0"
 dependencies = [
@@ -817,13 +824,6 @@ name = "orbital-hal"
 version = "0.1.0"
 
 [[package]]
-name = "orbital-hal-mock"
-version = "0.1.0"
-dependencies = [
- "orbital-hal",
-]
-
-[[package]]
 name = "orbital-init"
 version = "0.1.0"
 dependencies = [
@@ -836,7 +836,6 @@ version = "0.1.0"
 dependencies = [
  "orbital-axiom",
  "orbital-hal",
- "orbital-hal-mock",
  "serde",
 ]
 
@@ -845,23 +844,11 @@ name = "orbital-process"
 version = "0.1.0"
 
 [[package]]
-name = "orbital-terminal"
+name = "orbital-system-procs"
 version = "0.1.0"
 dependencies = [
  "orbital-process",
 ]
-
-[[package]]
-name = "orbital-test-procs"
-version = "0.1.0"
-dependencies = [
- "orbital-process",
- "orbital-wasm-rt",
-]
-
-[[package]]
-name = "orbital-wasm-rt"
-version = "0.1.0"
 
 [[package]]
 name = "orbital-web"

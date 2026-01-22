@@ -262,20 +262,21 @@ pub struct WorkerHandle {
 ## Implementation: Mock HAL (Testing)
 
 ```rust
-// orbital-hal-mock/src/lib.rs
+// crates/orbital-kernel/src/lib.rs (test module: mock_hal)
 
-use alloc::collections::VecDeque;
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-/// Mock HAL for testing.
+/// Mock HAL for testing (integrated into orbital-kernel as a cfg(test) module).
 pub struct MockHal {
-    time: u64,
-    messages: VecDeque<(u64, Vec<u8>)>,
+    time: AtomicU64,
+    processes: RefCell<BTreeMap<u64, MockProcess>>,
+    // ... more fields for simulation
 }
 
 impl MockHal {
     pub fn new() -> Self {
-        Self { time: 0, messages: VecDeque::new() }
+        Self { /* ... */ }
     }
     
     pub fn with_time(time: u64) -> Self {

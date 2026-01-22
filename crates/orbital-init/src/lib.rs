@@ -1,10 +1,13 @@
 //! Init Process (PID 1) for Orbital OS
 //!
 //! The init process is the first user-space process spawned by the kernel.
-//! It is responsible for:
-//! - Bootstrapping the system by spawning core services
-//! - Maintaining a service registry (name → endpoint mapping)
-//! - Handling service discovery requests
+//! In the refactored architecture, init has a minimal role:
+//!
+//! - **Bootstrap**: Spawn PermissionManager (PID 2) and initial apps
+//! - **Service Registry**: Maintain name → endpoint mapping for service discovery
+//! - **Idle**: After bootstrap, enter minimal loop
+//!
+//! Permission management has been delegated to PermissionManager (PID 2).
 //!
 //! # Service Protocol
 //!
@@ -26,8 +29,6 @@ use alloc::collections::BTreeMap;
 use alloc::format;
 #[cfg(target_arch = "wasm32")]
 use alloc::string::String;
-#[cfg(target_arch = "wasm32")]
-use alloc::vec::Vec;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::collections::BTreeMap;
@@ -42,7 +43,7 @@ use orbital_process::{self as syscall};
 // Service Protocol Constants
 // =============================================================================
 
-/// Register a service: data = [name_len: u8, name: [u8], endpoint_slot: u32]
+/// Register a service: data = [name_len: u8, name: [u8], endpoint_id_low: u32, endpoint_id_high: u32]
 pub const MSG_REGISTER_SERVICE: u32 = 0x1000;
 
 /// Lookup a service: data = [name_len: u8, name: [u8]]
@@ -67,11 +68,7 @@ pub const MSG_SERVICE_READY: u32 = 0x1005;
 /// Init's main endpoint for receiving service messages (slot 0)
 const INIT_ENDPOINT_SLOT: u32 = 0;
 
-/// Console output endpoint (slot 1)
-const CONSOLE_OUTPUT_SLOT: u32 = 1;
-
-/// Spawn capability (slot 2) - allows init to request process spawning
-const SPAWN_CAP_SLOT: u32 = 2;
+// Note: Console output now uses SYS_CONSOLE_WRITE syscall (no slot needed)
 
 // =============================================================================
 // Service Registry
@@ -107,9 +104,9 @@ impl Init {
         }
     }
 
-    /// Print to console
+    /// Print to console via SYS_CONSOLE_WRITE syscall
     fn log(&self, msg: &str) {
-        syscall::console_write(CONSOLE_OUTPUT_SLOT, &format!("[init] {}\n", msg));
+        syscall::console_write(&format!("[init] {}\n", msg));
     }
 
     /// Run the init process
@@ -120,9 +117,9 @@ impl Init {
         // Boot sequence: spawn core services
         self.boot_sequence();
 
-        self.log("Entering service loop...");
+        self.log("Entering idle loop...");
 
-        // Main loop: handle service messages
+        // Minimal loop: handle service messages
         loop {
             if let Some(msg) = syscall::receive(self.endpoint_slot) {
                 self.handle_message(&msg);
@@ -131,17 +128,23 @@ impl Init {
         }
     }
 
-    /// Boot sequence - spawn core services
+    /// Boot sequence - spawn PermissionManager and initial apps
     fn boot_sequence(&mut self) {
         self.log("Starting boot sequence...");
 
-        // Request supervisor to spawn terminal
-        // This uses a special debug message that the supervisor intercepts
-        self.log("Requesting terminal spawn...");
+        // 1. Spawn PermissionManager (PID 2) - the capability authority
+        self.log("Spawning PermissionManager (PID 2)...");
+        syscall::debug("INIT:SPAWN:permission_manager");
+
+        // 2. Spawn Terminal - the user interface
+        self.log("Spawning Terminal...");
         syscall::debug("INIT:SPAWN:terminal");
 
         self.boot_complete = true;
         self.log("Boot sequence complete");
+        self.log("  PermissionManager: handles capability requests");
+        self.log("  Terminal: user command interface");
+        self.log("Init entering minimal idle state");
     }
 
     /// Handle an incoming IPC message
@@ -244,9 +247,7 @@ impl Init {
             found != 0
         ));
 
-        // Send response back
-        // For now, we use debug to signal the response since we may not have
-        // a direct endpoint to the requester
+        // Send response via debug channel
         let response_msg = format!(
             "INIT:LOOKUP_RESPONSE:{}:{}:{}",
             msg.from_pid, found, endpoint_id

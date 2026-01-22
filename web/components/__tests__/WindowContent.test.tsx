@@ -24,6 +24,7 @@ function createTestWindow(overrides: Partial<WindowInfo> = {}): WindowInfo {
     title: 'Test Window',
     appId: 'test-app',
     state: 'normal',
+    windowType: 'standard',
     focused: true,
     zOrder: 1,
     opacity: 1,

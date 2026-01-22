@@ -53,6 +53,14 @@ pub enum CommitType {
     },
     /// Process exited
     ProcessExited { pid: ProcessId, code: i32 },
+    /// Process faulted (crash, invalid syscall, etc.)
+    ProcessFaulted {
+        pid: ProcessId,
+        /// Fault reason code
+        reason: u32,
+        /// Human-readable description
+        description: String,
+    },
 
     // === Capability Mutations ===
     /// Capability inserted into a process's CSpace
@@ -81,6 +89,18 @@ pub enum CommitType {
     EndpointCreated { id: EndpointId, owner: ProcessId },
     /// Endpoint destroyed
     EndpointDestroyed { id: EndpointId },
+
+    // === IPC Events ===
+    /// Message sent via IPC (optional - for full audit trail)
+    /// Note: Message content is NOT stored for privacy/size reasons.
+    /// Only metadata is recorded for replay correctness verification.
+    MessageSent {
+        from_pid: ProcessId,
+        to_endpoint: EndpointId,
+        tag: u32,
+        /// Size of the message data in bytes
+        size: usize,
+    },
 }
 
 /// Maximum number of commits to keep in memory
@@ -179,11 +199,13 @@ impl CommitLog {
             CommitType::Genesis => 0u8,
             CommitType::ProcessCreated { .. } => 1,
             CommitType::ProcessExited { .. } => 2,
-            CommitType::CapInserted { .. } => 3,
-            CommitType::CapRemoved { .. } => 4,
-            CommitType::CapGranted { .. } => 5,
-            CommitType::EndpointCreated { .. } => 6,
-            CommitType::EndpointDestroyed { .. } => 7,
+            CommitType::ProcessFaulted { .. } => 3,
+            CommitType::CapInserted { .. } => 4,
+            CommitType::CapRemoved { .. } => 5,
+            CommitType::CapGranted { .. } => 6,
+            CommitType::EndpointCreated { .. } => 7,
+            CommitType::EndpointDestroyed { .. } => 8,
+            CommitType::MessageSent { .. } => 9,
         };
         hash ^= type_byte as u64;
         hash = hash.wrapping_mul(FNV_PRIME);
@@ -297,6 +319,47 @@ impl CommitLog {
             }
             CommitType::EndpointDestroyed { id } => {
                 for byte in id.to_le_bytes() {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(FNV_PRIME);
+                }
+            }
+            CommitType::ProcessFaulted {
+                pid,
+                reason,
+                description,
+            } => {
+                for byte in pid.to_le_bytes() {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(FNV_PRIME);
+                }
+                for byte in reason.to_le_bytes() {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(FNV_PRIME);
+                }
+                for byte in description.bytes() {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(FNV_PRIME);
+                }
+            }
+            CommitType::MessageSent {
+                from_pid,
+                to_endpoint,
+                tag,
+                size,
+            } => {
+                for byte in from_pid.to_le_bytes() {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(FNV_PRIME);
+                }
+                for byte in to_endpoint.to_le_bytes() {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(FNV_PRIME);
+                }
+                for byte in tag.to_le_bytes() {
+                    hash ^= byte as u64;
+                    hash = hash.wrapping_mul(FNV_PRIME);
+                }
+                for byte in (*size as u64).to_le_bytes() {
                     hash ^= byte as u64;
                     hash = hash.wrapping_mul(FNV_PRIME);
                 }

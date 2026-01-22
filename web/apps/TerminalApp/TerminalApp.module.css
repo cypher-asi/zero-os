@@ -101,6 +101,13 @@
   font-size: 13px;
   line-height: 1.5;
   color: var(--color-text-secondary, #c0c0c0);
+  cursor: default; /* Background allows dragging */
+}
+
+/* Text spans are selectable */
+.terminal span:not(.prompt):not(.inputLine) {
+  cursor: text;
+  user-select: text;
 }
 
 .outputText {

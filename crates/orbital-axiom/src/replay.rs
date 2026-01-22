@@ -67,6 +67,16 @@ pub trait Replayable {
     /// Exit a process during replay.
     fn replay_exit_process(&mut self, pid: ProcessId, code: i32) -> ReplayResult<()>;
 
+    /// Record a process fault during replay.
+    ///
+    /// This marks the process as faulted without actually terminating it.
+    fn replay_process_faulted(
+        &mut self,
+        pid: ProcessId,
+        reason: u32,
+        description: String,
+    ) -> ReplayResult<()>;
+
     /// Insert a capability during replay.
     fn replay_insert_capability(
         &mut self,
@@ -100,6 +110,18 @@ pub trait Replayable {
 
     /// Destroy an endpoint during replay.
     fn replay_destroy_endpoint(&mut self, id: EndpointId) -> ReplayResult<()>;
+
+    /// Record a message sent during replay.
+    ///
+    /// Note: The actual message content is not replayed (volatile).
+    /// This is for audit trail verification only.
+    fn replay_message_sent(
+        &mut self,
+        from_pid: ProcessId,
+        to_endpoint: EndpointId,
+        tag: u32,
+        size: usize,
+    ) -> ReplayResult<()>;
 
     /// Compute a deterministic hash of the current state.
     ///
@@ -139,6 +161,12 @@ pub fn apply_commit<R: Replayable>(state: &mut R, commit: &Commit) -> ReplayResu
 
         CommitType::ProcessExited { pid, code } => state.replay_exit_process(*pid, *code),
 
+        CommitType::ProcessFaulted {
+            pid,
+            reason,
+            description,
+        } => state.replay_process_faulted(*pid, *reason, description.clone()),
+
         CommitType::CapInserted {
             pid,
             slot,
@@ -169,6 +197,13 @@ pub fn apply_commit<R: Replayable>(state: &mut R, commit: &Commit) -> ReplayResu
         CommitType::EndpointCreated { id, owner } => state.replay_create_endpoint(*id, *owner),
 
         CommitType::EndpointDestroyed { id } => state.replay_destroy_endpoint(*id),
+
+        CommitType::MessageSent {
+            from_pid,
+            to_endpoint,
+            tag,
+            size,
+        } => state.replay_message_sent(*from_pid, *to_endpoint, *tag, *size),
     }
 }
 

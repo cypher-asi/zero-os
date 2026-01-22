@@ -70,7 +70,6 @@ export function createMockSupervisor(
     sync_axiom_log: vi.fn(async () => 0),
     poll_syscalls: vi.fn(() => 0),
     process_worker_messages: vi.fn(() => 0),
-    deliver_pending_messages: vi.fn(() => 0),
     kill_process: vi.fn((pid: number) => {
       const process = state.processes.find(p => p.pid === pid);
       if (process) {
@@ -87,6 +86,15 @@ export function createMockSupervisor(
     get_pending_messages: vi.fn(() => state.pendingMessages),
     get_total_ipc_messages: vi.fn(() => state.totalIpcMessages),
     get_process_list_json: vi.fn(() => JSON.stringify(state.processes)),
+    get_process_capabilities_json: vi.fn((_pid: number) => JSON.stringify([])),
+    get_processes_with_capabilities_json: vi.fn(() => JSON.stringify(
+      state.processes.map(p => ({
+        pid: p.pid,
+        name: p.name,
+        state: p.state === 'running' ? 'Running' : p.state === 'blocked' ? 'Blocked' : 'Zombie',
+        capabilities: [],
+      }))
+    )),
     get_endpoint_list_json: vi.fn(() => JSON.stringify([])),
     get_ipc_traffic_json: vi.fn((count: number) => JSON.stringify([])),
     get_system_metrics_json: vi.fn(() => JSON.stringify({

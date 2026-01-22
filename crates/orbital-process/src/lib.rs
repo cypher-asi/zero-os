@@ -14,7 +14,7 @@
 #![no_std]
 extern crate alloc;
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 // ============================================================================
@@ -41,6 +41,11 @@ pub mod syscall {
     pub const SYS_LIST_CAPS: u32 = 0x04;
     /// List processes
     pub const SYS_LIST_PROCS: u32 = 0x05;
+    /// Get wall-clock time in milliseconds since Unix epoch (arg: 0=low32, 1=high32)
+    pub const SYS_GET_WALLCLOCK: u32 = 0x06;
+    /// Write to console output (for terminal/shell output)
+    /// The supervisor receives a notification callback after this syscall completes.
+    pub const SYS_CONSOLE_WRITE: u32 = 0x07;
 
     // === Thread (0x10 - 0x1F) ===
     /// Create a new thread
@@ -150,9 +155,8 @@ pub mod error {
 // Message Tags (for IPC protocol)
 // ============================================================================
 
-pub const MSG_CONSOLE_WRITE: u32 = 0x0001;
+/// Console input message tag - used by terminal for receiving keyboard input.
 pub const MSG_CONSOLE_INPUT: u32 = 0x0002;
-pub const MSG_SYSCALL_RESPONSE: u32 = 0x0100;
 
 // =============================================================================
 // Init Service Protocol (for service discovery)
@@ -178,6 +182,72 @@ pub const MSG_SERVICE_READY: u32 = 0x1005;
 
 /// Well-known slot for init's endpoint (every process gets this at spawn)
 pub const INIT_ENDPOINT_SLOT: u32 = 2;
+
+// =============================================================================
+// Permission Protocol (03-security.md)
+// Messages for permission management (Desktop/Supervisor -> Init)
+// =============================================================================
+
+/// Request Init to grant a capability to a process
+pub const MSG_GRANT_PERMISSION: u32 = 0x1010;
+
+/// Request Init to revoke a capability from a process
+pub const MSG_REVOKE_PERMISSION: u32 = 0x1011;
+
+/// Query what permissions a process has
+pub const MSG_LIST_PERMISSIONS: u32 = 0x1012;
+
+/// Response from Init with grant/revoke result
+pub const MSG_PERMISSION_RESPONSE: u32 = 0x1013;
+
+// =============================================================================
+// Object Types (for capabilities)
+// =============================================================================
+
+/// Types of kernel objects that can be accessed via capabilities
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ObjectType {
+    /// IPC endpoint
+    Endpoint = 1,
+    /// Console I/O
+    Console = 2,
+    /// Persistent storage (namespaced per-app)
+    Storage = 3,
+    /// Network access
+    Network = 4,
+    /// Process management (spawn, kill)
+    Process = 5,
+    /// Memory region
+    Memory = 6,
+}
+
+impl ObjectType {
+    /// Convert from u8
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(ObjectType::Endpoint),
+            2 => Some(ObjectType::Console),
+            3 => Some(ObjectType::Storage),
+            4 => Some(ObjectType::Network),
+            5 => Some(ObjectType::Process),
+            6 => Some(ObjectType::Memory),
+            _ => None,
+        }
+    }
+
+    /// Get display name
+    pub fn name(&self) -> &'static str {
+        match self {
+            ObjectType::Endpoint => "Endpoint",
+            ObjectType::Console => "Console",
+            ObjectType::Storage => "Storage",
+            ObjectType::Network => "Network",
+            ObjectType::Process => "Process",
+            ObjectType::Memory => "Memory",
+        }
+    }
+}
 
 // ============================================================================
 // External functions (provided by JavaScript host)
@@ -233,6 +303,25 @@ pub fn debug(_msg: &str) {
     // No-op for non-WASM
 }
 
+/// Write to console output (for terminal/shell output)
+///
+/// Unlike `debug()`, this is for user-visible console output that goes through
+/// the supervisor to the UI. The supervisor receives a notification callback
+/// after this syscall completes.
+#[cfg(target_arch = "wasm32")]
+pub fn console_write(text: &str) {
+    let bytes = text.as_bytes();
+    unsafe {
+        orbital_send_bytes(bytes.as_ptr(), bytes.len() as u32);
+        orbital_syscall(SYS_CONSOLE_WRITE, bytes.len() as u32, 0, 0);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn console_write(_text: &str) {
+    // No-op for non-WASM
+}
+
 /// Send a message to an endpoint
 #[cfg(target_arch = "wasm32")]
 pub fn send(endpoint_slot: u32, tag: u32, data: &[u8]) -> Result<(), u32> {
@@ -257,9 +346,9 @@ pub fn send(_endpoint_slot: u32, _tag: u32, _data: &[u8]) -> Result<(), u32> {
 pub fn receive(endpoint_slot: u32) -> Option<ReceivedMessage> {
     let mut buffer = [0u8; 4096];
     unsafe {
-        let result = orbital_syscall(SYS_RECEIVE, endpoint_slot, 0, 0);
-        if result == 0 {
-            // No message
+        let result = orbital_syscall(SYS_RECEIVE, endpoint_slot, 0, 0) as i32;
+        if result <= 0 {
+            // 0 = no message, negative = error (e.g., permission denied)
             return None;
         }
         // Get the message data
@@ -316,6 +405,36 @@ pub fn get_time() -> u64 {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn get_time() -> u64 {
     0
+}
+
+/// Get wall-clock time in milliseconds since Unix epoch
+///
+/// This is real time-of-day (can jump due to NTP sync).
+/// Use `get_time()` for durations and scheduling.
+#[cfg(target_arch = "wasm32")]
+pub fn get_wallclock() -> u64 {
+    unsafe {
+        let low = orbital_syscall(SYS_GET_WALLCLOCK, 0, 0, 0);
+        let high = orbital_syscall(SYS_GET_WALLCLOCK, 1, 0, 0);
+        ((high as u64) << 32) | (low as u64)
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_wallclock() -> u64 {
+    // Return current time for testing (using std)
+    #[cfg(feature = "std")]
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        0
+    }
 }
 
 /// Yield to allow other processes to run
@@ -728,10 +847,123 @@ pub struct ProcessInfo {
 }
 
 // ============================================================================
+// List syscalls
+// ============================================================================
+
+/// List all capabilities in this process's capability space
+#[cfg(target_arch = "wasm32")]
+pub fn list_caps() -> Vec<CapInfo> {
+    let mut buffer = [0u8; 4096];
+    unsafe {
+        let result = orbital_syscall(SYS_LIST_CAPS, 0, 0, 0);
+        if result != 0 {
+            return Vec::new();
+        }
+        // Get the capability data
+        let len = orbital_recv_bytes(buffer.as_mut_ptr(), buffer.len() as u32);
+        if len < 4 {
+            return Vec::new();
+        }
+        // Parse: first 4 bytes = count, then for each cap: slot(4) + type(1) + object_id(8) = 13 bytes
+        let count = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+        let mut caps = Vec::with_capacity(count);
+        let mut offset = 4;
+        for _ in 0..count {
+            if offset + 13 > len as usize {
+                break;
+            }
+            let slot = u32::from_le_bytes([
+                buffer[offset],
+                buffer[offset + 1],
+                buffer[offset + 2],
+                buffer[offset + 3],
+            ]);
+            let object_type = buffer[offset + 4];
+            let object_id = u64::from_le_bytes([
+                buffer[offset + 5],
+                buffer[offset + 6],
+                buffer[offset + 7],
+                buffer[offset + 8],
+                buffer[offset + 9],
+                buffer[offset + 10],
+                buffer[offset + 11],
+                buffer[offset + 12],
+            ]);
+            // Note: permissions not included in kernel response yet
+            // We'll need to extend the kernel response format
+            caps.push(CapInfo {
+                slot,
+                object_type,
+                object_id,
+                can_read: true,  // placeholder
+                can_write: true, // placeholder
+                can_grant: false, // placeholder
+            });
+            offset += 13;
+        }
+        caps
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn list_caps() -> Vec<CapInfo> {
+    Vec::new()
+}
+
+/// List all processes in the system
+#[cfg(target_arch = "wasm32")]
+pub fn list_processes() -> Vec<ProcessInfo> {
+    let mut buffer = [0u8; 4096];
+    unsafe {
+        let result = orbital_syscall(SYS_LIST_PROCS, 0, 0, 0);
+        if result != 0 {
+            return Vec::new();
+        }
+        // Get the process data
+        let len = orbital_recv_bytes(buffer.as_mut_ptr(), buffer.len() as u32);
+        if len < 4 {
+            return Vec::new();
+        }
+        // Parse: first 4 bytes = count, then for each proc: pid(4) + name_len(2) + name(variable)
+        let count = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+        let mut procs = Vec::with_capacity(count);
+        let mut offset = 4;
+        for _ in 0..count {
+            if offset + 6 > len as usize {
+                break;
+            }
+            let pid = u32::from_le_bytes([
+                buffer[offset],
+                buffer[offset + 1],
+                buffer[offset + 2],
+                buffer[offset + 3],
+            ]);
+            let name_len = u16::from_le_bytes([buffer[offset + 4], buffer[offset + 5]]) as usize;
+            offset += 6;
+            if offset + name_len > len as usize {
+                break;
+            }
+            let name = core::str::from_utf8(&buffer[offset..offset + name_len])
+                .unwrap_or("???")
+                .to_string();
+            offset += name_len;
+            procs.push(ProcessInfo {
+                pid,
+                name,
+                state: 0, // Running (state not included in kernel response)
+            });
+        }
+        procs
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn list_processes() -> Vec<ProcessInfo> {
+    Vec::new()
+}
+// ============================================================================
 // Console helpers
 // ============================================================================
 
-/// Write to the console (via IPC to console endpoint)
-pub fn console_write(console_slot: u32, text: &str) {
-    let _ = send(console_slot, MSG_CONSOLE_WRITE, text.as_bytes());
-}
+// Note: console_write() is now defined above as a syscall wrapper (SYS_CONSOLE_WRITE).
+// The old IPC-based console_write(slot, text) has been removed.

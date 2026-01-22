@@ -59,12 +59,12 @@ pub(crate) struct WorkerProcess {
 unsafe impl Send for WorkerProcess {}
 unsafe impl Sync for WorkerProcess {}
 
-// Mailbox status values (must match orbital-wasm-rt)
+// Mailbox status values (must match worker.js)
 pub const STATUS_IDLE: i32 = 0;
 pub const STATUS_PENDING: i32 = 1;
 pub const STATUS_READY: i32 = 2;
 
-// Mailbox field offsets in i32 units (must match orbital-wasm-rt)
+// Mailbox field offsets in i32 units (must match worker.js)
 pub const MAILBOX_STATUS: u32 = 0;
 pub const MAILBOX_SYSCALL_NUM: u32 = 1;
 pub const MAILBOX_ARG0: u32 = 2;
@@ -101,6 +101,7 @@ pub enum WorkerMessageType {
 }
 
 /// Parse worker message from MessageEvent
+#[allow(dead_code)]
 pub(crate) fn parse_worker_message(
     pid: u64,
     event: &MessageEvent,
@@ -109,7 +110,10 @@ pub(crate) fn parse_worker_message(
 
     // Handle object messages
     if data.is_object() {
-        let obj = data.dyn_ref::<js_sys::Object>().unwrap();
+        // Safe: we just verified data.is_object() is true
+        let obj = data
+            .dyn_ref::<js_sys::Object>()
+            .ok_or_else(|| JsValue::from_str("Expected object"))?;
 
         let msg_type = js_sys::Reflect::get(obj, &"type".into())?
             .as_string()
@@ -148,10 +152,7 @@ pub(crate) fn parse_worker_message(
 }
 
 /// Parse ready message
-fn parse_ready_message(
-    pid: u64,
-    obj: &js_sys::Object,
-) -> Result<WorkerMessage, JsValue> {
+fn parse_ready_message(pid: u64, obj: &js_sys::Object) -> Result<WorkerMessage, JsValue> {
     let memory_size = js_sys::Reflect::get(obj, &"memory_size".into())
         .ok()
         .and_then(|v| v.as_f64())
@@ -171,10 +172,7 @@ fn parse_ready_message(
 }
 
 /// Parse syscall message
-fn parse_syscall_message(
-    pid: u64,
-    obj: &js_sys::Object,
-) -> Result<WorkerMessage, JsValue> {
+fn parse_syscall_message(pid: u64, obj: &js_sys::Object) -> Result<WorkerMessage, JsValue> {
     let syscall_num = js_sys::Reflect::get(obj, &"syscall".into())
         .ok()
         .and_then(|v| v.as_f64())
@@ -182,7 +180,9 @@ fn parse_syscall_message(
         .unwrap_or(0);
 
     let args_val = js_sys::Reflect::get(obj, &"args".into())?;
-    let args_array = args_val.dyn_ref::<js_sys::Array>().unwrap();
+    let args_array = args_val
+        .dyn_ref::<js_sys::Array>()
+        .ok_or_else(|| JsValue::from_str("Expected args array"))?;
     let args = [
         args_array.get(0).as_f64().unwrap_or(0.0) as u32,
         args_array.get(1).as_f64().unwrap_or(0.0) as u32,
@@ -203,10 +203,7 @@ fn parse_syscall_message(
 }
 
 /// Parse error message
-fn parse_error_message(
-    pid: u64,
-    obj: &js_sys::Object,
-) -> Result<WorkerMessage, JsValue> {
+fn parse_error_message(pid: u64, obj: &js_sys::Object) -> Result<WorkerMessage, JsValue> {
     let message = js_sys::Reflect::get(obj, &"error".into())
         .ok()
         .and_then(|v| v.as_string())
@@ -229,10 +226,7 @@ fn create_terminated_message(pid: u64) -> WorkerMessage {
 }
 
 /// Parse memory update message
-fn parse_memory_update_message(
-    pid: u64,
-    obj: &js_sys::Object,
-) -> Result<WorkerMessage, JsValue> {
+fn parse_memory_update_message(pid: u64, obj: &js_sys::Object) -> Result<WorkerMessage, JsValue> {
     let memory_size = js_sys::Reflect::get(obj, &"memory_size".into())
         .ok()
         .and_then(|v| v.as_f64())
@@ -282,12 +276,7 @@ fn serialize_ready(result: &mut Vec<u8>, pid: u64, memory_size: usize) {
 }
 
 /// Serialize syscall message
-fn serialize_syscall(
-    result: &mut Vec<u8>,
-    msg: &WorkerMessage,
-    syscall_num: u32,
-    args: &[u32; 3],
-) {
+fn serialize_syscall(result: &mut Vec<u8>, msg: &WorkerMessage, syscall_num: u32, args: &[u32; 3]) {
     result.push(ProcessMessageType::Syscall as u8);
     result.extend_from_slice(&(msg.pid as u32).to_le_bytes());
     result.extend_from_slice(&syscall_num.to_le_bytes());

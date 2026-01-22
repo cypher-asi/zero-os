@@ -150,17 +150,14 @@ orbital-os/
 ├── Cargo.toml                    # Workspace root
 ├── crates/
 │   ├── orbital-hal/              # HAL trait (no_std)
-│   ├── orbital-hal-mock/         # Mock HAL for unit testing
-│   ├── orbital-kernel/           # Core kernel (no_std)
+│   ├── orbital-kernel/           # Core kernel (no_std, includes mock HAL for testing)
 │   ├── orbital-process/          # Process-side syscall lib
-│   ├── orbital-terminal/         # Terminal process WASM
-│   └── orbital-test-procs/       # Test process types
-├── apps/
-│   └── orbital-web/              # Browser supervisor + UI
-│       ├── src/lib.rs            # Supervisor WASM
-│       └── www/
-│           ├── index.html        # Terminal + Dashboard UI
-│           └── pkg/              # Built WASM files
+│   ├── orbital-apps/             # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
+│   └── orbital-system-procs/     # System processes
+├── web/                          # Browser UI + processes
+│   ├── desktop/                  # React desktop environment
+│   ├── processes/                # Built WASM process binaries
+│   └── pkg/                      # wasm-pack output (supervisor)
 └── tools/
     └── dev-server/               # Static file server with COOP/COEP
 ```

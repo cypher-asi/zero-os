@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::engine::DesktopEngine;
 use crate::math::{Size, Vec2};
-use crate::window::{WindowConfig, WindowState};
+use crate::window::{WindowConfig, WindowState, WindowType};
 
 // Import js_sys::Date for timestamps
 #[wasm_bindgen]
@@ -106,6 +106,7 @@ impl DesktopController {
             app_id: app_id.to_string(),
             process_id: None,
             content_interactive,
+            window_type: WindowType::Standard,
         };
         self.engine.create_window(config)
     }
@@ -120,6 +121,16 @@ impl DesktopController {
     #[wasm_bindgen]
     pub fn get_window_process_id(&self, id: u64) -> Option<u64> {
         self.engine.get_window_process_id(id)
+    }
+
+    /// Set the process ID for a window
+    /// 
+    /// Links a window to its associated process for:
+    /// - Automatic process termination when window closes
+    /// - Per-process console output routing
+    #[wasm_bindgen]
+    pub fn set_window_process_id(&mut self, window_id: u64, process_id: u64) {
+        self.engine.set_window_process_id(window_id, process_id);
     }
 
     /// Focus a window
@@ -191,14 +202,11 @@ impl DesktopController {
                     "id": w.id,
                     "title": w.title,
                     "appId": w.app_id,
+                    "processId": w.process_id,
                     "position": { "x": w.position.x, "y": w.position.y },
                     "size": { "width": w.size.width, "height": w.size.height },
-                    "state": match w.state {
-                        WindowState::Normal => "normal",
-                        WindowState::Minimized => "minimized",
-                        WindowState::Maximized => "maximized",
-                        WindowState::Fullscreen => "fullscreen",
-                    },
+                    "state": window_state_to_str(w.state),
+                    "windowType": window_type_to_str(w.window_type),
                     "zOrder": w.z_order,
                     "focused": focused_id == Some(w.id)
                 })
@@ -220,12 +228,8 @@ impl DesktopController {
                     "id": r.id,
                     "title": r.title,
                     "appId": r.app_id,
-                    "state": match r.state {
-                        WindowState::Normal => "normal",
-                        WindowState::Minimized => "minimized",
-                        WindowState::Maximized => "maximized",
-                        WindowState::Fullscreen => "fullscreen",
-                    },
+                    "state": window_state_to_str(r.state),
+                    "windowType": window_type_to_str(r.window_type),
                     "focused": r.focused,
                     "zOrder": z_order,
                     "opacity": r.opacity,
@@ -514,7 +518,9 @@ fn build_window_rect_json(r: &crate::engine::WindowScreenRect, z_order: usize) -
         "id": r.id,
         "title": r.title,
         "appId": r.app_id,
+        "processId": r.process_id,
         "state": window_state_to_str(r.state),
+        "windowType": window_type_to_str(r.window_type),
         "focused": r.focused,
         "zOrder": z_order,
         "opacity": r.opacity,
@@ -535,6 +541,14 @@ fn window_state_to_str(state: WindowState) -> &'static str {
         WindowState::Minimized => "minimized",
         WindowState::Maximized => "maximized",
         WindowState::Fullscreen => "fullscreen",
+    }
+}
+
+/// Convert WindowType to JSON-friendly string
+fn window_type_to_str(window_type: WindowType) -> &'static str {
+    match window_type {
+        WindowType::Standard => "standard",
+        WindowType::Widget => "widget",
     }
 }
 

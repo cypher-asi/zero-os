@@ -1,0 +1,21 @@
+# Cargo configuration for Orbital OS
+# This file configures the WASM target to import shared memory from the host
+
+[target.wasm32-unknown-unknown]
+# For process binaries that need shared memory (atomics-based syscalls):
+# - import-memory: Import memory from host instead of defining internally
+# - shared-memory: Mark memory as shared (requires atomics)
+# - atomics: Enable atomic instructions for SharedArrayBuffer
+# - bulk-memory: Required for atomics
+# - mutable-globals: Required for shared memory
+# - initial-memory/max-memory: Set memory size (4MB initial, 16MB max)
+#
+# NOTE: This requires nightly Rust and -Z build-std to compile std with atomics
+rustflags = [
+    "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
+    "-C", "link-args=--import-memory --shared-memory --initial-memory=4194304 --max-memory=16777216"
+]
+
+[unstable]
+# Required for compiling std with atomics support
+build-std = ["panic_abort", "std"]

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { createElement } from 'react';
 import { BeginMenu } from '../BeginMenu/BeginMenu';
@@ -8,18 +8,48 @@ import {
   createMockSupervisor,
 } from '../../test/mocks';
 
+// Track the onChange callback for testing
+let capturedOnChange: ((id: string) => void) | null = null;
+let capturedItems: any[] = [];
+
 // Mock the @cypher-asi/zui components
 vi.mock('@cypher-asi/zui', () => ({
-  Panel: ({ children, className, ...props }: any) =>
-    createElement('div', { className, ...props }, children),
-}));
+  Menu: ({ items, onChange, title, ...props }: any) => {
+    // Capture the onChange and items for testing
+    capturedOnChange = onChange;
+    capturedItems = items;
 
-// Mock lucide-react icons
-vi.mock('lucide-react', () => ({
-  TerminalSquare: () => createElement('span', { 'data-testid': 'icon-terminal' }, 'T'),
-  Settings: () => createElement('span', { 'data-testid': 'icon-settings' }, 'S'),
-  Folder: () => createElement('span', { 'data-testid': 'icon-folder' }, 'F'),
-  Power: () => createElement('span', { 'data-testid': 'icon-power' }, 'P'),
+    // Render a simple representation of the menu for testing
+    const renderItems = (menuItems: any[]): any[] => {
+      return menuItems.map((item: any, index: number) => {
+        // Handle separator
+        if (item.type === 'separator') {
+          return createElement('hr', { key: `separator-${index}`, 'data-testid': 'menu-separator' });
+        }
+        if (item.children) {
+          // Render submenu header and children
+          return createElement('div', { key: item.id, 'data-testid': `submenu-${item.id}` }, [
+            createElement('span', { key: `${item.id}-label` }, item.label),
+            ...renderItems(item.children),
+          ]);
+        }
+        return createElement(
+          'div',
+          {
+            key: item.id,
+            'data-testid': `menu-item-${item.id}`,
+            onClick: () => onChange?.(item.id),
+          },
+          item.label
+        );
+      });
+    };
+
+    return createElement('div', { 'data-testid': 'menu', ...props }, [
+      title && createElement('div', { key: 'title', 'data-testid': 'menu-title' }, title),
+      ...renderItems(items),
+    ]);
+  },
 }));
 
 function createTestWrapper(mockDesktop: any, mockSupervisor?: any) {
@@ -50,19 +80,52 @@ describe('BeginMenu', () => {
       { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
     );
 
-    expect(screen.getByText('ZERO OS')).toBeInTheDocument();
+    expect(screen.getByTestId('menu-title')).toHaveTextContent('ZERO OS');
   });
 
-  it('renders menu items', () => {
+  it('renders main menu items', () => {
     render(
       createElement(BeginMenu, { onClose }),
       { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
     );
 
+    expect(screen.getByText('Programs')).toBeInTheDocument();
     expect(screen.getByText('Terminal')).toBeInTheDocument();
-    expect(screen.getByText('Settings')).toBeInTheDocument();
     expect(screen.getByText('Files')).toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
     expect(screen.getByText('Shutdown')).toBeInTheDocument();
+  });
+
+  it('renders program submenu items alphabetically', () => {
+    render(
+      createElement(BeginMenu, { onClose }),
+      { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
+    );
+
+    expect(screen.getByText('Calculator')).toBeInTheDocument();
+    expect(screen.getByText('Clock')).toBeInTheDocument();
+
+    // Verify alphabetical order in the captured items
+    const programsItem = capturedItems.find((item: any) => item.id === 'programs');
+    expect(programsItem?.children).toEqual([
+      { id: 'calculator', label: 'Calculator' },
+      { id: 'clock', label: 'Clock' },
+    ]);
+  });
+
+  it('renders settings submenu with permissions', () => {
+    render(
+      createElement(BeginMenu, { onClose }),
+      { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
+    );
+
+    expect(screen.getByText('Permissions')).toBeInTheDocument();
+
+    // Verify settings is a submenu containing permissions
+    const settingsItem = capturedItems.find((item: any) => item.id === 'settings');
+    expect(settingsItem?.children).toEqual([
+      { id: 'permissions', label: 'Permissions' },
+    ]);
   });
 
   it('launches terminal app on click', () => {
@@ -71,23 +134,23 @@ describe('BeginMenu', () => {
       { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
     );
 
-    const terminalButton = screen.getByText('Terminal');
+    const terminalButton = screen.getByTestId('menu-item-terminal');
     fireEvent.click(terminalButton);
 
     expect(mockDesktop.launch_app).toHaveBeenCalledWith('terminal');
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('launches settings app on click', () => {
+  it('launches permissions app from settings submenu', () => {
     render(
       createElement(BeginMenu, { onClose }),
       { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
     );
 
-    const settingsButton = screen.getByText('Settings');
-    fireEvent.click(settingsButton);
+    const permissionsButton = screen.getByTestId('menu-item-permissions');
+    fireEvent.click(permissionsButton);
 
-    expect(mockDesktop.launch_app).toHaveBeenCalledWith('settings');
+    expect(mockDesktop.launch_app).toHaveBeenCalledWith('permissions');
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -97,7 +160,7 @@ describe('BeginMenu', () => {
       { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
     );
 
-    const filesButton = screen.getByText('Files');
+    const filesButton = screen.getByTestId('menu-item-files');
     fireEvent.click(filesButton);
 
     expect(mockDesktop.launch_app).toHaveBeenCalledWith('files');
@@ -110,10 +173,23 @@ describe('BeginMenu', () => {
       { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
     );
 
-    const shutdownButton = screen.getByText('Shutdown');
+    const shutdownButton = screen.getByTestId('menu-item-shutdown');
     fireEvent.click(shutdownButton);
 
     expect(mockSupervisor.send_input).toHaveBeenCalledWith('shutdown');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('launches calculator from programs submenu', () => {
+    render(
+      createElement(BeginMenu, { onClose }),
+      { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
+    );
+
+    const calculatorButton = screen.getByTestId('menu-item-calculator');
+    fireEvent.click(calculatorButton);
+
+    expect(mockDesktop.launch_app).toHaveBeenCalledWith('calculator');
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -139,23 +215,29 @@ describe('BeginMenu', () => {
       { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
     );
 
-    const menu = screen.getByText('ZERO OS').parentElement!;
+    const menu = screen.getByTestId('menu');
     fireEvent.mouseDown(menu);
 
     // onClose should not be called from click inside (only from item selection)
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('renders icons for menu items', () => {
+  it('has correct menu structure with separator before shutdown', () => {
     render(
       createElement(BeginMenu, { onClose }),
       { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
     );
 
-    expect(screen.getByTestId('icon-terminal')).toBeInTheDocument();
-    expect(screen.getByTestId('icon-settings')).toBeInTheDocument();
-    expect(screen.getByTestId('icon-folder')).toBeInTheDocument();
-    expect(screen.getByTestId('icon-power')).toBeInTheDocument();
+    // Verify structure: Programs, Terminal, Files, Settings, separator, Shutdown
+    expect(capturedItems[0]).toEqual(expect.objectContaining({ id: 'programs' }));
+    expect(capturedItems[1]).toEqual({ id: 'terminal', label: 'Terminal' });
+    expect(capturedItems[2]).toEqual({ id: 'files', label: 'Files' });
+    expect(capturedItems[3]).toEqual(expect.objectContaining({ id: 'settings' }));
+    expect(capturedItems[4]).toEqual({ type: 'separator' });
+    expect(capturedItems[5]).toEqual({ id: 'shutdown', label: 'Shutdown' });
+
+    // Verify separator is rendered
+    expect(screen.getByTestId('menu-separator')).toBeInTheDocument();
   });
 
   it('cleanup removes event listener', () => {

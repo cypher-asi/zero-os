@@ -83,13 +83,13 @@ Phase 1 is divided into eight stages, each building on the previous:
    - Axiom log for capability mutations (with hash chain)
    - Extensive unit tests (50+ tests)
 
-2. **HAL Layer** (`orbital-hal`, `orbital-hal-mock`)
+2. **HAL Layer** (`orbital-hal`)
    - HAL trait with process management, time, memory, random, debug
-   - Full mock HAL for testing
+   - Mock HAL integrated into `orbital-kernel` for testing
 
-3. **Process Support** (`orbital-process`, `orbital-wasm-rt`)
+3. **Process Support** (`orbital-process`)
    - Process-side syscall library with full ABI
-   - WASM runtime with SharedArrayBuffer + Atomics syscalls
+   - Syscall runtime provided by `worker.js` using SharedArrayBuffer + Atomics
 
 4. **Browser Supervisor** (`orbital-web`, `worker.js`)
    - Web Worker process isolation
@@ -97,8 +97,10 @@ Phase 1 is divided into eight stages, each building on the previous:
    - Full dashboard UI (processes, memory, endpoints, IPC traffic, Axiom log)
    - IndexedDB persistence for Axiom log
 
-5. **Test Processes** (`orbital-test-procs`, `orbital-terminal`)
-   - Terminal process with command shell
+5. **Userspace Processes** (`orbital-apps`, `orbital-system-procs`)
+   - Terminal app implementing OrbitalApp trait
+   - Clock, Calculator apps with IPC protocol
+   - PermissionManager service (PID 2)
    - idle, memhog, sender, receiver, pingpong test processes
 
 6. **Axiom Layer** (`orbital-axiom`)
@@ -161,12 +163,10 @@ These properties must hold at every stage:
 crates/
   orbital-axiom/           # Axiom verification layer (SysLog, CommitLog, Gateway)
   orbital-hal/             # HAL trait definition
-  orbital-hal-mock/        # Mock HAL for testing
-  orbital-kernel/          # Kernel with capabilities, IPC, Axiom integration
+  orbital-kernel/          # Kernel with capabilities, IPC, Axiom integration (includes mock HAL for tests)
   orbital-process/         # Process-side syscall library
-  orbital-wasm-rt/         # WASM runtime (atomics-based syscalls)
-  orbital-terminal/        # Terminal process
-  orbital-test-procs/      # Test processes (idle, memhog, etc.)
+  orbital-apps/            # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
+  orbital-system-procs/    # System processes (idle, memhog, etc.)
 
 apps/
   orbital-web/             # Browser supervisor
@@ -190,10 +190,8 @@ tools/
 [workspace.dependencies]
 orbital-axiom = { path = "crates/orbital-axiom" }
 orbital-hal = { path = "crates/orbital-hal" }
-orbital-hal-mock = { path = "crates/orbital-hal-mock" }
 orbital-kernel = { path = "crates/orbital-kernel" }
 orbital-process = { path = "crates/orbital-process" }
-orbital-wasm-rt = { path = "crates/orbital-wasm-rt" }
 
 wasm-bindgen = "0.2"
 js-sys = "0.3"

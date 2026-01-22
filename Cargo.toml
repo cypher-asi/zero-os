@@ -1,16 +1,14 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/orbital-apps",
     "crates/orbital-axiom",
     "crates/orbital-desktop",
     "crates/orbital-hal",
-    "crates/orbital-hal-mock",
     "crates/orbital-init",
     "crates/orbital-kernel",
     "crates/orbital-process",
-    "crates/orbital-terminal",
-    "crates/orbital-test-procs",
-    "crates/orbital-wasm-rt",
+    "crates/orbital-system-procs",
     "crates/orbital-web",
     "tools/dev-server",
 ]
@@ -23,15 +21,14 @@ repository = "https://github.com/example/orbital-os"
 
 [workspace.dependencies]
 # Internal crates
+orbital-apps = { path = "crates/orbital-apps" }
 orbital-axiom = { path = "crates/orbital-axiom" }
 orbital-desktop = { path = "crates/orbital-desktop" }
 orbital-hal = { path = "crates/orbital-hal" }
-orbital-hal-mock = { path = "crates/orbital-hal-mock" }
 orbital-init = { path = "crates/orbital-init" }
 orbital-kernel = { path = "crates/orbital-kernel" }
 orbital-process = { path = "crates/orbital-process" }
-orbital-test-procs = { path = "crates/orbital-test-procs" }
-orbital-wasm-rt = { path = "crates/orbital-wasm-rt" }
+orbital-system-procs = { path = "crates/orbital-system-procs" }
 
 # External dependencies
 wasm-bindgen = "0.2"

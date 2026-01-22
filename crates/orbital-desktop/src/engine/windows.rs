@@ -2,7 +2,7 @@
 
 use crate::desktop::DesktopId;
 use crate::math::{Camera, Rect, Size, Vec2};
-use crate::window::{WindowConfig, WindowId};
+use crate::window::{WindowConfig, WindowId, WindowType};
 use super::DesktopEngine;
 
 impl DesktopEngine {
@@ -64,6 +64,17 @@ impl DesktopEngine {
     /// Get the process ID for a window (if any)
     pub fn get_window_process_id(&self, id: WindowId) -> Option<u64> {
         self.windows.get(id).and_then(|w| w.process_id)
+    }
+
+    /// Set the process ID for a window
+    /// 
+    /// This links a window to its associated process, enabling:
+    /// - Process termination when window is closed
+    /// - Per-process console callbacks routing
+    pub fn set_window_process_id(&mut self, id: WindowId, process_id: u64) {
+        if let Some(window) = self.windows.get_mut(id) {
+            window.process_id = Some(process_id);
+        }
     }
 
     /// Focus a window
@@ -166,25 +177,26 @@ impl DesktopEngine {
 
     /// Launch an application (creates window with app_id)
     pub fn launch_app(&mut self, app_id: &str) -> WindowId {
-        let (win_w, win_h) = self.calculate_app_window_size();
-        let (title, content_interactive) = self.get_app_config(app_id);
+        let app_config = self.get_app_config(app_id);
+        let (win_w, win_h) = self.calculate_app_window_size(&app_config);
 
         let config = WindowConfig {
-            title: title.to_string(),
+            title: app_config.title.to_string(),
             position: None,
             size: Size::new(win_w, win_h),
-            min_size: Some(Size::new(200.0, 150.0)),
+            min_size: Some(Size::new(app_config.min_width, app_config.min_height)),
             max_size: None,
             app_id: app_id.to_string(),
             process_id: None,
-            content_interactive,
+            content_interactive: app_config.content_interactive,
+            window_type: app_config.window_type,
         };
 
         self.create_window(config)
     }
 
-    /// Calculate window size based on screen dimensions
-    fn calculate_app_window_size(&self) -> (f32, f32) {
+    /// Calculate window size based on screen dimensions and app config
+    fn calculate_app_window_size(&self, config: &AppConfig) -> (f32, f32) {
         let screen_w = self.viewport.screen_size.width;
         let screen_h = self.viewport.screen_size.height;
 
@@ -193,21 +205,86 @@ impl DesktopEngine {
         let max_w = (screen_w - padding * 2.0).max(400.0);
         let max_h = (screen_h - taskbar_height - padding * 2.0).max(300.0);
 
-        let win_w = 900.0_f32.min(max_w);
-        let win_h = 600.0_f32.min(max_h);
-
+        // Use app-specific preferred size, clamped to screen bounds
+        let win_w = config.preferred_width.min(max_w);
+        let win_h = config.preferred_height.min(max_h);
         (win_w, win_h)
     }
 
-    /// Get title and interactivity config for an app
-    fn get_app_config<'a>(&self, app_id: &'a str) -> (&'a str, bool) {
+    /// Get configuration for an app
+    fn get_app_config<'a>(&self, app_id: &'a str) -> AppConfig<'a> {
         match app_id {
-            "terminal" => ("Terminal", false),
-            "browser" => ("Browser", false),
-            "settings" => ("Settings", false),
-            _ => (app_id, false),
+            "terminal" => AppConfig {
+                title: "Terminal",
+                content_interactive: false,
+                window_type: WindowType::Standard,
+                min_width: 200.0,
+                min_height: 150.0,
+                preferred_width: 900.0,
+                preferred_height: 600.0,
+            },
+            "browser" => AppConfig {
+                title: "Browser",
+                content_interactive: false,
+                window_type: WindowType::Standard,
+                min_width: 200.0,
+                min_height: 150.0,
+                preferred_width: 900.0,
+                preferred_height: 600.0,
+            },
+            "settings" => AppConfig {
+                title: "Settings",
+                content_interactive: false,
+                window_type: WindowType::Standard,
+                min_width: 200.0,
+                min_height: 150.0,
+                preferred_width: 900.0,
+                preferred_height: 600.0,
+            },
+            "clock" | "com.orbital.clock" => AppConfig {
+                title: "Clock",
+                content_interactive: false,
+                window_type: WindowType::Widget,
+                min_width: 150.0,
+                min_height: 100.0,
+                // Clock: icon (64px) + time (48px) + date + info row + padding
+                preferred_width: 280.0,
+                preferred_height: 280.0,
+            },
+            "calculator" | "com.orbital.calculator" => AppConfig {
+                title: "Calculator",
+                content_interactive: false,
+                window_type: WindowType::Widget,
+                min_width: 200.0,
+                min_height: 200.0,
+                // Calculator: display (~100px) + 5 rows of buttons (52px each) + gaps + padding + space for close button
+                preferred_width: 320.0,
+                preferred_height: 450.0,
+            },
+            _ => AppConfig {
+                title: app_id,
+                content_interactive: false,
+                window_type: WindowType::Standard,
+                min_width: 200.0,
+                min_height: 150.0,
+                preferred_width: 900.0,
+                preferred_height: 600.0,
+            },
         }
     }
+}
+
+/// Configuration for an application window
+struct AppConfig<'a> {
+    title: &'a str,
+    content_interactive: bool,
+    window_type: WindowType,
+    min_width: f32,
+    min_height: f32,
+    /// Preferred window width (used for initial sizing)
+    preferred_width: f32,
+    /// Preferred window height (used for initial sizing)
+    preferred_height: f32,
 }
 
 #[cfg(test)]
@@ -486,6 +563,38 @@ mod tests {
         let window = engine.windows.get(id).unwrap();
         assert_eq!(window.title, "my-custom-app");
         assert_eq!(window.app_id, "my-custom-app");
+    }
+
+    #[test]
+    fn test_launch_app_clock_is_widget() {
+        use crate::window::WindowType;
+        let mut engine = create_test_engine();
+
+        let id = engine.launch_app("clock");
+
+        let window = engine.windows.get(id).unwrap();
+        assert_eq!(window.title, "Clock");
+        assert_eq!(window.app_id, "clock");
+        assert_eq!(window.window_type, WindowType::Widget);
+        // Widget windows should be smaller
+        assert!(window.size.width < 400.0);
+        assert!(window.size.height < 400.0);
+    }
+
+    #[test]
+    fn test_launch_app_calculator_is_widget() {
+        use crate::window::WindowType;
+        let mut engine = create_test_engine();
+
+        let id = engine.launch_app("calculator");
+
+        let window = engine.windows.get(id).unwrap();
+        assert_eq!(window.title, "Calculator");
+        assert_eq!(window.app_id, "calculator");
+        assert_eq!(window.window_type, WindowType::Widget);
+        // Calculator widget should fit its content (300x420)
+        assert!(window.size.width <= 400.0);
+        assert!(window.size.height <= 500.0);
     }
 
     #[test]

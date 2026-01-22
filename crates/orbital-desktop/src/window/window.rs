@@ -15,6 +15,17 @@ pub enum WindowState {
     Fullscreen,
 }
 
+/// Window type - determines chrome/presentation style
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowType {
+    /// Standard window with title bar, minimize/maximize/close buttons
+    #[default]
+    Standard,
+    /// Widget window with no title bar, only close button
+    Widget,
+}
+
 /// A window in the desktop environment
 #[derive(Clone, Debug)]
 pub struct Window {
@@ -34,6 +45,8 @@ pub struct Window {
     pub max_size: Option<Size>,
     /// Current state
     pub state: WindowState,
+    /// Window type (standard or widget)
+    pub window_type: WindowType,
     /// Associated process ID (if any)
     pub process_id: Option<u64>,
     /// Z-order (higher = on top)
@@ -120,6 +133,7 @@ mod tests {
             min_size: Size::new(200.0, 150.0),
             max_size: None,
             state: WindowState::Normal,
+            window_type: WindowType::Standard,
             process_id: None,
             z_order: 1,
             restore_rect: None,

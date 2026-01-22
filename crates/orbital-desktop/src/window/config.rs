@@ -1,6 +1,7 @@
 //! Window configuration for creation
 
 use crate::math::{Size, Vec2};
+use super::WindowType;
 
 /// Configuration for creating a window
 #[derive(Clone, Debug, Default)]
@@ -23,4 +24,6 @@ pub struct WindowConfig {
     /// If false (default), clicking/dragging content will move the window
     /// If true, mouse events are forwarded to the app instead
     pub content_interactive: bool,
+    /// Window type (standard or widget)
+    pub window_type: WindowType,
 }

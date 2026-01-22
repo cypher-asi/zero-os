@@ -62,6 +62,31 @@
   contain: strict;
 }
 
+/* =============================================================================
+ * Widget Windows - No title bar, only floating close button
+ * =============================================================================
+ */
+
+.widget .content {
+  /* Widget content fills the entire window */
+  border-radius: inherit;
+}
+
+.widgetCloseButton {
+  /* Floating close button in top-right corner */
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 11; /* Above resize handles and content */
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* Show close button on hover */
+.widget:hover .widgetCloseButton {
+  opacity: 1;
+}
+
 /* Resize handles - invisible but show cursor on hover */
 .resizeHandle {
   position: absolute;

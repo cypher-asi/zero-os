@@ -8,7 +8,7 @@ mod config;
 mod region;
 mod manager;
 
-pub use window::{Window, WindowState};
+pub use window::{Window, WindowState, WindowType};
 pub use config::WindowConfig;
 pub use region::WindowRegion;
 pub use manager::WindowManager;
