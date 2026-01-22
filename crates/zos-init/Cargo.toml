@@ -1,0 +1,15 @@
+[package]
+name = "zos-init"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Init process (PID 1) for Zero OS - service bootstrap and registry"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = []
+
+[dependencies]
+zos-process.workspace = true

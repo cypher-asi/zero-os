@@ -1,6 +1,6 @@
 # Phase 3: Bare Metal (Real Hardware)
 
-> **Goal**: Port Orbital OS to real hardware (x86_64, ARM64).
+> **Goal**: Port Zero OS to real hardware (x86_64, ARM64).
 
 ## Overview
 
@@ -150,7 +150,7 @@ sudo dd if=target/uefi.img of=/dev/sdX bs=1M
 
 ```
 crates/
-  orbital-hal/
+  Zero-hal/
     src/
       x86_64/
         uefi.rs
@@ -158,19 +158,19 @@ crates/
         e1000.rs
         smp.rs
         acpi.rs
-  orbital-boot/
+  Zero-boot/
     src/
       uefi_boot.rs
 
   # New crates for hardware
-  orbital-drivers/
+  Zero-drivers/
     src/
       nvme.rs
       ahci.rs
       e1000.rs
       rtl8139.rs
 
-  orbital-security/
+  Zero-security/
     src/
       tpm.rs
       secure_boot.rs
@@ -186,7 +186,7 @@ crates/
 
 ## Deployment
 
-After Phase 3, Orbital OS can be deployed to:
+After Phase 3, Zero OS can be deployed to:
 
 - **Edge devices**: IoT, embedded systems
 - **Servers**: Data center infrastructure

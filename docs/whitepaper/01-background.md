@@ -1,4 +1,4 @@
-# Orbital OS - Background
+# Zero OS - Background
 
 **Version:** 2.0  
 **Status:** Whitepaper  
@@ -246,18 +246,18 @@ No mainstream OS provides infrastructure for verifiable computation at the syste
 
 ---
 
-## 5. The Orbital Insight
+## 5. The Zero Insight
 
 ### 5.1 Separating Execution from Authority
 
-The critical insight behind Orbital OS is that **operating system state should be derived from authority, not from execution**.
+The critical insight behind Zero OS is that **operating system state should be derived from authority, not from execution**.
 
 In traditional operating systems, state is the accumulated result of every syscall, every interrupt, every scheduling decision. This execution-derived state is:
 - **Nondeterministic** - depends on timing, ordering, hardware quirks
 - **Unreproducible** - cannot be reconstructed from any record
 - **Opaque** - no way to verify what sequence of events produced it
 
-Orbital introduces an **authority layer** between execution and state:
+Zero introduces an **authority layer** between execution and state:
 
 ```
 +-----------------------------------------------------------+
@@ -352,7 +352,7 @@ The Policy Engine:
 
 ### 6.2 Policy Decisions Are Authoritative
 
-Unlike traditional OS permission checks (which happen at execution time and are ephemeral), Orbital policy decisions are:
+Unlike traditional OS permission checks (which happen at execution time and are ephemeral), Zero policy decisions are:
 
 | Property | Description |
 |----------|-------------|
@@ -392,7 +392,7 @@ This architectural decision has profound implications:
 
 ## 7. Cryptographic Identity and Key Management
 
-Orbital OS treats cryptographic keys as first-class citizens, with deterministic derivation and policy-controlled usage.
+Zero OS treats cryptographic keys as first-class citizens, with deterministic derivation and policy-controlled usage.
 
 ### 7.1 The Key Management Problem
 
@@ -402,9 +402,9 @@ Traditional systems handle cryptographic keys poorly:
 - Key usage is not audited at the OS level
 - Key derivation is application-specific and inconsistent
 
-### 7.2 Orbital Key Architecture
+### 7.2 Zero Key Architecture
 
-Orbital implements a **policy-controlled key hierarchy** with deterministic derivation:
+Zero implements a **policy-controlled key hierarchy** with deterministic derivation:
 
 ```
 +-----------------------------------------------------------+
@@ -502,7 +502,7 @@ The software secure boundary provides the security guarantee. Hardware protectio
 
 ---
 
-## 8. What Orbital OS Aims to Achieve
+## 8. What Zero OS Aims to Achieve
 
 ### 8.1 Primary Objectives
 
@@ -646,7 +646,7 @@ System software is delivered as immutable, signed images:
 
 ## 11. The Path Forward
 
-Orbital OS is designed to be built incrementally:
+Zero OS is designed to be built incrementally:
 
 1. **Hosted simulator** - Rust binary on existing OS
 2. **QEMU kernel** - Minimal kernel in virtual machine
@@ -663,7 +663,7 @@ Each phase is independently useful and testable.
 
 ## 12. Summary
 
-| Problem | Existing Approach | Orbital Approach |
+| Problem | Existing Approach | Zero Approach |
 |---------|-------------------|------------------|
 | What happened? | Scattered logs, archaeology | Single authoritative Axiom |
 | Was it correct? | Trust assumptions | Verifiable replay |
@@ -675,9 +675,9 @@ Each phase is independently useful and testable.
 | Can autonomous AI run safely? | Retrofit security, implicit trust | Structural guarantees, capability-based authority |
 | Is it AGI-ready? | Perimeter defenses, reactive patching | Secure enclaves, tamper-evident logs, least privilege |
 
-**Orbital OS is not an incremental improvement. It is a fundamental rearchitecture of what an operating system can guarantee.**
+**Zero OS is not an incremental improvement. It is a fundamental rearchitecture of what an operating system can guarantee.**
 
-**In an era of increasingly autonomous AI systems, Orbital provides the verifiable substrate that makes safe deployment of intelligent agents possible.**
+**In an era of increasingly autonomous AI systems, Zero provides the verifiable substrate that makes safe deployment of intelligent agents possible.**
 
 ---
 

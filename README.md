@@ -1,4 +1,4 @@
-# Orbital OS
+# Zero OS
 
 A capability-based operating system with a WASM-first implementation approach.
 
@@ -43,7 +43,7 @@ make server   # Start the dev server
 Or manually:
 
 ```bash
-cd apps/orbital-web && wasm-pack build --target web --out-dir www/pkg
+cd crates/zos-supervisor-web && wasm-pack build --target web --out-dir www/pkg
 cargo run -p dev-server
 ```
 
@@ -146,14 +146,14 @@ Quick-spawn buttons let you create test processes directly from the dashboard.
 ## Project Structure
 
 ```
-orbital-os/
+zero-os/
 ├── Cargo.toml                    # Workspace root
 ├── crates/
-│   ├── orbital-hal/              # HAL trait (no_std)
-│   ├── orbital-kernel/           # Core kernel (no_std, includes mock HAL for testing)
-│   ├── orbital-process/          # Process-side syscall lib
-│   ├── orbital-apps/             # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
-│   └── orbital-system-procs/     # System processes
+│   ├── zos-hal/                  # HAL trait (no_std)
+│   ├── zos-kernel/               # Core kernel (no_std, includes mock HAL for testing)
+│   ├── zos-process/              # Process-side syscall lib
+│   ├── zos-apps/                 # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
+│   └── zos-system-procs/         # System processes
 ├── web/                          # Browser UI + processes
 │   ├── desktop/                  # React desktop environment
 │   ├── processes/                # Built WASM process binaries
@@ -190,7 +190,7 @@ Tests include:
 ### Building for Release
 
 ```bash
-cd apps/orbital-web
+cd crates/zos-supervisor-web
 wasm-pack build --target web --out-dir www/pkg --release
 ```
 

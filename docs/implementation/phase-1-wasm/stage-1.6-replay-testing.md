@@ -6,7 +6,7 @@
 
 ## Overview
 
-This is the **key missing piece** for Orbital OS. Deterministic replay is the core guarantee:
+This is the **key missing piece** for Zero OS. Deterministic replay is the core guarantee:
 
 > **Same CommitLog always produces same state.**
 
@@ -29,8 +29,8 @@ This stage depends on Stage 1.2 (Axiom Layer) being complete with SysLog and Com
 
 ### Implementation Details
 
-- **Location**: `crates/orbital-axiom/src/replay.rs`
-- **Kernel Integration**: `crates/orbital-kernel/src/lib.rs` (Replayable impl)
+- **Location**: `crates/Zero-axiom/src/replay.rs`
+- **Kernel Integration**: `crates/Zero-kernel/src/lib.rs` (Replayable impl)
 - **Fix**: `grant_capability()` now logs both `CapGranted` and `CapInserted` for correct replay
 
 ### Dependencies
@@ -45,11 +45,11 @@ Kernel state mutations ──────┘
 
 ### Task 1: Implement `apply_commit()`
 
-**File**: `crates/orbital-axiom/src/replay.rs`
+**File**: `crates/Zero-axiom/src/replay.rs`
 
 ```rust
 use crate::{CommitType, Commit};
-use orbital_kernel::{Kernel, ProcessId, ProcessState, CapabilitySpace, Capability, Endpoint};
+use Zero_kernel::{Kernel, ProcessId, ProcessState, CapabilitySpace, Capability, Endpoint};
 
 /// Apply a single commit to kernel state.
 /// 
@@ -115,7 +115,7 @@ pub enum ReplayError {
 
 ### Task 2: Add Replay Methods to Kernel
 
-**File**: `crates/orbital-kernel/src/lib.rs`
+**File**: `crates/Zero-kernel/src/lib.rs`
 
 Add replay-specific methods that mutate state without side effects:
 
@@ -190,7 +190,7 @@ impl<H: HAL> Kernel<H> {
 
 ### Task 3: Implement `replay()`
 
-**File**: `crates/orbital-axiom/src/replay.rs`
+**File**: `crates/Zero-axiom/src/replay.rs`
 
 ```rust
 /// Replay a CommitLog to reconstruct state.
@@ -226,7 +226,7 @@ impl<H: HAL> Kernel<H> {
 
 ### Task 4: Implement State Hashing
 
-**File**: `crates/orbital-kernel/src/lib.rs`
+**File**: `crates/Zero-kernel/src/lib.rs`
 
 ```rust
 impl<H: HAL> Kernel<H> {
@@ -314,12 +314,12 @@ impl FnvHasher {
 
 ### Task 5: Write Replay Tests
 
-**File**: `crates/orbital-kernel/tests/replay.rs`
+**File**: `crates/Zero-kernel/tests/replay.rs`
 
 ```rust
-use orbital_kernel::{Kernel, ProcessId};
-use orbital_hal_mock::MockHal;
-use orbital_axiom::{replay, CommitType};
+use Zero_kernel::{Kernel, ProcessId};
+use Zero_hal_mock::MockHal;
+use Zero_axiom::{replay, CommitType};
 
 #[test]
 fn test_replay_empty_commitlog() {
@@ -430,7 +430,7 @@ fn test_nondeterminism_detection() {
 
 ### Task 6: Add Replay to Browser (Optional)
 
-**File**: `apps/orbital-web/www/index.html`
+**File**: `apps/zos-supervisor-web/www/index.html`
 
 Add UI for replay:
 
@@ -442,7 +442,7 @@ function exportCommitLog() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'orbital-commitlog.json';
+    a.download = 'Zero-commitlog.json';
     a.click();
 }
 
@@ -485,8 +485,8 @@ async function replayCommitLog(file) {
 
 | File | Change Type | Lines |
 |------|-------------|-------|
-| `crates/orbital-axiom/src/replay.rs` | New | ~200 |
-| `crates/orbital-kernel/src/lib.rs` | Modify | ~150 |
+| `crates/Zero-axiom/src/replay.rs` | New | ~200 |
+| `crates/Zero-kernel/src/lib.rs` | Modify | ~150 |
 | `tests/replay.rs` | New | ~200 |
 
 ## Next Stage

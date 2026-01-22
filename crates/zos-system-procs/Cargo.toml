@@ -1,0 +1,37 @@
+[package]
+name = "zos-system-procs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "System processes for Zero OS"
+
+[lib]
+# Library provides shared types and utilities
+name = "zos_system_procs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "memhog"
+path = "src/bin/memhog.rs"
+
+[[bin]]
+name = "sender"
+path = "src/bin/sender.rs"
+
+[[bin]]
+name = "receiver"
+path = "src/bin/receiver.rs"
+
+[[bin]]
+name = "pingpong"
+path = "src/bin/pingpong.rs"
+
+[[bin]]
+name = "idle"
+path = "src/bin/idle.rs"
+
+[dependencies]
+zos-process.workspace = true
+
+[features]
+default = []

@@ -1,10 +1,10 @@
-# Orbital OS Implementation Plan
+# Zero OS Implementation Plan
 
 > **Phased approach to building a capability-based, formally verifiable microkernel with deterministic replay.**
 
 ## Overview
 
-This implementation plan breaks down Orbital OS development into three major phases, each targeting a different platform. The strategy is to get **end-to-end vertical slices working first**, then deepen functionality, ensuring **core invariants hold at every stage**.
+This implementation plan breaks down Zero OS development into three major phases, each targeting a different platform. The strategy is to get **end-to-end vertical slices working first**, then deepen functionality, ensuring **core invariants hold at every stage**.
 
 ### Three-Phase Strategy
 
@@ -186,7 +186,7 @@ make status
 cat docs/implementation/phase-X/stage-X.Y-*.md
 
 # 3. Implement features
-code crates/orbital-*/src/
+code crates/Zero-*/src/
 
 # 4. Format and lint
 cargo fmt
@@ -222,7 +222,7 @@ Before considering a stage complete:
 ## Project Structure
 
 ```
-orbital-os/
+Zero-os/
 ├── docs/
 │   ├── spec/                    # System specification
 │   │   ├── 00-boot/
@@ -237,16 +237,16 @@ orbital-os/
 │   │   └── phase-3-baremetal/   # Phase 3 plan + stages
 │   └── whitepaper/              # Architecture docs
 ├── crates/
-│   ├── orbital-hal/             # Hardware abstraction
-│   ├── orbital-axiom/           # Verification layer (Phase 1.2+)
-│   ├── orbital-kernel/          # Microkernel
-│   ├── orbital-process/         # Process library
-│   ├── orbital-init/            # Init process (Phase 1.5+)
-│   ├── orbital-apps/            # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
-│   ├── orbital-boot/            # Bootloader (Phase 2.1+)
-│   └── orbital-drivers/         # Device drivers (Phase 3.2+)
+│   ├── Zero-hal/             # Hardware abstraction
+│   ├── Zero-axiom/           # Verification layer (Phase 1.2+)
+│   ├── Zero-kernel/          # Microkernel
+│   ├── zos-process/         # Process library
+│   ├── zos-init/            # Init process (Phase 1.5+)
+│   ├── zos-apps/            # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
+│   ├── Zero-boot/            # Bootloader (Phase 2.1+)
+│   └── Zero-drivers/         # Device drivers (Phase 3.2+)
 ├── apps/
-│   └── orbital-web/             # Browser UI (Phase 1)
+│   └── zos-supervisor-web/             # Browser UI (Phase 1)
 ├── tools/
 │   └── dev-server/              # Development server
 ├── Makefile                     # Build targets
@@ -313,7 +313,7 @@ make status          # Show current implementation status
 - [ ] 24-hour stress test passes
 - [ ] Performance targets met
 - [ ] Core invariants verified
-- [ ] **Orbital OS is production-ready**
+- [ ] **Zero OS is production-ready**
 
 ## Risk Mitigation
 

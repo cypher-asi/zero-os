@@ -47,7 +47,7 @@ vi.mock('lucide-react', () => ({
 }));
 
 // Mock the WASM module import
-vi.mock('../../pkg/orbital_web.js', () => ({
+vi.mock('../../pkg/zos_supervisor_web.js', () => ({
   DesktopBackground: vi.fn().mockImplementation(() => ({
     init: vi.fn().mockResolvedValue(undefined),
     is_initialized: vi.fn().mockReturnValue(true),

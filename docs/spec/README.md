@@ -1,4 +1,4 @@
-# Orbital OS Specification v5.0
+# Zero OS Specification v5.0
 
 > A capability-based, formally verifiable microkernel with deterministic replay.
 
@@ -128,14 +128,14 @@ Every system call flows through Axiom for verification and logging:
 
 | Type            | Crate            | Description                         |
 |-----------------|------------------|-------------------------------------|
-| `ProcessId`     | `orbital-kernel` | Process identifier                  |
-| `EndpointId`    | `orbital-kernel` | IPC endpoint identifier             |
-| `CapSlot`       | `orbital-kernel` | Index into capability space         |
-| `Capability`    | `orbital-kernel` | Unforgeable authority token         |
-| `Message`       | `orbital-kernel` | IPC message structure               |
-| `SysEvent`      | `orbital-axiom`  | Syscall request/response            |
-| `Commit`        | `orbital-axiom`  | State mutation event                |
-| `HAL`           | `orbital-hal`    | Platform abstraction trait          |
+| `ProcessId`     | `Zero-kernel` | Process identifier                  |
+| `EndpointId`    | `Zero-kernel` | IPC endpoint identifier             |
+| `CapSlot`       | `Zero-kernel` | Index into capability space         |
+| `Capability`    | `Zero-kernel` | Unforgeable authority token         |
+| `Message`       | `Zero-kernel` | IPC message structure               |
+| `SysEvent`      | `Zero-axiom`  | Syscall request/response            |
+| `Commit`        | `Zero-axiom`  | State mutation event                |
+| `HAL`           | `Zero-hal`    | Platform abstraction trait          |
 
 ## Reading Order
 

@@ -1,4 +1,4 @@
-# Orbital OS Build System
+# Zero OS Build System
 # Works on Windows (with make), macOS, and Linux
 
 .PHONY: all build build-processes dev server clean check test help
@@ -9,11 +9,11 @@ all: build
 # Build everything
 build: build-processes
 	@echo "Building supervisor WASM module..."
-	cd crates/orbital-web && wasm-pack build --target web --out-dir ../../web/pkg
+	cd crates/zos-supervisor-web && wasm-pack build --target web --out-dir ../../web/pkg
 	@echo "Building desktop WASM module..."
-	cd crates/orbital-desktop && wasm-pack build --target web --features wasm
+	cd crates/zos-desktop && wasm-pack build --target web --features wasm
 	mkdir -p web/pkg-desktop
-	cp -r crates/orbital-desktop/pkg/* web/pkg-desktop/
+	cp -r crates/zos-desktop/pkg/* web/pkg-desktop/
 	@echo "Build complete!"
 
 # Build test process WASM binaries
@@ -21,12 +21,12 @@ build: build-processes
 # Memory config and linker flags are in .cargo/config.toml
 build-processes:
 	@echo "Building process WASM binaries with shared memory support (nightly required)..."
-	cargo +nightly build -p orbital-init --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
-	cargo +nightly build -p orbital-system-procs --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
-	cargo +nightly build -p orbital-apps --bins --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
+	cargo +nightly build -p zos-init --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
+	cargo +nightly build -p zos-system-procs --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
+	cargo +nightly build -p zos-apps --bins --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
 	@echo "Copying WASM binaries to web/processes..."
 	mkdir -p web/processes
-	cp target/wasm32-unknown-unknown/release/orbital_init.wasm web/processes/init.wasm
+	cp target/wasm32-unknown-unknown/release/zos_init.wasm web/processes/init.wasm
 	cp target/wasm32-unknown-unknown/release/terminal.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/permission_manager.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/idle.wasm web/processes/
@@ -64,7 +64,7 @@ test:
 
 # Show help
 help:
-	@echo "Orbital OS Build System"
+	@echo "Zero OS Build System"
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""

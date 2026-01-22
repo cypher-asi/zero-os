@@ -1,4 +1,4 @@
-//! Development Server for Orbital OS
+//! Development Server for Zero OS
 //!
 //! Serves static files with the required COOP/COEP headers for
 //! SharedArrayBuffer and Web Workers.
@@ -32,7 +32,7 @@ async fn main() {
         .layer(axum::middleware::from_fn(add_headers));
 
     println!("╔═══════════════════════════════════════════════════╗");
-    println!("║           Orbital OS Development Server           ║");
+    println!("║             Zero OS Development Server            ║");
     println!("╠═══════════════════════════════════════════════════╣");
     println!("║  URL: http://localhost:{}                       ║", port);
     println!("║  Press Ctrl+C to stop                             ║");

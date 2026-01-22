@@ -1,6 +1,6 @@
 # Phase 2: QEMU (Virtual Hardware)
 
-> **Goal**: Port Orbital OS to QEMU with virtual hardware (VMM, preemptive scheduling, interrupts).
+> **Goal**: Port Zero OS to QEMU with virtual hardware (VMM, preemptive scheduling, interrupts).
 
 ## Overview
 
@@ -33,7 +33,7 @@ This phase proves the kernel can manage real hardware while maintaining invarian
 │                        QEMU Machine                              │
 │                                                                 │
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │                   Orbital Kernel                           │ │
+│  │                   Zero Kernel                           │ │
 │  │                                                           │ │
 │  │  Axiom Layer → Kernel Core → HAL (x86_64)                 │ │
 │  └───────────────────────────────────────────────────────────┘ │
@@ -150,7 +150,7 @@ make qemu
 make qemu-debug
 
 # Connect GDB
-gdb target/x86_64-unknown-none/release/orbital-kernel
+gdb target/x86_64-unknown-none/release/Zero-kernel
 (gdb) target remote :1234
 (gdb) break _start
 (gdb) continue
@@ -178,9 +178,9 @@ volatile = "0.4"
 bootloader = { version = "0.11", features = ["map_physical_memory"] }
 
 # Existing
-orbital-hal = { workspace = true }
-orbital-axiom = { workspace = true }
-orbital-kernel = { workspace = true }
+Zero-hal = { workspace = true }
+Zero-axiom = { workspace = true }
+Zero-kernel = { workspace = true }
 ```
 
 ### Build Tools
@@ -193,7 +193,7 @@ orbital-kernel = { workspace = true }
 
 ```
 crates/
-  orbital-hal/
+  Zero-hal/
     src/
       x86_64.rs            # x86_64 HAL implementation
       x86_64/
@@ -201,7 +201,7 @@ crates/
         interrupts.rs
         vmm.rs
         apic.rs
-  orbital-boot/            # Bootloader/early init
+  Zero-boot/            # Bootloader/early init
     src/
       boot.rs
       gdt.rs
@@ -231,8 +231,8 @@ Phase 2 is complete when:
 ### Code Reuse
 
 Most Phase 1 code is platform-independent:
-- `orbital-axiom` - No changes needed
-- `orbital-kernel` core logic - Minimal changes
+- `Zero-axiom` - No changes needed
+- `Zero-kernel` core logic - Minimal changes
 - Process library - Update for native syscall ABI
 - Init/services - Recompile for native target
 

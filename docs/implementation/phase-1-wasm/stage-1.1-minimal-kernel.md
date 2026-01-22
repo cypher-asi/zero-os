@@ -12,14 +12,14 @@ This stage is **fully implemented**. All objectives have been achieved.
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| Kernel struct with HAL | ✅ | `crates/orbital-kernel/src/lib.rs` |
-| Debug syscall (SYS_DEBUG) | ✅ | `crates/orbital-kernel/src/lib.rs:602` |
-| HAL trait | ✅ | `crates/orbital-hal/src/lib.rs` |
-| Mock HAL for testing | ✅ | `crates/orbital-kernel/src/lib.rs` (test module) |
-| Process syscall library | ✅ | `crates/orbital-process/src/lib.rs` |
+| Kernel struct with HAL | ✅ | `crates/Zero-kernel/src/lib.rs` |
+| Debug syscall (SYS_DEBUG) | ✅ | `crates/Zero-kernel/src/lib.rs:602` |
+| HAL trait | ✅ | `crates/Zero-hal/src/lib.rs` |
+| Mock HAL for testing | ✅ | `crates/Zero-kernel/src/lib.rs` (test module) |
+| Process syscall library | ✅ | `crates/zos-process/src/lib.rs` |
 | WASM runtime (JS atomics) | ✅ | `web/public/worker.js` |
 | Web Worker bootstrap | ✅ | `web/public/worker.js` |
-| Browser supervisor | ✅ | `crates/orbital-web/src/lib.rs` |
+| Browser supervisor | ✅ | `crates/zos-supervisor-web/src/lib.rs` |
 | HTML entry point | ✅ | `web/desktop/index.html` |
 
 ### Key Implementation Details
@@ -29,7 +29,7 @@ This stage is **fully implemented**. All objectives have been achieved.
 The kernel is generic over HAL implementation:
 
 ```rust
-// crates/orbital-kernel/src/lib.rs
+// crates/Zero-kernel/src/lib.rs
 pub struct Kernel<H: HAL> {
     hal: H,
     processes: BTreeMap<ProcessId, Process>,
@@ -45,7 +45,7 @@ pub struct Kernel<H: HAL> {
 Canonical syscall numbers are defined:
 
 ```rust
-// crates/orbital-kernel/src/lib.rs
+// crates/Zero-kernel/src/lib.rs
 pub const SYS_DEBUG: u32 = 0x01;
 pub const SYS_YIELD: u32 = 0x02;
 pub const SYS_EXIT: u32 = 0x03;
@@ -58,7 +58,7 @@ pub const SYS_TIME: u32 = 0x04;
 The HAL trait abstracts platform operations:
 
 ```rust
-// crates/orbital-hal/src/lib.rs
+// crates/Zero-hal/src/lib.rs
 pub trait HAL: Send + Sync + 'static {
     type ProcessHandle: Clone + Send + Sync;
     
@@ -92,7 +92,7 @@ Syscalls use SharedArrayBuffer + Atomics:
 All tests pass:
 
 ```bash
-cargo test -p orbital-kernel
+cargo test -p Zero-kernel
 ```
 
 Key tests:

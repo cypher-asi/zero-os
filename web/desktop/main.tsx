@@ -32,8 +32,8 @@ async function init() {
 
     // Load both WASM modules in parallel
     const [supervisorModule, desktopModule] = await Promise.all([
-      import('../pkg/orbital_web.js'),
-      import('../pkg-desktop/orbital_desktop.js'),
+      import('../pkg/zos_supervisor_web.js'),
+      import('../pkg-desktop/zos_desktop.js'),
     ]);
 
     // Initialize both modules
@@ -100,7 +100,7 @@ async function init() {
     // Workers make syscalls (including SYS_RECEIVE for IPC) which are processed here.
     // 
     // Note: deliver_pending_messages() is DEPRECATED and intentionally not called.
-    // See crates/orbital-web/src/supervisor/ipc.rs for details.
+    // See crates/zos-supervisor-web/src/supervisor/ipc.rs for details.
     setInterval(() => {
       supervisor.poll_syscalls();
       supervisor.process_worker_messages();

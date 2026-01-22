@@ -1,4 +1,4 @@
-# Orbital OS - Comparative Analysis
+# Zero OS - Comparative Analysis
 
 **Version:** 1.0  
 **Status:** Whitepaper  
@@ -8,14 +8,14 @@
 
 ## Overview
 
-This document provides a detailed technical comparison between Orbital OS and existing operating system approaches. We examine four categories:
+This document provides a detailed technical comparison between Zero OS and existing operating system approaches. We examine four categories:
 
 1. **Verified Microkernels** - seL4, L4, QNX, Mach
 2. **Unix-like Systems** - Linux, BSD, Plan 9
 3. **Deterministic Systems** - Urbit
 4. **Key Management Systems** - Turnkey, HSMs, Cloud KMS
 
-For each category, we analyze: architecture, verification model, crash safety, performance characteristics, and suitability for the Orbital goals.
+For each category, we analyze: architecture, verification model, crash safety, performance characteristics, and suitability for the Zero goals.
 
 ---
 
@@ -53,9 +53,9 @@ seL4 KERNEL
 - Computation verifiability
 - Identity and key management
 
-**Comparison with Orbital:**
+**Comparison with Zero:**
 
-| Aspect | seL4 | Orbital |
+| Aspect | seL4 | Zero |
 |--------|------|---------|
 | Kernel verification | Full formal proof | Not required (minimal kernel) |
 | System behavior verification | Not addressed | Core feature (Axiom) |
@@ -67,9 +67,9 @@ seL4 KERNEL
 | Policy engine | None | Central to architecture |
 
 **Key Insight:**
-> seL4 proves the kernel is a correct arbiter. Orbital proves the system behaved correctly over time.
+> seL4 proves the kernel is a correct arbiter. Zero proves the system behaved correctly over time.
 
-seL4 and Orbital are complementary: a Orbital kernel could theoretically be verified using seL4 techniques, but Orbital's guarantees extend far beyond the kernel.
+seL4 and Zero are complementary: a Zero kernel could theoretically be verified using seL4 techniques, but Zero's guarantees extend far beyond the kernel.
 
 ---
 
@@ -84,9 +84,9 @@ L4 microkernels focus on minimality and IPC performance. Various implementations
 - Capability-based security
 - Used in production (qualcomm, automotive)
 
-**Comparison with Orbital:**
+**Comparison with Zero:**
 
-| Aspect | L4 Family | Orbital |
+| Aspect | L4 Family | Zero |
 |--------|-----------|---------|
 | IPC performance | Excellent | Target: comparable |
 | Kernel minimality | Excellent | Similar approach |
@@ -96,7 +96,7 @@ L4 microkernels focus on minimality and IPC performance. Various implementations
 | Identity | None | Cryptographic |
 
 **Key Insight:**
-> L4 demonstrates that minimal kernels can be fast. Orbital adds auditability without sacrificing this.
+> L4 demonstrates that minimal kernels can be fast. Zero adds auditability without sacrificing this.
 
 ---
 
@@ -111,9 +111,9 @@ QNX is a commercial POSIX-compliant microkernel RTOS used in safety-critical sys
 - Hard real-time guarantees
 - Certified for safety (ISO 26262, IEC 62304)
 
-**Comparison with Orbital:**
+**Comparison with Zero:**
 
-| Aspect | QNX | Orbital |
+| Aspect | QNX | Zero |
 |--------|-----|---------|
 | Real-time | Hard RT certified | Soft RT (deterministic scheduling out of scope) |
 | POSIX compat | Full | None (clean-slate) |
@@ -123,7 +123,7 @@ QNX is a commercial POSIX-compliant microkernel RTOS used in safety-critical sys
 | Identity | POSIX users | Cryptographic |
 
 **Key Insight:**
-> QNX proves microkernels work in production. Orbital extends this with verifiable history.
+> QNX proves microkernels work in production. Zero extends this with verifiable history.
 
 ---
 
@@ -180,7 +180,7 @@ Linux Logging:
     - Cannot reconstruct state
     - Sampling for audit
 
-Orbital Axiom:
+Zero Axiom:
   Axiom:
     Entry 1: [hash] PolicyChange{...}
     Entry 2: [hash] FileCreate{by: alice}
@@ -193,7 +193,7 @@ Orbital Axiom:
 ```
 
 **Key Insight:**
-> Linux provides "probably okay" - Orbital provides "provably correct."
+> Linux provides "probably okay" - Zero provides "provably correct."
 
 ---
 
@@ -202,9 +202,9 @@ Orbital Axiom:
 **Overview:**
 BSD systems are Unix derivatives known for clean code, security focus (OpenBSD), and permissive licensing.
 
-**Comparison with Linux/Orbital:**
+**Comparison with Linux/Zero:**
 
-| Aspect | BSD | Linux | Orbital |
+| Aspect | BSD | Linux | Zero |
 |--------|-----|-------|---------|
 | Code quality | High | Variable | Target: High |
 | Security focus | Strong (OpenBSD) | Improving | Architectural |
@@ -214,7 +214,7 @@ BSD systems are Unix derivatives known for clean code, security focus (OpenBSD),
 | Identity | POSIX users | POSIX users | Cryptographic |
 
 **Key Insight:**
-> OpenBSD's pledge/unveil moves toward capability security but remains advisory. Orbital capabilities are enforced.
+> OpenBSD's pledge/unveil moves toward capability security but remains advisory. Zero capabilities are enforced.
 
 ---
 
@@ -252,9 +252,9 @@ Per-Process Namespace
 | Verification | None |
 | Cryptographic identity | None |
 
-**Plan 9 vs. Orbital:**
+**Plan 9 vs. Zero:**
 
-| Aspect | Plan 9 | Orbital |
+| Aspect | Plan 9 | Zero |
 |--------|--------|---------|
 | Everything is a file | Yes | No (typed IPC) |
 | User-space servers | Yes | Yes |
@@ -265,7 +265,7 @@ Per-Process Namespace
 | Identity | User names | Cryptographic |
 
 **Key Insight:**
-> Plan 9 has the right service architecture. Orbital adds the transactional spine and identity.
+> Plan 9 has the right service architecture. Zero adds the transactional spine and identity.
 
 ---
 
@@ -312,9 +312,9 @@ EVENT LOG
 | Ecosystem | Custom language (Hoon), steep learning curve |
 | Existing tooling | Cannot leverage POSIX, standard libraries |
 
-**Urbit vs. Orbital:**
+**Urbit vs. Zero:**
 
-| Aspect | Urbit | Orbital |
+| Aspect | Urbit | Zero |
 |--------|-------|---------|
 | Event log | Yes (similar to Axiom) | Yes (Axiom) |
 | Determinism | Complete (execution) | Authority only |
@@ -326,9 +326,9 @@ EVENT LOG
 | Policy engine | No | Yes |
 
 **Key Insight:**
-> Urbit proves deterministic event logs are feasible. Orbital proves they do not require sacrificing parallelism.
+> Urbit proves deterministic event logs are feasible. Zero proves they do not require sacrificing parallelism.
 
-The fundamental difference: Urbit makes execution deterministic. Orbital makes authority deterministic while allowing nondeterministic execution.
+The fundamental difference: Urbit makes execution deterministic. Zero makes authority deterministic while allowing nondeterministic execution.
 
 ---
 
@@ -337,7 +337,7 @@ The fundamental difference: Urbit makes execution deterministic. Orbital makes a
 ### 4.1 Turnkey
 
 **Overview:**
-Turnkey provides secure key management infrastructure with policy-controlled signing and verifiable operations. Their architecture (as described in their whitepaper) offers valuable lessons for Orbital.
+Turnkey provides secure key management infrastructure with policy-controlled signing and verifiable operations. Their architecture (as described in their whitepaper) offers valuable lessons for Zero.
 
 **Turnkey Architecture:**
 
@@ -375,9 +375,9 @@ TURNKEY INFRASTRUCTURE
 3. **Quorum Sets** - Multi-party approval for sensitive operations
 4. **Minimal TCB** - QuorumOS reduces attack surface
 
-**Turnkey vs. Orbital:**
+**Turnkey vs. Zero:**
 
-| Aspect | Turnkey | Orbital |
+| Aspect | Turnkey | Zero |
 |--------|---------|---------|
 | Primary purpose | Key management service | Full operating system |
 | Policy engine | Core component | Core component |
@@ -388,9 +388,9 @@ TURNKEY INFRASTRUCTURE
 | Deployment | Cloud service | Local/bare metal |
 | Scope | Signing/encryption | General-purpose OS |
 
-**What Orbital Learns from Turnkey:**
+**What Zero Learns from Turnkey:**
 
-| Lesson | Application in Orbital |
+| Lesson | Application in Zero |
 |--------|------------------------|
 | Policy-first design | All operations gated by Policy Engine |
 | Verifiable decisions | Policy decisions recorded in Axiom |
@@ -399,7 +399,7 @@ TURNKEY INFRASTRUCTURE
 | Audit everything | Axiom records all consequential operations |
 
 **Key Insight:**
-> Turnkey proves that policy-controlled, verifiable key management is practical. Orbital extends this to the entire operating system.
+> Turnkey proves that policy-controlled, verifiable key management is practical. Zero extends this to the entire operating system.
 
 ---
 
@@ -410,7 +410,7 @@ HSMs are physical devices that safeguard cryptographic keys and perform signing 
 
 **Comparison:**
 
-| Aspect | HSM | Orbital Key Derivation Service |
+| Aspect | HSM | Zero Key Derivation Service |
 |--------|-----|---------------------|
 | Key protection | Hardware tamper-resistant | Software boundary + optional hardware |
 | Policy | Limited, static | Full policy engine, dynamic |
@@ -420,7 +420,7 @@ HSMs are physical devices that safeguard cryptographic keys and perform signing 
 | Flexibility | Limited | Full programmability |
 
 **Key Insight:**
-> HSMs provide excellent key protection but lack policy flexibility and system integration. Orbital provides comparable protection with richer policy.
+> HSMs provide excellent key protection but lack policy flexibility and system integration. Zero provides comparable protection with richer policy.
 
 ---
 
@@ -431,7 +431,7 @@ Cloud providers offer key management as a service with API-based access.
 
 **Comparison:**
 
-| Aspect | Cloud KMS | Orbital Key Derivation Service |
+| Aspect | Cloud KMS | Zero Key Derivation Service |
 |--------|-----------|---------------------|
 | Key protection | Provider's infrastructure | Local secure boundary |
 | Trust model | Trust the cloud provider | Trust local system |
@@ -442,7 +442,7 @@ Cloud providers offer key management as a service with API-based access.
 | Verification | Trust provider logs | Independent replay |
 
 **Key Insight:**
-> Cloud KMS is convenient but requires trusting the provider. Orbital is self-sovereign with verifiable operations.
+> Cloud KMS is convenient but requires trusting the provider. Zero is self-sovereign with verifiable operations.
 
 ---
 
@@ -483,9 +483,9 @@ BLOCKCHAIN NETWORK
 | Efficiency | Massive redundancy |
 | Hardware | Abstract VMs only |
 
-**Blockchain VMs vs. Orbital:**
+**Blockchain VMs vs. Zero:**
 
-| Aspect | Blockchain VM | Orbital |
+| Aspect | Blockchain VM | Zero |
 |--------|---------------|---------|
 | Consensus | Global (BFT) | Local (single-writer v0) |
 | Latency | Seconds-minutes | Microseconds-milliseconds |
@@ -497,7 +497,7 @@ BLOCKCHAIN NETWORK
 | Policy | Smart contracts | Policy Engine |
 
 **Key Insight:**
-> Blockchains provide global consensus at the cost of performance. Orbital provides local verification with optional distributed consensus.
+> Blockchains provide global consensus at the cost of performance. Zero provides local verification with optional distributed consensus.
 
 ---
 
@@ -505,7 +505,7 @@ BLOCKCHAIN NETWORK
 
 ### 6.1 Feature Comparison
 
-| Feature | seL4 | Linux | Plan 9 | Urbit | Turnkey | Orbital |
+| Feature | seL4 | Linux | Plan 9 | Urbit | Turnkey | Zero |
 |---------|------|-------|--------|-------|---------|---------|
 | Minimal kernel | Yes | No | No | N/A | N/A | Yes |
 | Formal kernel verification | Yes | No | No | No | No | Optional |
@@ -530,7 +530,7 @@ BLOCKCHAIN NETWORK
                      |                                 |
            +---------+---------------------------------+
     High   |         |                                 |
-           |  Linux  |                          Orbital|
+           |  Linux  |                          Zero|
            |  BSD    |                                 |
 Performance|         |                                 |
            |  seL4   |                                 |
@@ -543,7 +543,7 @@ Performance|         |                                 |
            +---------+---------------------------------+
 ```
 
-Orbital occupies the unique position of **high performance + high verification**.
+Zero occupies the unique position of **high performance + high verification**.
 
 ### 6.3 Identity and Key Management Comparison
 
@@ -553,7 +553,7 @@ Orbital occupies the unique position of **high performance + high verification**
                      |                                 |
            +---------+---------------------------------+
    High    |   HSM   |                                 |
-  Security |         |                         Orbital |
+  Security |         |                         Zero |
            | Cloud   |                                 |
            |  KMS    |                         Turnkey |
            |         |                                 |
@@ -567,7 +567,7 @@ Orbital occupies the unique position of **high performance + high verification**
 
 ---
 
-## 7. Why Orbital's Approach Is Superior
+## 7. Why Zero's Approach Is Superior
 
 ### 7.1 For Verification
 
@@ -578,7 +578,7 @@ Orbital occupies the unique position of **high performance + high verification**
 | Urbit | Deterministic replay | Sacrifices parallelism |
 | Blockchain | N-way redundant execution | Sacrifices performance |
 | Turnkey | Verifiable policy | Key ops only, not full system |
-| **Orbital** | **Deterministic authority + replay** | **None for local verification** |
+| **Zero** | **Deterministic authority + replay** | **None for local verification** |
 
 ### 7.2 For Performance
 
@@ -589,7 +589,7 @@ Orbital occupies the unique position of **high performance + high verification**
 | Urbit | Interpreted, single-threaded | Determinism over performance |
 | Blockchain | Redundant execution | Verification over performance |
 | Turnkey | Enclave overhead | Security over raw speed |
-| **Orbital** | **Native, parallel, three-phase** | **Verification with minimal overhead** |
+| **Zero** | **Native, parallel, three-phase** | **Verification with minimal overhead** |
 
 ### 7.3 For Crash Safety
 
@@ -600,7 +600,7 @@ Orbital occupies the unique position of **high performance + high verification**
 | Urbit | Event log replay | Semantic consistency |
 | Blockchain | Consensus-based | Global consistency |
 | Turnkey | N/A (stateless) | N/A |
-| **Orbital** | **Three-phase + idempotent** | **Semantic consistency, local** |
+| **Zero** | **Three-phase + idempotent** | **Semantic consistency, local** |
 
 ### 7.4 For Identity and Key Management
 
@@ -611,15 +611,15 @@ Orbital occupies the unique position of **high performance + high verification**
 | Urbit | @p addresses | Per-ship keys |
 | Blockchain | Addresses | Wallet-managed |
 | Turnkey | Organization/user | Policy-controlled, verifiable |
-| **Orbital** | **Hierarchical crypto** | **Policy-controlled, Axiom-audited** |
+| **Zero** | **Hierarchical crypto** | **Policy-controlled, Axiom-audited** |
 
 ---
 
 ## 8. Conclusion
 
-Orbital OS combines the best properties of multiple system categories:
+Zero OS combines the best properties of multiple system categories:
 
-| From | Orbital Takes |
+| From | Zero Takes |
 |------|---------------|
 | **seL4** | Minimal kernel, capability security |
 | **Plan 9** | User-space services, composability |
@@ -627,9 +627,9 @@ Orbital OS combines the best properties of multiple system categories:
 | **Blockchain** | Cryptographic integrity, verification |
 | **Turnkey** | Policy-controlled keys, verifiable decisions |
 
-What Orbital **avoids**:
+What Zero **avoids**:
 
-| From | Orbital Avoids |
+| From | Zero Avoids |
 |------|----------------|
 | **Linux** | Monolithic kernel, advisory logging, scattered policy |
 | **Urbit** | Single-threaded execution, esoteric stack |

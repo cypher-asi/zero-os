@@ -10,7 +10,7 @@ export interface DesktopInfo {
   windowCount: number;
 }
 
-const DESKTOP_STORAGE_KEY = 'orbital-desktop-settings';
+const DESKTOP_STORAGE_KEY = 'zero-desktop-settings';
 
 // Hook to get all desktops
 export function useDesktops(): DesktopInfo[] {

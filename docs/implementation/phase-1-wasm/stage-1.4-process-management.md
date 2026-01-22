@@ -12,13 +12,13 @@ This stage is **fully implemented** with Web Worker-based process isolation.
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| Process struct | ✅ | `crates/orbital-kernel/src/lib.rs:45-75` |
+| Process struct | ✅ | `crates/Zero-kernel/src/lib.rs:45-75` |
 | ProcessState enum | ✅ | Running, Blocked, Zombie |
 | ProcessMetrics | ✅ | Memory, IPC stats, syscall count |
 | Process table | ✅ | `BTreeMap<ProcessId, Process>` |
-| `register_process()` | ✅ | `crates/orbital-kernel/src/lib.rs:849-876` |
-| `kill_process()` | ✅ | `crates/orbital-kernel/src/lib.rs:879-900` |
-| Web Worker spawning | ✅ | `apps/orbital-web/www/worker.js` |
+| `register_process()` | ✅ | `crates/Zero-kernel/src/lib.rs:849-876` |
+| `kill_process()` | ✅ | `crates/Zero-kernel/src/lib.rs:879-900` |
+| Web Worker spawning | ✅ | `apps/zos-supervisor-web/www/worker.js` |
 | SharedArrayBuffer syscalls | ✅ | Atomics-based mailbox |
 | Sender verification | ✅ | PID from worker context |
 | Test processes | ✅ | idle, memhog, sender, receiver, pingpong |
@@ -27,7 +27,7 @@ This stage is **fully implemented** with Web Worker-based process isolation.
 
 ```
 Browser Main Thread
-├── Supervisor (orbital-web WASM)
+├── Supervisor (zos-supervisor-web WASM)
 │   ├── Kernel state (processes, capabilities, endpoints)
 │   ├── Syscall mailbox polling (SharedArrayBuffer)
 │   └── IPC message routing
@@ -51,7 +51,7 @@ Browser Main Thread
 #### Process Registration
 
 ```rust
-// crates/orbital-kernel/src/lib.rs
+// crates/Zero-kernel/src/lib.rs
 pub fn register_process(&mut self, name: &str) -> ProcessId {
     let pid = ProcessId(self.next_pid);
     self.next_pid += 1;
@@ -82,7 +82,7 @@ pub fn register_process(&mut self, name: &str) -> ProcessId {
 #### Web Worker Bootstrap
 
 ```javascript
-// apps/orbital-web/www/worker.js
+// apps/zos-supervisor-web/www/worker.js
 self.onmessage = async (event) => {
     const { binary, pid } = event.data;
     
@@ -97,11 +97,11 @@ self.onmessage = async (event) => {
     const instance = await WebAssembly.instantiate(module, {
         env: {
             memory: memory,
-            orbital_syscall: orbital_syscall,
-            orbital_send_bytes: orbital_send_bytes,
-            orbital_recv_bytes: orbital_recv_bytes,
-            orbital_yield: orbital_yield,
-            orbital_get_pid: orbital_get_pid,
+            Zero_syscall: Zero_syscall,
+            Zero_send_bytes: Zero_send_bytes,
+            Zero_recv_bytes: Zero_recv_bytes,
+            Zero_yield: Zero_yield,
+            Zero_get_pid: Zero_get_pid,
         }
     });
     
@@ -167,7 +167,7 @@ pub struct ProcessMetrics {
 All process management tests pass:
 
 ```bash
-cargo test -p orbital-kernel
+cargo test -p Zero-kernel
 ```
 
 | Test | Description |

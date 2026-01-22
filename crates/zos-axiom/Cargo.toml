@@ -1,0 +1,18 @@
+[package]
+name = "zos-axiom"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Axiom verification layer for Zero OS - SysLog, CommitLog, and Gateway"
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+std = []
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]

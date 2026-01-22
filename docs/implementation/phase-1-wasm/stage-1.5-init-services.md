@@ -10,7 +10,7 @@
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| Terminal process | ✅ | `crates/orbital-apps/src/bin/terminal.rs` |
+| Terminal process | ✅ | `crates/zos-apps/src/bin/terminal.rs` |
 | Terminal commands | ✅ | help, ps, caps, echo, time, clear, exit |
 | Process spawning | ✅ | Via supervisor `spawn` command |
 | Console IPC | ✅ | Console output via IPC endpoint |
@@ -19,11 +19,11 @@
 
 | Component | Status | Description |
 |-----------|--------|-------------|
-| Init process (PID 1) | ✅ | `orbital-init` crate spawns as PID 1 |
+| Init process (PID 1) | ✅ | `zos-init` crate spawns as PID 1 |
 | Service registry | ✅ | Init maintains name → endpoint mapping |
 | Service discovery | ✅ | MSG_LOOKUP_SERVICE protocol implemented |
 | Bootstrap sequence | ✅ | Kernel → init → terminal via INIT:SPAWN |
-| Init crate | ✅ | `crates/orbital-init/` |
+| Init crate | ✅ | `crates/zos-init/` |
 | Terminal registration | ✅ | Terminal registers with init on startup |
 
 ## Gap Analysis
@@ -52,13 +52,13 @@ The spec requires a proper bootstrap sequence:
 
 ## Required Modifications
 
-### Task 1: Create `orbital-init` Crate
+### Task 1: Create `zos-init` Crate
 
-**File**: `crates/orbital-init/Cargo.toml`
+**File**: `crates/zos-init/Cargo.toml`
 
 ```toml
 [package]
-name = "orbital-init"
+name = "zos-init"
 version.workspace = true
 edition.workspace = true
 
@@ -67,10 +67,10 @@ name = "init"
 path = "src/main.rs"
 
 [dependencies]
-orbital-process = { workspace = true }
+zos-process = { workspace = true }
 ```
 
-**File**: `crates/orbital-init/src/main.rs`
+**File**: `crates/zos-init/src/main.rs`
 
 ```rust
 #![no_std]
@@ -81,7 +81,7 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
-use orbital_process::{self as syscall, debug, receive_blocking, send, create_endpoint, Permissions};
+use Zero_process::{self as syscall, debug, receive_blocking, send, create_endpoint, Permissions};
 
 // Service registry: name → endpoint slot
 static mut SERVICES: Option<BTreeMap<String, u32>> = None;
@@ -93,7 +93,7 @@ const MSG_LOOKUP_RESPONSE: u32 = 0x1002;
 
 #[no_mangle]
 pub extern "C" fn _start() {
-    debug("init: Starting Orbital OS init process");
+    debug("init: Starting Zero OS init process");
     
     unsafe { SERVICES = Some(BTreeMap::new()); }
     
@@ -191,7 +191,7 @@ mod allocator {
 
 ### Task 2: Add Spawn Syscall
 
-**File**: `crates/orbital-kernel/src/lib.rs`
+**File**: `crates/Zero-kernel/src/lib.rs`
 
 Add new syscall:
 
@@ -212,7 +212,7 @@ Syscall::Spawn { name, binary_slot } => {
 
 ### Task 3: Update Bootstrap Sequence
 
-**File**: `apps/orbital-web/src/lib.rs`
+**File**: `apps/zos-supervisor-web/src/lib.rs`
 
 Modify boot to spawn init first:
 
@@ -258,20 +258,20 @@ Lookup Response:
 
 ### Task 5: Update Terminal to Register
 
-**File**: `crates/orbital-apps/src/bin/terminal.rs`
+**File**: `crates/zos-apps/src/bin/terminal.rs`
 
-> **Note**: Terminal is now a canonical `OrbitalApp` in `orbital-apps`.
-> It implements the same `OrbitalApp` trait as Clock and Calculator.
+> **Note**: Terminal is now a canonical `ZeroApp` in `zos-apps`.
+> It implements the same `ZeroApp` trait as Clock and Calculator.
 
 ```rust
-impl OrbitalApp for TerminalApp {
+impl ZeroApp for TerminalApp {
     fn manifest() -> &'static AppManifest {
         &TERMINAL_MANIFEST
     }
 
     fn init(&mut self, ctx: &AppContext) -> Result<(), AppError> {
         // Print banner and prompt
-        self.println("Orbital OS Terminal");
+        self.println("Zero OS Terminal");
         self.print(Self::PROMPT);
         self.flush_output(ctx)
     }
@@ -290,7 +290,7 @@ impl OrbitalApp for TerminalApp {
 [workspace]
 members = [
     # ... existing ...
-    "crates/orbital-init",
+    "crates/zos-init",
 ]
 ```
 
@@ -301,12 +301,12 @@ members = [
 ```makefile
 build-processes:
 	@echo "Building process WASM binaries..."
-	cargo build -p orbital-init --target wasm32-unknown-unknown --release
-	cargo build -p orbital-system-procs --target wasm32-unknown-unknown --release
-	cargo build -p orbital-apps --bins --target wasm32-unknown-unknown --release
+	cargo build -p zos-init --target wasm32-unknown-unknown --release
+	cargo build -p zos-system-procs --target wasm32-unknown-unknown --release
+	cargo build -p zos-apps --bins --target wasm32-unknown-unknown --release
 	@echo "Copying WASM binaries..."
 	mkdir -p web/processes
-	cp target/wasm32-unknown-unknown/release/orbital_init.wasm web/processes/init.wasm
+	cp target/wasm32-unknown-unknown/release/Zero_init.wasm web/processes/init.wasm
 	cp target/wasm32-unknown-unknown/release/terminal.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/permission_manager.wasm web/processes/
 	# ... other processes ...
@@ -362,7 +362,7 @@ fn test_service_registration() {
 
 ## Verification Checklist
 
-- [x] `orbital-init` crate created
+- [x] `zos-init` crate created
 - [x] Init is spawned as PID 1
 - [x] Init receives endpoints (slot 0 = init endpoint, slot 1 = console)
 - [x] Services can register with init (MSG_REGISTER_SERVICE)
@@ -374,10 +374,10 @@ fn test_service_registration() {
 
 | File | Change Type | Lines |
 |------|-------------|-------|
-| `crates/orbital-init/` | New crate | ~200 |
-| `crates/orbital-kernel/src/lib.rs` | Modify | ~50 |
-| `crates/orbital-apps/src/bin/terminal.rs` | New file | ~300 |
-| `crates/orbital-web/src/lib.rs` | Modify | ~50 |
+| `crates/zos-init/` | New crate | ~200 |
+| `crates/Zero-kernel/src/lib.rs` | Modify | ~50 |
+| `crates/zos-apps/src/bin/terminal.rs` | New file | ~300 |
+| `crates/zos-supervisor-web/src/lib.rs` | Modify | ~50 |
 | `Makefile` | Modify | ~10 |
 | Tests | Add | ~50 |
 

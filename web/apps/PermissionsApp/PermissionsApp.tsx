@@ -99,7 +99,7 @@ function processToApp(proc: ProcessWithCapabilities): AppWithPermissions {
   
   return {
     manifest: {
-      id: `com.orbital.${proc.name}`,
+      id: `com.zero.${proc.name}`,
       name: proc.name.charAt(0).toUpperCase() + proc.name.slice(1),
       version: '1.0.0',
       description: `${proc.name} process`,

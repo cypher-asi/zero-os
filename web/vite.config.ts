@@ -34,7 +34,7 @@ export default defineConfig({
   optimizeDeps: {
     // Exclude wasm-bindgen generated files from optimization
     // Also exclude npm-linked packages so Vite uses the linked source
-    exclude: ['./pkg/orbital_web.js', './pkg-desktop/orbital_desktop.js', '@cypher-asi/zui'],
+    exclude: ['./pkg/zos_supervisor_web.js', './pkg-desktop/zos_desktop.js', '@cypher-asi/zui'],
   },
   resolve: {
     alias: {

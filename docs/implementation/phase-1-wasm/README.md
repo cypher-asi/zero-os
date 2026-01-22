@@ -4,7 +4,7 @@
 
 ## Overview
 
-Phase 1 implements Orbital OS running entirely in the browser using WebAssembly. This phase establishes the core architecture and proves the fundamental invariants work before adding hardware complexity.
+Phase 1 implements Zero OS running entirely in the browser using WebAssembly. This phase establishes the core architecture and proves the fundamental invariants work before adding hardware complexity.
 
 ### Platform Characteristics
 
@@ -26,7 +26,7 @@ Phase 1 implements Orbital OS running entirely in the browser using WebAssembly.
 │  ┌───────────────────────────────────────────────────────────┐ │
 │  │               Supervisor (Rust/WASM + JavaScript)          │ │
 │  │                                                           │ │
-│  │  • orbital-web: Rust WASM supervisor                      │ │
+│  │  • zos-supervisor-web: Rust WASM supervisor                      │ │
 │  │  • Spawns Web Workers for each process                    │ │
 │  │  • Polls SharedArrayBuffer mailboxes for syscalls         │ │
 │  │  • Routes IPC messages between workers                    │ │
@@ -45,7 +45,7 @@ Phase 1 implements Orbital OS running entirely in the browser using WebAssembly.
 │                       │                                         │
 │                       ▼                                         │
 │            ┌─────────────────────┐                              │
-│            │  orbital-kernel     │                              │
+│            │  Zero-kernel     │                              │
 │            │  (in supervisor)    │                              │
 │            │                     │                              │
 │            │  • Capability system│                              │
@@ -75,7 +75,7 @@ Phase 1 is divided into eight stages, each building on the previous:
 
 ### ✅ What's Complete
 
-1. **Kernel Core** (`orbital-kernel`)
+1. **Kernel Core** (`Zero-kernel`)
    - Process registration, state management, metrics
    - Full capability system (CSpace, permissions, grant, revoke, delete, derive)
    - IPC endpoints with message queuing
@@ -83,27 +83,27 @@ Phase 1 is divided into eight stages, each building on the previous:
    - Axiom log for capability mutations (with hash chain)
    - Extensive unit tests (50+ tests)
 
-2. **HAL Layer** (`orbital-hal`)
+2. **HAL Layer** (`Zero-hal`)
    - HAL trait with process management, time, memory, random, debug
-   - Mock HAL integrated into `orbital-kernel` for testing
+   - Mock HAL integrated into `Zero-kernel` for testing
 
-3. **Process Support** (`orbital-process`)
+3. **Process Support** (`zos-process`)
    - Process-side syscall library with full ABI
    - Syscall runtime provided by `worker.js` using SharedArrayBuffer + Atomics
 
-4. **Browser Supervisor** (`orbital-web`, `worker.js`)
+4. **Browser Supervisor** (`zos-supervisor-web`, `worker.js`)
    - Web Worker process isolation
    - SharedArrayBuffer mailbox polling
    - Full dashboard UI (processes, memory, endpoints, IPC traffic, Axiom log)
    - IndexedDB persistence for Axiom log
 
-5. **Userspace Processes** (`orbital-apps`, `orbital-system-procs`)
-   - Terminal app implementing OrbitalApp trait
+5. **Userspace Processes** (`zos-apps`, `zos-system-procs`)
+   - Terminal app implementing ZeroApp trait
    - Clock, Calculator apps with IPC protocol
    - PermissionManager service (PID 2)
    - idle, memhog, sender, receiver, pingpong test processes
 
-6. **Axiom Layer** (`orbital-axiom`)
+6. **Axiom Layer** (`Zero-axiom`)
    - SysLog for syscall audit trail (request + response)
    - CommitLog for deterministic state mutations
    - AxiomGateway entry point for syscalls
@@ -112,7 +112,7 @@ Phase 1 is divided into eight stages, each building on the previous:
    - 24 unit tests passing
 
 5. **Init + Services** (Stage 1.5)
-   - ✅ Formal init process (PID 1) in `orbital-init` crate
+   - ✅ Formal init process (PID 1) in `zos-init` crate
    - ✅ Service registry with registration protocol
    - ✅ Bootstrap sequence: kernel → init → terminal
    - ✅ Terminal registers with init on startup
@@ -161,15 +161,15 @@ These properties must hold at every stage:
 
 ```
 crates/
-  orbital-axiom/           # Axiom verification layer (SysLog, CommitLog, Gateway)
-  orbital-hal/             # HAL trait definition
-  orbital-kernel/          # Kernel with capabilities, IPC, Axiom integration (includes mock HAL for tests)
-  orbital-process/         # Process-side syscall library
-  orbital-apps/            # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
-  orbital-system-procs/    # System processes (idle, memhog, etc.)
+  Zero-axiom/           # Axiom verification layer (SysLog, CommitLog, Gateway)
+  Zero-hal/             # HAL trait definition
+  Zero-kernel/          # Kernel with capabilities, IPC, Axiom integration (includes mock HAL for tests)
+  zos-process/         # Process-side syscall library
+  zos-apps/            # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
+  zos-system-procs/    # System processes (idle, memhog, etc.)
 
 apps/
-  orbital-web/             # Browser supervisor
+  zos-supervisor-web/             # Browser supervisor
     src/
       lib.rs               # Rust WASM supervisor
     www/
@@ -188,10 +188,10 @@ tools/
 
 ```toml
 [workspace.dependencies]
-orbital-axiom = { path = "crates/orbital-axiom" }
-orbital-hal = { path = "crates/orbital-hal" }
-orbital-kernel = { path = "crates/orbital-kernel" }
-orbital-process = { path = "crates/orbital-process" }
+Zero-axiom = { path = "crates/Zero-axiom" }
+Zero-hal = { path = "crates/Zero-hal" }
+Zero-kernel = { path = "crates/Zero-kernel" }
+zos-process = { path = "crates/zos-process" }
 
 wasm-bindgen = "0.2"
 js-sys = "0.3"

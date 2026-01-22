@@ -1,4 +1,4 @@
-# Cargo configuration for Orbital OS
+# Cargo configuration for Zero OS
 # This file configures the WASM target to import shared memory from the host
 
 [target.wasm32-unknown-unknown]

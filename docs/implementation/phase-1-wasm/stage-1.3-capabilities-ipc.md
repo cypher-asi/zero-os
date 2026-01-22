@@ -12,31 +12,31 @@ This stage is **fully implemented** with comprehensive functionality.
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| Capability struct | ✅ | `crates/orbital-kernel/src/lib.rs:454-474` |
-| CapabilitySpace | ✅ | `crates/orbital-kernel/src/lib.rs:477-529` |
-| Permissions (read/write/grant) | ✅ | `crates/orbital-kernel/src/lib.rs:413-450` |
-| ObjectType enum | ✅ | `crates/orbital-kernel/src/lib.rs:108-123` |
-| `axiom_check()` function | ✅ | `crates/orbital-kernel/src/lib.rs:379-410` |
-| Endpoint struct | ✅ | `crates/orbital-kernel/src/lib.rs:562-572` |
-| Message struct | ✅ | `crates/orbital-kernel/src/lib.rs:550-560` |
-| IPC with cap transfer | ✅ | `crates/orbital-kernel/src/lib.rs:1218-1350` |
-| SYS_EP_CREATE | ✅ | `crates/orbital-kernel/src/lib.rs:903-957` |
-| SYS_SEND | ✅ | `crates/orbital-kernel/src/lib.rs:1128-1201` |
-| SYS_RECV | ✅ | `crates/orbital-kernel/src/lib.rs:1395-1437` |
-| SYS_CAP_GRANT | ✅ | `crates/orbital-kernel/src/lib.rs:959-1021` |
-| SYS_CAP_REVOKE | ✅ | `crates/orbital-kernel/src/lib.rs:1036-1075` |
-| SYS_CAP_DELETE | ✅ | `crates/orbital-kernel/src/lib.rs:1091-1125` |
-| SYS_CAP_DERIVE | ✅ | `crates/orbital-kernel/src/lib.rs:1601-1656` |
+| Capability struct | ✅ | `crates/Zero-kernel/src/lib.rs:454-474` |
+| CapabilitySpace | ✅ | `crates/Zero-kernel/src/lib.rs:477-529` |
+| Permissions (read/write/grant) | ✅ | `crates/Zero-kernel/src/lib.rs:413-450` |
+| ObjectType enum | ✅ | `crates/Zero-kernel/src/lib.rs:108-123` |
+| `axiom_check()` function | ✅ | `crates/Zero-kernel/src/lib.rs:379-410` |
+| Endpoint struct | ✅ | `crates/Zero-kernel/src/lib.rs:562-572` |
+| Message struct | ✅ | `crates/Zero-kernel/src/lib.rs:550-560` |
+| IPC with cap transfer | ✅ | `crates/Zero-kernel/src/lib.rs:1218-1350` |
+| SYS_EP_CREATE | ✅ | `crates/Zero-kernel/src/lib.rs:903-957` |
+| SYS_SEND | ✅ | `crates/Zero-kernel/src/lib.rs:1128-1201` |
+| SYS_RECV | ✅ | `crates/Zero-kernel/src/lib.rs:1395-1437` |
+| SYS_CAP_GRANT | ✅ | `crates/Zero-kernel/src/lib.rs:959-1021` |
+| SYS_CAP_REVOKE | ✅ | `crates/Zero-kernel/src/lib.rs:1036-1075` |
+| SYS_CAP_DELETE | ✅ | `crates/Zero-kernel/src/lib.rs:1091-1125` |
+| SYS_CAP_DERIVE | ✅ | `crates/Zero-kernel/src/lib.rs:1601-1656` |
 | SYS_CAP_INSPECT | ✅ | Via `Syscall::CapInspect` |
-| SYS_SEND_CAP | ✅ | `crates/orbital-kernel/src/lib.rs:1218-1350` |
-| Process syscall library | ✅ | `crates/orbital-process/src/lib.rs:381-638` |
+| SYS_SEND_CAP | ✅ | `crates/Zero-kernel/src/lib.rs:1218-1350` |
+| Process syscall library | ✅ | `crates/zos-process/src/lib.rs:381-638` |
 
 ### Key Implementation Details
 
 #### Capability Structure
 
 ```rust
-// crates/orbital-kernel/src/lib.rs
+// crates/Zero-kernel/src/lib.rs
 pub struct Capability {
     pub id: u64,
     pub object_type: ObjectType,
@@ -66,7 +66,7 @@ pub enum ObjectType {
 #### Capability Checking (Axiom)
 
 ```rust
-// crates/orbital-kernel/src/lib.rs
+// crates/Zero-kernel/src/lib.rs
 pub fn axiom_check<'a>(
     cspace: &'a CapabilitySpace,
     slot: CapSlot,
@@ -100,7 +100,7 @@ pub fn axiom_check<'a>(
 #### IPC with Capability Transfer
 
 ```rust
-// crates/orbital-kernel/src/lib.rs
+// crates/Zero-kernel/src/lib.rs
 pub fn ipc_send_with_caps(
     &mut self,
     from_pid: ProcessId,
@@ -157,7 +157,7 @@ pub const SYS_DELETE_ENDPOINT: u32 = 0x12;
 All 40+ tests pass. Key capability and IPC tests:
 
 ```bash
-cargo test -p orbital-kernel
+cargo test -p Zero-kernel
 ```
 
 ### Test Coverage
@@ -209,14 +209,14 @@ This stage is complete. The implementation exceeds the original spec with:
 - Capability expiration support
 - Generation numbers for revocation tracking
 - IPC metrics and traffic logging
-- Enhanced syscall wrappers in `orbital-process`
+- Enhanced syscall wrappers in `zos-process`
 
 ## Process Library Usage
 
 Processes can use the syscall library:
 
 ```rust
-use orbital_process::{send, receive, cap_grant, cap_derive, Permissions};
+use Zero_process::{send, receive, cap_grant, cap_derive, Permissions};
 
 // Send message
 send(endpoint_slot, 0x1234, &data)?;

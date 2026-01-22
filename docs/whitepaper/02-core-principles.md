@@ -1,4 +1,4 @@
-# Orbital OS - Core Principles
+# Zero OS - Core Principles
 
 **Version:** 1.0  
 **Status:** Whitepaper  
@@ -8,7 +8,7 @@
 
 ## Overview
 
-Orbital OS is built upon seven foundational invariants. These are not guidelines or best practices - they are **non-negotiable architectural constraints** that must hold at all times.
+Zero OS is built upon seven foundational invariants. These are not guidelines or best practices - they are **non-negotiable architectural constraints** that must hold at all times.
 
 Violation of any invariant constitutes system failure.
 
@@ -370,9 +370,9 @@ struct KeyPath {
 }
 
 /// Example paths:
-/// /orbital/users/alice/signing/0
-/// /orbital/services/filesystem/encryption
-/// /orbital/nodes/node-01/attestation
+/// /Zero/users/alice/signing/0
+/// /Zero/services/filesystem/encryption
+/// /Zero/nodes/node-01/attestation
 ```
 
 **Properties:**

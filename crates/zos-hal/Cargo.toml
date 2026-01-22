@@ -1,0 +1,13 @@
+[package]
+name = "zos-hal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Hardware Abstraction Layer trait for Zero OS"
+
+[features]
+default = []
+std = []
+
+[dependencies]
+# No external dependencies - uses only core and alloc

@@ -12,14 +12,14 @@ This stage is **fully implemented**. All objectives have been achieved.
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| AxiomLog for capability mutations (legacy) | ✅ | `crates/orbital-kernel/src/lib.rs` |
+| AxiomLog for capability mutations (legacy) | ✅ | `crates/Zero-kernel/src/lib.rs` |
 | Hash chain integrity | ✅ | `AxiomLog::verify_integrity()` |
 | CapOperation enum | ✅ | Create, Grant, Revoke, Transfer, Delete |
-| IndexedDB persistence | ✅ | `apps/orbital-web/www/index.html` |
-| `axiom_check()` function | ✅ | `crates/orbital-kernel/src/lib.rs` |
-| **SysLog** | ✅ | `crates/orbital-axiom/src/syslog.rs` |
-| **CommitLog** | ✅ | `crates/orbital-axiom/src/commitlog.rs` |
-| **AxiomGateway** | ✅ | `crates/orbital-axiom/src/gateway.rs` |
+| IndexedDB persistence | ✅ | `apps/zos-supervisor-web/www/index.html` |
+| `axiom_check()` function | ✅ | `crates/Zero-kernel/src/lib.rs` |
+| **SysLog** | ✅ | `crates/Zero-axiom/src/syslog.rs` |
+| **CommitLog** | ✅ | `crates/Zero-axiom/src/commitlog.rs` |
+| **AxiomGateway** | ✅ | `crates/Zero-axiom/src/gateway.rs` |
 | **CommitType enum** | ✅ | ProcessCreated, ProcessExited, CapInserted, CapRemoved, CapGranted, EndpointCreated, EndpointDestroyed |
 | **Commit hash chain** | ✅ | FNV-1a hash chain with integrity verification |
 | **Kernel integration** | ✅ | All state mutations logged to CommitLog |
@@ -28,10 +28,10 @@ This stage is **fully implemented**. All objectives have been achieved.
 
 ### Crate Structure
 
-The `orbital-axiom` crate provides:
+The `Zero-axiom` crate provides:
 
 ```
-crates/orbital-axiom/
+crates/Zero-axiom/
 ├── Cargo.toml
 └── src/
     ├── lib.rs           # Module exports and integration tests
@@ -115,15 +115,15 @@ The kernel uses `AxiomGateway` for all state mutations:
 
 ## Required Modifications
 
-### Task 1: Create `orbital-axiom` Crate
+### Task 1: Create `Zero-axiom` Crate
 
 Create a new crate to hold the Axiom layer:
 
-**File**: `crates/orbital-axiom/Cargo.toml`
+**File**: `crates/Zero-axiom/Cargo.toml`
 
 ```toml
 [package]
-name = "orbital-axiom"
+name = "Zero-axiom"
 version.workspace = true
 edition.workspace = true
 
@@ -134,7 +134,7 @@ crate-type = ["rlib"]
 serde = { workspace = true }
 ```
 
-**File**: `crates/orbital-axiom/src/lib.rs`
+**File**: `crates/Zero-axiom/src/lib.rs`
 
 ```rust
 #![no_std]
@@ -153,7 +153,7 @@ pub use gateway::AxiomGateway;
 
 ### Task 2: Implement SysLog
 
-**File**: `crates/orbital-axiom/src/syslog.rs`
+**File**: `crates/Zero-axiom/src/syslog.rs`
 
 ```rust
 use crate::types::*;
@@ -214,7 +214,7 @@ impl SysLog {
 
 ### Task 3: Implement CommitLog
 
-**File**: `crates/orbital-axiom/src/commitlog.rs`
+**File**: `crates/Zero-axiom/src/commitlog.rs`
 
 ```rust
 use crate::types::*;
@@ -321,7 +321,7 @@ impl CommitLog {
 
 ### Task 4: Implement Axiom Gateway
 
-**File**: `crates/orbital-axiom/src/gateway.rs`
+**File**: `crates/Zero-axiom/src/gateway.rs`
 
 ```rust
 use crate::{SysLog, CommitLog, CommitType, types::*};
@@ -378,10 +378,10 @@ impl AxiomGateway {
 
 ### Task 5: Integrate into Kernel
 
-Modify `crates/orbital-kernel/src/lib.rs`:
+Modify `crates/Zero-kernel/src/lib.rs`:
 
 ```rust
-use orbital_axiom::{AxiomGateway, CommitType};
+use Zero_axiom::{AxiomGateway, CommitType};
 
 pub struct Kernel<H: HAL> {
     hal: H,
@@ -430,18 +430,18 @@ Add to workspace `Cargo.toml`:
 [workspace]
 members = [
     # ... existing members ...
-    "crates/orbital-axiom",
+    "crates/Zero-axiom",
 ]
 
 [workspace.dependencies]
-orbital-axiom = { path = "crates/orbital-axiom" }
+Zero-axiom = { path = "crates/Zero-axiom" }
 ```
 
-Add to `crates/orbital-kernel/Cargo.toml`:
+Add to `crates/Zero-kernel/Cargo.toml`:
 
 ```toml
 [dependencies]
-orbital-axiom = { workspace = true }
+Zero-axiom = { workspace = true }
 ```
 
 ## Migration Strategy
@@ -490,7 +490,7 @@ fn test_commitlog_records_mutations() {
 
 ## Verification Checklist
 
-- [x] `orbital-axiom` crate created and compiles
+- [x] `Zero-axiom` crate created and compiles
 - [x] SysLog records request + response for each syscall
 - [x] CommitLog starts with Genesis commit
 - [x] Hash chain verification passes
@@ -503,7 +503,7 @@ fn test_commitlog_records_mutations() {
 ## Test Results
 
 ```
-running 24 tests (orbital-axiom)
+running 24 tests (Zero-axiom)
 test commitlog::tests::test_commitlog_creation ... ok
 test commitlog::tests::test_commitlog_append ... ok
 test commitlog::tests::test_commitlog_integrity ... ok
@@ -531,9 +531,9 @@ test result: ok. 24 passed; 0 failed
 
 | File | Change Type | Lines |
 |------|-------------|-------|
-| `crates/orbital-axiom/` | New crate | ~550 |
-| `crates/orbital-kernel/src/lib.rs` | Modify | ~80 |
-| `crates/orbital-kernel/Cargo.toml` | Modify | 1 |
+| `crates/Zero-axiom/` | New crate | ~550 |
+| `crates/Zero-kernel/src/lib.rs` | Modify | ~80 |
+| `crates/Zero-kernel/Cargo.toml` | Modify | 1 |
 | `Cargo.toml` | Modify | 2 |
 
 ## Next Stage

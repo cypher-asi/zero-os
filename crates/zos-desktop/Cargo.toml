@@ -1,0 +1,29 @@
+[package]
+name = "zos-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Desktop compositor and window management for Zero OS"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Enable WASM exports via wasm-bindgen
+wasm = ["wasm-bindgen", "js-sys", "serde_json", "web-sys", "wasm-bindgen-futures", "wgpu", "bytemuck"]
+
+[dependencies]
+serde = { workspace = true }
+
+# Optional WASM dependencies
+wasm-bindgen = { workspace = true, optional = true }
+js-sys = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+wgpu = { version = "23", features = ["webgpu", "webgl"], optional = true }
+bytemuck = { version = "1.14", features = ["derive"], optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

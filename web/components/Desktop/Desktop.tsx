@@ -256,7 +256,7 @@ function DesktopInner({
         console.log('[Desktop] Starting background initialization...');
         
         // Dynamically import the DesktopBackground from the WASM module
-        const { DesktopBackground } = await import('../../pkg/orbital_web.js');
+        const { DesktopBackground } = await import('../../pkg/zos_supervisor_web.js');
         const background = new DesktopBackground() as DesktopBackgroundType;
         
         // Add timeout for WebGPU init - don't block forever

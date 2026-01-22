@@ -1,4 +1,4 @@
-# Orbital OS Build Script for Windows
+# Zero OS Build Script for Windows
 # Usage: .\build.ps1 [target]
 #   targets: all, web, processes, clean
 
@@ -27,26 +27,26 @@ function Build-WebModules {
             Move-Item $configPath $configBackup -Force
         }
         
-        # Build orbital-web
-        Write-Host "Building orbital-web..."
-        Push-Location "$ProjectRoot\crates\orbital-web"
+        # Build zos-supervisor-web
+        Write-Host "Building zos-supervisor-web..."
+        Push-Location "$ProjectRoot\crates\zos-supervisor-web"
         wasm-pack build --target web --out-dir ../../web/pkg
-        if ($LASTEXITCODE -ne 0) { throw "orbital-web build failed" }
+        if ($LASTEXITCODE -ne 0) { throw "zos-supervisor-web build failed" }
         Pop-Location
         
-        # Build orbital-desktop
-        Write-Host "Building orbital-desktop..."
-        Push-Location "$ProjectRoot\crates\orbital-desktop"
+        # Build zos-desktop
+        Write-Host "Building zos-desktop..."
+        Push-Location "$ProjectRoot\crates\zos-desktop"
         wasm-pack build --target web --features wasm
-        if ($LASTEXITCODE -ne 0) { throw "orbital-desktop build failed" }
+        if ($LASTEXITCODE -ne 0) { throw "zos-desktop build failed" }
         Pop-Location
         
         # Copy desktop pkg to web folder
-        Write-Host "Copying orbital-desktop to web/pkg-desktop..."
+        Write-Host "Copying zos-desktop to web/pkg-desktop..."
         if (-not (Test-Path "$ProjectRoot\web\pkg-desktop")) {
             New-Item -ItemType Directory -Path "$ProjectRoot\web\pkg-desktop" | Out-Null
         }
-        Copy-Item -Recurse -Force "$ProjectRoot\crates\orbital-desktop\pkg\*" "$ProjectRoot\web\pkg-desktop\"
+        Copy-Item -Recurse -Force "$ProjectRoot\crates\zos-desktop\pkg\*" "$ProjectRoot\web\pkg-desktop\"
         
         Write-Host "Web modules built successfully!" -ForegroundColor Green
     }
@@ -65,19 +65,19 @@ function Build-Processes {
     Push-Location $ProjectRoot
     try {
         # Build init
-        Write-Host "Building orbital-init..."
-        cargo +nightly build -p orbital-init --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
-        if ($LASTEXITCODE -ne 0) { throw "orbital-init build failed" }
+        Write-Host "Building zos-init..."
+        cargo +nightly build -p zos-init --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
+        if ($LASTEXITCODE -ne 0) { throw "zos-init build failed" }
         
         # Build test processes
-        Write-Host "Building orbital-test-procs..."
-        cargo +nightly build -p orbital-test-procs --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
-        if ($LASTEXITCODE -ne 0) { throw "orbital-test-procs build failed" }
+        Write-Host "Building zos-system-procs..."
+        cargo +nightly build -p zos-system-procs --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
+        if ($LASTEXITCODE -ne 0) { throw "zos-system-procs build failed" }
         
         # Build apps
-        Write-Host "Building orbital-apps..."
-        cargo +nightly build -p orbital-apps --bins --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
-        if ($LASTEXITCODE -ne 0) { throw "orbital-apps build failed" }
+        Write-Host "Building zos-apps..."
+        cargo +nightly build -p zos-apps --bins --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
+        if ($LASTEXITCODE -ne 0) { throw "zos-apps build failed" }
         
         # Copy to web/processes
         Write-Host "Copying process binaries to web/processes..."
@@ -86,7 +86,7 @@ function Build-Processes {
         }
         
         $releaseDir = "$ProjectRoot\target\wasm32-unknown-unknown\release"
-        Copy-Item "$releaseDir\orbital_init.wasm" "$ProjectRoot\web\processes\init.wasm" -Force
+        Copy-Item "$releaseDir\zos_init.wasm" "$ProjectRoot\web\processes\init.wasm" -Force
         Copy-Item "$releaseDir\terminal.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\permission_manager.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\idle.wasm" "$ProjectRoot\web\processes\" -Force
@@ -118,7 +118,7 @@ function Clean-Build {
     Remove-Item -Recurse -Force "$ProjectRoot\web\pkg" -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force "$ProjectRoot\web\pkg-desktop" -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force "$ProjectRoot\web\processes" -ErrorAction SilentlyContinue
-    Remove-Item -Recurse -Force "$ProjectRoot\crates\orbital-desktop\pkg" -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force "$ProjectRoot\crates\zos-desktop\pkg" -ErrorAction SilentlyContinue
     Pop-Location
     Write-Host "Clean complete!" -ForegroundColor Green
 }
@@ -145,7 +145,7 @@ switch ($Target.ToLower()) {
         Clean-Build
     }
     default {
-        Write-Host "Orbital OS Build Script"
+        Write-Host "Zero OS Build Script"
         Write-Host ""
         Write-Host "Usage: .\build.ps1 [target]"
         Write-Host ""

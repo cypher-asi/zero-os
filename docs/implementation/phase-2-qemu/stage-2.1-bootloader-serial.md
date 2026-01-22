@@ -23,9 +23,9 @@ Hello from QEMU kernel!
 
 ## Key Files
 
-- `crates/orbital-boot/src/boot.s` - Assembly entry
-- `crates/orbital-boot/src/lib.rs` - Early init
-- `crates/orbital-hal/src/x86_64/serial.rs` - Serial driver
+- `crates/Zero-boot/src/boot.s` - Assembly entry
+- `crates/Zero-boot/src/lib.rs` - Early init
+- `crates/Zero-hal/src/x86_64/serial.rs` - Serial driver
 
 ## Next
 

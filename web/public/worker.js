@@ -1,5 +1,5 @@
 /**
- * Orbital OS Process Worker - Minimal Bootstrap
+ * Zero OS Process Worker - Minimal Bootstrap
  * 
  * This script is a thin shim that:
  * 1. Instantiates the WASM binary with syscall imports
@@ -106,7 +106,7 @@ self.onmessage = async (event) => {
         /**
          * Make a syscall using SharedArrayBuffer + Atomics
          */
-        function orbital_syscall(syscall_num, arg0, arg1, arg2) {
+        function zos_syscall(syscall_num, arg0, arg1, arg2) {
             refreshViews();
             
             // Write syscall parameters
@@ -138,9 +138,9 @@ self.onmessage = async (event) => {
         
         /**
          * Send bytes to the syscall data buffer
-         * Must be called before orbital_syscall when the syscall needs data
+         * Must be called before zos_syscall when the syscall needs data
          */
-        function orbital_send_bytes(ptr, len) {
+        function zos_send_bytes(ptr, len) {
             refreshViews();
             
             const maxLen = 4068;
@@ -162,7 +162,7 @@ self.onmessage = async (event) => {
         /**
          * Receive bytes from the syscall result buffer
          */
-        function orbital_recv_bytes(ptr, maxLen) {
+        function zos_recv_bytes(ptr, maxLen) {
             refreshViews();
             
             const dataLen = Atomics.load(mailboxView, OFFSET_DATA_LEN);
@@ -179,7 +179,7 @@ self.onmessage = async (event) => {
         /**
          * Yield the current process's time slice
          */
-        function orbital_yield() {
+        function zos_yield() {
             refreshViews();
             Atomics.wait(mailboxView, OFFSET_STATUS, 0, 0);
         }
@@ -187,7 +187,7 @@ self.onmessage = async (event) => {
         /**
          * Get the process's assigned PID
          */
-        function orbital_get_pid() {
+        function zos_get_pid() {
             refreshViews();
             return Atomics.load(mailboxView, OFFSET_PID);
         }
@@ -197,11 +197,11 @@ self.onmessage = async (event) => {
         let sharedMemory = null;
         const importObject = {
             env: {
-                orbital_syscall: orbital_syscall,
-                orbital_send_bytes: orbital_send_bytes,
-                orbital_recv_bytes: orbital_recv_bytes,
-                orbital_yield: orbital_yield,
-                orbital_get_pid: orbital_get_pid,
+                zos_syscall: zos_syscall,
+                zos_send_bytes: zos_send_bytes,
+                zos_recv_bytes: zos_recv_bytes,
+                zos_yield: zos_yield,
+                zos_get_pid: zos_get_pid,
             }
         };
         
@@ -258,8 +258,8 @@ self.onmessage = async (event) => {
         initialized = true;
         
         // Initialize runtime if the module exports it
-        if (instance.exports.__orbital_rt_init) {
-            instance.exports.__orbital_rt_init(0);
+        if (instance.exports.__zero_rt_init) {
+            instance.exports.__zero_rt_init(0);
         }
         
         // Run the process - blocks forever using atomics-based syscalls

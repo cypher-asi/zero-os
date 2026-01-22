@@ -31,7 +31,7 @@ Implement the desktop environment as specified in [docs/spec/08-desktop/](../../
 
 ### 1. Engine Layer (WebGPU)
 
-1. Initialize WebGPU device and surface (`apps/orbital-web/src/desktop/engine.ts`)
+1. Initialize WebGPU device and surface (`apps/zos-supervisor-web/src/desktop/engine.ts`)
 2. Implement `Viewport` with screen-to-canvas coordinate transforms
 3. Implement `Scene` with background and workspace containers
 4. Implement `WindowFrame` compositing with shadows and rounded corners
@@ -40,7 +40,7 @@ Implement the desktop environment as specified in [docs/spec/08-desktop/](../../
 
 ### 2. Window Management
 
-1. Create `WindowManager` class (`apps/orbital-web/src/desktop/windows.ts`)
+1. Create `WindowManager` class (`apps/zos-supervisor-web/src/desktop/windows.ts`)
 2. Implement window lifecycle: create, close, focus, minimize, maximize
 3. Implement window positioning: move, resize with constraints
 4. Implement z-order and focus stack management
@@ -49,7 +49,7 @@ Implement the desktop environment as specified in [docs/spec/08-desktop/](../../
 
 ### 3. Input Routing
 
-1. Create `InputRouter` class (`apps/orbital-web/src/desktop/input.ts`)
+1. Create `InputRouter` class (`apps/zos-supervisor-web/src/desktop/input.ts`)
 2. Handle pointer events: click, drag, hover
 3. Route title bar drags to window move
 4. Route resize handle drags to window resize
@@ -59,7 +59,7 @@ Implement the desktop environment as specified in [docs/spec/08-desktop/](../../
 
 ### 4. Presentation Layer (React)
 
-1. Create `WindowContent` bridge component (`apps/orbital-web/src/desktop/WindowContent.tsx`)
+1. Create `WindowContent` bridge component (`apps/zos-supervisor-web/src/desktop/WindowContent.tsx`)
 2. Implement offscreen canvas rendering for window content
 3. Bridge input events from engine to React synthetic events
 4. Create theme system with CSS variables (light/dark)
@@ -88,7 +88,7 @@ Implement the desktop environment as specified in [docs/spec/08-desktop/](../../
 ## File Structure
 
 ```
-apps/orbital-web/
+apps/zos-supervisor-web/
   src/
     desktop/
       engine.ts           # WebGPU engine, viewport, scene

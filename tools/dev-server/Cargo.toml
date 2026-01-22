@@ -3,7 +3,7 @@ name = "dev-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Development server for Orbital OS"
+description = "Development server for Zero OS"
 
 [dependencies]
 tokio.workspace = true

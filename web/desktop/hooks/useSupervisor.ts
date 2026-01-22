@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 
 // =============================================================================
-// Supervisor Type - Kernel/Process management (from orbital-web)
+// Supervisor Type - Kernel/Process management (from zos-supervisor-web)
 // =============================================================================
 
 export interface Supervisor {
@@ -46,7 +46,7 @@ export interface Supervisor {
 }
 
 // =============================================================================
-// DesktopController Type - Desktop/Window management (from orbital-desktop)
+// DesktopController Type - Desktop/Window management (from zero-desktop)
 // =============================================================================
 
 export interface DesktopController {

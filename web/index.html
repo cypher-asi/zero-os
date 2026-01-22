@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Orbital OS</title>
+    <title>ZERO OS</title>
     <link rel="icon" href="data:,">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,7 +23,7 @@
 </head>
 <body>
     <div id="loading">
-        <h2>Orbital OS</h2>
+        <h2>Zero OS</h2>
         <div class="spinner"></div>
         <p id="loading-status">Loading...</p>
     </div>
@@ -32,7 +32,7 @@
     <!-- Axiom IndexedDB Storage -->
     <script>
         window.AxiomStorage = {
-            db: null, DB_NAME: 'orbital-axiom', DB_VERSION: 2, STORE_NAME: 'commits',
+            db: null, DB_NAME: 'zero-axiom', DB_VERSION: 2, STORE_NAME: 'commits',
             async init() {
                 if (this.db) return true;
                 return new Promise((resolve, reject) => {

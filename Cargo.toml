@@ -1,15 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/orbital-apps",
-    "crates/orbital-axiom",
-    "crates/orbital-desktop",
-    "crates/orbital-hal",
-    "crates/orbital-init",
-    "crates/orbital-kernel",
-    "crates/orbital-process",
-    "crates/orbital-system-procs",
-    "crates/orbital-web",
+    "crates/zos-apps",
+    "crates/zos-axiom",
+    "crates/zos-desktop",
+    "crates/zos-hal",
+    "crates/zos-init",
+    "crates/zos-kernel",
+    "crates/zos-process",
+    "crates/zos-system-procs",
+    "crates/zos-supervisor-web",
     "tools/dev-server",
 ]
 
@@ -17,18 +17,18 @@ members = [
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/example/orbital-os"
+repository = "https://github.com/cypher-asi/zero-os"
 
 [workspace.dependencies]
 # Internal crates
-orbital-apps = { path = "crates/orbital-apps" }
-orbital-axiom = { path = "crates/orbital-axiom" }
-orbital-desktop = { path = "crates/orbital-desktop" }
-orbital-hal = { path = "crates/orbital-hal" }
-orbital-init = { path = "crates/orbital-init" }
-orbital-kernel = { path = "crates/orbital-kernel" }
-orbital-process = { path = "crates/orbital-process" }
-orbital-system-procs = { path = "crates/orbital-system-procs" }
+zos-apps = { path = "crates/zos-apps" }
+zos-axiom = { path = "crates/zos-axiom" }
+zos-desktop = { path = "crates/zos-desktop" }
+zos-hal = { path = "crates/zos-hal" }
+zos-init = { path = "crates/zos-init" }
+zos-kernel = { path = "crates/zos-kernel" }
+zos-process = { path = "crates/zos-process" }
+zos-system-procs = { path = "crates/zos-system-procs" }
 
 # External dependencies
 wasm-bindgen = "0.2"

@@ -1,4 +1,4 @@
-# Orbital OS - Executive Summary
+# Zero OS - Executive Summary
 
 **Version:** 2.0  
 **Status:** Whitepaper  
@@ -6,9 +6,9 @@
 
 ---
 
-## What Is Orbital OS?
+## What Is Zero OS?
 
-Orbital OS is a general-purpose operating system built from first principles with a singular objective: **make system behavior verifiable, auditable, and deterministic in meaning** - while preserving parallel execution, high performance, and native hardware support.
+Zero OS is a general-purpose operating system built from first principles with a singular objective: **make system behavior verifiable, auditable, and deterministic in meaning** - while preserving parallel execution, high performance, and native hardware support.
 
 ---
 
@@ -44,9 +44,9 @@ As autonomy increases, verifiability transitions from a desirable property to a 
 
 ---
 
-## The Orbital Solution
+## The Zero Solution
 
-Orbital OS introduces a fundamentally different architecture based on seven non-negotiable invariants:
+Zero OS introduces a fundamentally different architecture based on seven non-negotiable invariants:
 
 | Invariant | Guarantee |
 |-----------|-----------|
@@ -64,7 +64,7 @@ Orbital OS introduces a fundamentally different architecture based on seven non-
 
 ## Architecture by Layer
 
-Orbital OS is organized into distinct layers, from most fundamental to least:
+Zero OS is organized into distinct layers, from most fundamental to least:
 
 ```
 LAYER 8: APPLICATIONS
@@ -104,7 +104,7 @@ HARDWARE ABSTRACTION LAYER (HAL)
 
 ### Hardware Abstraction Layer (HAL)
 
-The HAL is the foundation that enables Orbital OS to run on multiple platforms from a **single codebase**. It provides a zero-cost compile-time abstraction over the execution substrate — whether that's a web browser, a virtual machine, or bare metal hardware.
+The HAL is the foundation that enables Zero OS to run on multiple platforms from a **single codebase**. It provides a zero-cost compile-time abstraction over the execution substrate — whether that's a web browser, a virtual machine, or bare metal hardware.
 
 Key properties:
 - **Zero runtime overhead** — all HAL calls are monomorphized and inlined at compile time
@@ -177,13 +177,13 @@ Four critical services form the foundation of system trust:
 ## Key Differentiators
 
 ### vs. Verified Microkernels (seL4)
-seL4 proves the kernel is correct. Orbital proves the **system behaved correctly**. The Axiom provides what seL4 lacks: an authoritative history of every meaningful state transition.
+seL4 proves the kernel is correct. Zero proves the **system behaved correctly**. The Axiom provides what seL4 lacks: an authoritative history of every meaningful state transition.
 
 ### vs. Unix/Linux
-Linux logs are advisory artifacts that may be incomplete, reordered, or lost. The Orbital Axiom is the **source of truth** - if it is not in the Axiom, it did not happen.
+Linux logs are advisory artifacts that may be incomplete, reordered, or lost. The Zero Axiom is the **source of truth** - if it is not in the Axiom, it did not happen.
 
 ### vs. Urbit
-Urbit sacrifices parallelism for determinism (single-threaded execution). Orbital achieves **both**: parallel execution with deterministic authority through the three-phase action model.
+Urbit sacrifices parallelism for determinism (single-threaded execution). Zero achieves **both**: parallel execution with deterministic authority through the three-phase action model.
 
 ---
 
@@ -210,7 +210,7 @@ execution       policy check    accepted        side effects
 
 ## Target Platforms
 
-Orbital OS compiles to multiple platforms from a single codebase via the Hardware Abstraction Layer (HAL):
+Zero OS compiles to multiple platforms from a single codebase via the Hardware Abstraction Layer (HAL):
 
 | Platform | HAL Implementation | Use Case |
 |----------|-------------------|----------|
@@ -218,7 +218,7 @@ Orbital OS compiles to multiple platforms from a single codebase via the Hardwar
 | **QEMU** | Virtualized environment with virtio devices | Integration testing, production VMs, cloud deployment |
 | **Bare Metal** | Native x86_64 hardware | Production deployment, full hardware access, maximum performance |
 
-All platforms run the **same Orbital OS core** — the Axiom, Policy Engine, and all services are identical. Only the HAL implementation differs.
+All platforms run the **same Zero OS core** — the Axiom, Policy Engine, and all services are identical. Only the HAL implementation differs.
 
 ### Platform Capabilities
 
@@ -248,7 +248,7 @@ Interactive, long-running, nondeterministic applications are reserved for future
 
 ## Why Now?
 
-The convergence of several factors makes Orbital OS not just timely, but necessary:
+The convergence of several factors makes Zero OS not just timely, but necessary:
 
 1. **Rust maturity** - Systems language with memory safety, no GC
 2. **Hardware capability** - Modern CPUs can afford the three-phase overhead
@@ -301,7 +301,7 @@ The **[Implementation Roadmap](../roadmap/README.md)** defines the task ordering
 > **The Axiom defines reality.**  
 > **Execution proposes; Policy authorizes; the Axiom commits; effects follow.**
 
-This is the foundation upon which Orbital OS is built. No state transition reaches the Axiom without Policy Engine authorization.
+This is the foundation upon which Zero OS is built. No state transition reaches the Axiom without Policy Engine authorization.
 
 ---
 

@@ -1,4 +1,4 @@
-# Orbital OS - Architecture Overview
+# Zero OS - Architecture Overview
 
 **Version:** 2.0  
 **Status:** Whitepaper  
@@ -8,7 +8,7 @@
 
 ## 1. System Layers (Most Fundamental First)
 
-Orbital OS is structured in nine distinct layers, ordered from most fundamental (Layer 0) to least fundamental (Layer 8), all built on the Hardware Abstraction Layer (HAL):
+Zero OS is structured in nine distinct layers, ordered from most fundamental (Layer 0) to least fundamental (Layer 8), all built on the Hardware Abstraction Layer (HAL):
 
 ```
 LAYER 8: APPLICATIONS
@@ -55,7 +55,7 @@ HARDWARE ABSTRACTION LAYER (HAL)
 
 ## 2. Hardware Abstraction Layer (HAL)
 
-The HAL is the foundation that enables Orbital OS to run on multiple platforms from a **single codebase**. It provides a zero-cost compile-time abstraction over the execution substrate.
+The HAL is the foundation that enables Zero OS to run on multiple platforms from a **single codebase**. It provides a zero-cost compile-time abstraction over the execution substrate.
 
 ### 2.1 HAL Design Principles
 
@@ -68,7 +68,7 @@ The HAL is the foundation that enables Orbital OS to run on multiple platforms f
 
 ### 2.2 HAL Trait
 
-The HAL defines the interface between Orbital OS and its execution substrate:
+The HAL defines the interface between Zero OS and its execution substrate:
 
 ```rust
 pub trait HAL: Send + Sync + 'static {
@@ -104,7 +104,7 @@ pub trait HAL: Send + Sync + 'static {
 
 ```mermaid
 flowchart TB
-    subgraph orbital [Orbital OS Core - Single Codebase]
+    subgraph Zero [Zero OS Core - Single Codebase]
         kernel[Kernel]
         services[Services]
         apps[Applications]
@@ -138,7 +138,7 @@ flowchart TB
 
 ### 2.5 Build Targets
 
-The same Orbital OS codebase compiles to all platforms:
+The same Zero OS codebase compiles to all platforms:
 
 ```bash
 # WASM build (browser or WASI)
@@ -407,10 +407,10 @@ IDENTITY SERVICE
   IDENTITY REGISTRY
   
     System Identity (root)
-      orbital.services.axiom
-      orbital.services.policy
-      orbital.services.keys
-      orbital.services.filesystem
+      Zero.services.axiom
+      Zero.services.policy
+      Zero.services.keys
+      Zero.services.filesystem
     
     Organization: example.org
       alice@example.org
@@ -646,7 +646,7 @@ DETERMINISTIC ZONE
 
 ## 13. Summary
 
-Orbital OS architecture is characterized by:
+Zero OS architecture is characterized by:
 
 | Layer | Components | Role |
 |-------|------------|------|

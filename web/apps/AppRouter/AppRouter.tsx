@@ -17,10 +17,10 @@ export function AppRouter({ appId, windowId, processId }: AppRouterProps) {
     case 'terminal':
       return <TerminalApp windowId={windowId} processId={processId} />;
     case 'clock':
-    case 'com.orbital.clock':
+    case 'com.zero.clock':
       return <ClockApp />;
     case 'calculator':
-    case 'com.orbital.calculator':
+    case 'com.zero.calculator':
       return <CalculatorApp />;
     case 'permissions':
       return <PermissionsApp />;

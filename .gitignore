@@ -12,7 +12,7 @@
 .DS_Store
 Thumbs.db
 
-# Node.js (for orbital-web)
+# Node.js (for zos-web-supervisor)
 **/node_modules/
 
 # WebAssembly build outputs (generated, kept in pkg/)

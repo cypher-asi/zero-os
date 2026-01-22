@@ -1,0 +1,28 @@
+[package]
+name = "zos-supervisor-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Browser-based supervisor for Zero OS"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["console_error_panic_hook"]
+console_error_panic_hook = ["dep:console_error_panic_hook"]
+
+[dependencies]
+zos-hal.workspace = true
+zos-kernel.workspace = true
+zos-desktop = { path = "../zos-desktop", features = ["wasm"] }
+wasm-bindgen.workspace = true
+js-sys.workspace = true
+web-sys.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+console_error_panic_hook = { version = "0.1", optional = true }
+wasm-bindgen-futures = "0.4"
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"

@@ -27,13 +27,13 @@ This stage is **fully implemented** with a comprehensive dashboard UI.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│ ORBITAL OS KERNEL          Uptime: 42.123s  Procs: 4  Memory: 512KB│
+│ Zero OS KERNEL          Uptime: 42.123s  Procs: 4  Memory: 512KB│
 ├─────────────────────┬───────────────────────────────────────────────┤
 │ Processes        4  │                                               │
-│ ─────────────────── │ Orbital OS Terminal                          │
+│ ─────────────────── │ Zero OS Terminal                          │
 │ 1 init      64KB    │ Type 'help' for available commands.          │
 │ 2 terminal  64KB    │                                               │
-│ 3 idle      64KB    │ orbital> ps                                  │
+│ 3 idle      64KB    │ Zero> ps                                  │
 │ 4 memhog   256KB  x │ PID  STATE    NAME                           │
 │                     │ ---  -----    ----                           │
 │ [+ memhog] [+ idle] │ 1    Running  init                           │
@@ -41,7 +41,7 @@ This stage is **fully implemented** with a comprehensive dashboard UI.
 │ Memory Map    448KB │ 3    Running  idle                           │
 │ ─────────────────── │ 4    Running  memhog                         │
 │ [████████████████]  │                                               │
-│ ■init ■term ■idle   │ orbital> _                                   │
+│ ■init ■term ■idle   │ Zero> _                                   │
 │                     │                                               │
 │ IPC Endpoints    3  │                                               │
 │ ─────────────────── │                                               │
@@ -67,7 +67,7 @@ This stage is **fully implemented** with a comprehensive dashboard UI.
 #### Dashboard Update Loop
 
 ```javascript
-// apps/orbital-web/www/index.html
+// apps/zos-supervisor-web/www/index.html
 setInterval(updateDashboard, 500);  // Update every 500ms
 
 function updateDashboard() {
@@ -138,9 +138,9 @@ function updateMemoryBar() {
 #### IndexedDB Axiom Persistence
 
 ```javascript
-// apps/orbital-web/www/index.html
+// apps/zos-supervisor-web/www/index.html
 window.AxiomStorage = {
-    DB_NAME: 'orbital-axiom',
+    DB_NAME: 'Zero-axiom',
     STORE_NAME: 'log',
     
     async init() {
@@ -193,7 +193,7 @@ setInterval(async () => {
 ### API Methods (Rust → JavaScript)
 
 ```rust
-// apps/orbital-web/src/lib.rs
+// apps/zos-supervisor-web/src/lib.rs
 #[wasm_bindgen]
 impl Supervisor {
     pub fn get_uptime_ms(&self) -> f64;
