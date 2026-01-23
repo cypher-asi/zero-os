@@ -23,8 +23,19 @@ path = "src/bin/terminal.rs"
 name = "permission_manager"
 path = "src/bin/permission_manager.rs"
 
+[[bin]]
+name = "identity_service"
+path = "src/bin/identity_service.rs"
+
+[[bin]]
+name = "settings"
+path = "src/bin/settings.rs"
+
 [dependencies]
 zos-process = { path = "../zos-process" }
+zos-identity = { path = "../zos-identity" }
+serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 zos-vfs = { path = "../zos-vfs" }

@@ -43,6 +43,60 @@ export interface Supervisor {
   get_syslog_json(count: number): string;
   /** Revoke/delete a capability from any process (supervisor privilege) */
   revoke_capability(pid: bigint, slot: number): boolean;
+
+  // ==========================================================================
+  // Identity Service Bridge API
+  // ==========================================================================
+
+  /** 
+   * Generate a new Neural Key for a user.
+   * Returns JSON with shards and public identifiers, or error.
+   * @param userId - User ID as hex string (e.g., "0x1234...")
+   */
+  identity_generate_neural_key(userId: string): unknown;
+
+  /**
+   * Recover a Neural Key from Shamir shards.
+   * Requires at least 3 of 5 shards.
+   * @param userId - User ID as hex string
+   * @param shardsJson - JSON array of shards [{index, hex}, ...]
+   */
+  identity_recover_neural_key(userId: string, shardsJson: string): unknown;
+
+  /**
+   * Get stored identity key for a user.
+   * Returns public identifiers if Neural Key exists, null otherwise.
+   * @param userId - User ID as hex string
+   */
+  identity_get_key(userId: string): unknown;
+
+  /**
+   * Create a new machine key record for a user.
+   * @param userId - User ID as hex string
+   * @param name - Human-readable machine name
+   * @param capsJson - JSON of capabilities object
+   */
+  identity_create_machine(userId: string, name: string, capsJson: string): unknown;
+
+  /**
+   * List all machine keys for a user.
+   * @param userId - User ID as hex string
+   */
+  identity_list_machines(userId: string): unknown;
+
+  /**
+   * Revoke/delete a machine key.
+   * @param userId - User ID as hex string
+   * @param machineId - Machine ID as hex string
+   */
+  identity_revoke_machine(userId: string, machineId: string): unknown;
+
+  /**
+   * Rotate keys for a machine.
+   * @param userId - User ID as hex string
+   * @param machineId - Machine ID as hex string
+   */
+  identity_rotate_machine(userId: string, machineId: string): unknown;
 }
 
 // =============================================================================

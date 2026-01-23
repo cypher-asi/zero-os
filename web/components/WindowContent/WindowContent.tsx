@@ -179,7 +179,7 @@ export const WindowContent = forwardRef(function WindowContent(
 
       {/* Standard window: Title bar with title and buttons */}
       {!isWidget && (
-        <div className={styles.titleBar} style={{ height: FRAME_STYLE.titleBarHeight }} onPointerDown={handleDragStart}>
+        <div className={`${styles.titleBar} ${win.appId === 'settings' ? styles.titleBarBordered : ''}`} style={{ height: FRAME_STYLE.titleBarHeight }} onPointerDown={handleDragStart}>
           <span className={`${styles.title} ${win.focused ? styles.titleFocused : ''}`}>{win.title}</span>
           <div className={styles.buttons} onPointerDown={(e) => e.stopPropagation()}>
             <ButtonWindow action="minimize" size="xs" rounded="none" onClick={handleMinimize} />

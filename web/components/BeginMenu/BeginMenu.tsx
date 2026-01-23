@@ -15,11 +15,6 @@ const PROGRAM_ITEMS = [
   { id: 'clock', label: 'Clock' },
 ];
 
-// Settings submenu items
-const SETTINGS_ITEMS = [
-  { id: 'permissions', label: 'Permissions' },
-];
-
 // Main menu structure
 const MENU_ITEMS: MenuItem[] = [
   {
@@ -29,11 +24,7 @@ const MENU_ITEMS: MenuItem[] = [
   },
   { id: 'terminal', label: 'Terminal' },
   { id: 'files', label: 'Files' },
-  {
-    id: 'settings',
-    label: 'Settings',
-    children: SETTINGS_ITEMS,
-  },
+  { id: 'settings', label: 'Settings' },
   { type: 'separator' },
   { id: 'shutdown', label: 'Shutdown' },
 ];
@@ -65,7 +56,7 @@ export function BeginMenu({ onClose, containerRef }: BeginMenuProps) {
 
   const handleSelect = async (id: string) => {
     // Skip parent menu items (submenus)
-    if (id === 'programs' || id === 'settings') return;
+    if (id === 'programs') return;
 
     if (id === 'shutdown') {
       onClose();

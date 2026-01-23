@@ -1,0 +1,182 @@
+/* Panel Container - full bleed menu layout */
+.panelContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Collapsible Section - full bleed */
+.collapsibleSection {
+  border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.collapsibleSection:last-child {
+  border-bottom: none;
+}
+
+/* Menu content wrapper with bottom padding only */
+.menuContent {
+  padding: 0 0 12px 0;
+}
+
+/* Remove left/right padding from all divs inside collapsible (GroupCollapsible content area) */
+.collapsibleSection :global(div) {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Setting Card */
+.settingCard {
+  background: var(--color-surface, rgba(20, 20, 30, 0.4));
+}
+
+/* Button Group */
+.buttonGroup {
+  display: flex;
+  gap: 4px;
+}
+
+/* Menu Wrapper */
+.menuWrapper {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Status Badge */
+.statusBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.successIcon {
+  color: var(--color-success, #22c55e);
+}
+
+.warningIcon {
+  color: var(--color-warning, #f59e0b);
+}
+
+/* Count Badge */
+.countBadge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  padding: 4px 8px;
+  background: var(--color-accent-muted, rgba(1, 244, 203, 0.15));
+  border-radius: 4px;
+}
+
+/* Full Width Button */
+.fullWidthButton {
+  width: 100%;
+  justify-content: space-between;
+}
+
+/* Color Grid (for accent color selection) */
+.colorGrid {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.colorSwatch {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.colorSwatch:hover {
+  transform: scale(1.1);
+}
+
+.colorSwatchActive {
+  border-color: var(--color-text-primary, #fff);
+  box-shadow: 0 0 8px currentColor;
+}
+
+.checkmark {
+  color: var(--color-text-primary, #fff);
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Background Grid */
+.backgroundGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Check Icon for selected items */
+.checkIcon {
+  color: var(--color-accent, #01f4cb);
+}
+
+/* Color Dot for accent color menu items */
+.colorDot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* =============================================================================
+   Permissions Panel Styles
+   ============================================================================= */
+
+/* Menu status with label and caps count */
+.menuStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Drill content wrapper */
+.drillContent {
+  padding: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* Empty state for panels */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  gap: 12px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+  text-align: center;
+}
+
+.emptyState svg {
+  opacity: 0.5;
+}
+
+/* Danger Zone Section */
+.dangerZoneSection {
+  padding: 16px;
+}
+
+.dangerCard {
+  background: var(--color-danger-muted, rgba(239, 68, 68, 0.08));
+  border: 1px solid var(--color-danger, rgba(239, 68, 68, 0.25));
+}
+
+.dangerCardItem {
+  color: var(--color-danger, #ef4444);
+}
+
+.dangerCardItem svg {
+  color: var(--color-danger, #ef4444);
+}

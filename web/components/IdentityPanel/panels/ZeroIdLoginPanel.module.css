@@ -1,0 +1,196 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-primary, #fff);
+}
+
+.header svg {
+  color: var(--color-accent, #01f4cb);
+}
+
+.statusLabel {
+  margin-left: auto;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Form */
+.formGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loginButton {
+  width: 100%;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.3));
+  font-size: 11px;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border, rgba(255, 255, 255, 0.1));
+}
+
+.machineKeyButton {
+  width: 100%;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Logged In State */
+.userCard {
+  background: var(--color-surface, rgba(30, 30, 40, 0.8));
+}
+
+.userItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.userAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-accent-muted, rgba(1, 244, 203, 0.2));
+  border: 1px solid var(--color-accent, rgba(1, 244, 203, 0.4));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent, #01f4cb);
+  flex-shrink: 0;
+}
+
+.userInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.userKey {
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-text-primary, #e0e0e0);
+  letter-spacing: 0.02em;
+}
+
+.expiresInfo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--color-text-secondary, #aaa);
+}
+
+/* Tokens Section */
+.tokensSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: var(--color-surface, rgba(30, 30, 40, 0.6));
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+.tokenItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tokenValue {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tokenValue code {
+  flex: 1;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--color-accent, #01f4cb);
+  background: var(--color-surface-elevated, rgba(40, 40, 50, 0.8));
+  padding: 6px 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copyButton {
+  flex-shrink: 0;
+  padding: 6px;
+}
+
+.checkIcon {
+  color: var(--color-success, #00ff88);
+}
+
+.scopesList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.scopeBadge {
+  font-size: 9px;
+  padding: 2px 6px;
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.refreshButton {
+  width: 100%;
+  justify-content: center;
+  gap: 8px;
+}
+
+.logoutButton {
+  width: 100%;
+  justify-content: center;
+  gap: 8px;
+  color: var(--color-error, #ff4444);
+}
+
+.logoutButton:hover {
+  background: rgba(255, 68, 68, 0.1);
+}
+
+/* Error */
+.error {
+  margin-top: 8px;
+}

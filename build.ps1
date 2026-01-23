@@ -96,6 +96,7 @@ function Build-Processes {
         Copy-Item "$releaseDir\pingpong.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\clock.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\calculator.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\settings.wasm" "$ProjectRoot\web\processes\" -Force
         
         Write-Host "Process binaries built successfully!" -ForegroundColor Green
     }

@@ -1,1 +1,0 @@
-export { PermissionsApp } from './PermissionsApp';

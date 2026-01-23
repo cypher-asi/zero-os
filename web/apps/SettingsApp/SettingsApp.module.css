@@ -1,0 +1,41 @@
+/* Container - full height split layout */
+.container {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  background: transparent;
+  gap: 0;
+}
+
+/* Left Sidebar */
+.sidebar {
+  width: 200px;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+  background: transparent;
+}
+
+/* Remove Navigator internal padding for full-bleed */
+.sidebar :global(nav) {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Right Content Area */
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* PanelDrill fills the content area */
+.panelDrill {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}

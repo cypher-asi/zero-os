@@ -18,12 +18,14 @@
 mod calculator;
 mod clock;
 mod input;
+mod settings;
 mod terminal;
 mod wire;
 
 pub use calculator::CalculatorState;
 pub use clock::ClockState;
 pub use input::InputEvent;
+pub use settings::{SettingsArea, SettingsState};
 pub use terminal::{
     InputAction, TerminalInput, TerminalState, MSG_CONSOLE_INPUT,
     TYPE_TERMINAL_INPUT, TYPE_TERMINAL_STATE,
@@ -53,6 +55,7 @@ pub mod type_tags {
     // State type tags
     pub const TYPE_CLOCK_STATE: u8 = 0x01;
     pub const TYPE_CALCULATOR_STATE: u8 = 0x02;
+    pub const TYPE_SETTINGS_STATE: u8 = 0x03;
 
     // Input type tags
     pub const TYPE_BUTTON_PRESS: u8 = 0x10;

@@ -264,8 +264,8 @@ impl DesktopEngine {
                 min_width: 200.0,
                 min_height: 200.0,
                 // Calculator: display (~100px) + 5 rows of buttons (52px each) + gaps + padding + space for close button
-                preferred_width: 320.0,
-                preferred_height: 450.0,
+                preferred_width: 360.0,
+                preferred_height: 480.0,
             },
             _ => AppConfig {
                 title: app_id,

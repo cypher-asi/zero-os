@@ -113,21 +113,6 @@ describe('BeginMenu', () => {
     ]);
   });
 
-  it('renders settings submenu with permissions', () => {
-    render(
-      createElement(BeginMenu, { onClose }),
-      { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
-    );
-
-    expect(screen.getByText('Permissions')).toBeInTheDocument();
-
-    // Verify settings is a submenu containing permissions
-    const settingsItem = capturedItems.find((item: any) => item.id === 'settings');
-    expect(settingsItem?.children).toEqual([
-      { id: 'permissions', label: 'Permissions' },
-    ]);
-  });
-
   it('launches terminal app on click', () => {
     render(
       createElement(BeginMenu, { onClose }),
@@ -138,19 +123,6 @@ describe('BeginMenu', () => {
     fireEvent.click(terminalButton);
 
     expect(mockDesktop.launch_app).toHaveBeenCalledWith('terminal');
-    expect(onClose).toHaveBeenCalled();
-  });
-
-  it('launches permissions app from settings submenu', () => {
-    render(
-      createElement(BeginMenu, { onClose }),
-      { wrapper: createTestWrapper(mockDesktop, mockSupervisor) }
-    );
-
-    const permissionsButton = screen.getByTestId('menu-item-permissions');
-    fireEvent.click(permissionsButton);
-
-    expect(mockDesktop.launch_app).toHaveBeenCalledWith('permissions');
     expect(onClose).toHaveBeenCalled();
   });
 

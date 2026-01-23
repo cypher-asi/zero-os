@@ -42,6 +42,14 @@ pub enum KeyError {
     UserNotFound,
     /// Keys not found
     KeysNotFound,
+    /// Identity key required but not registered
+    IdentityKeyRequired,
+    /// Identity key already exists (use rotate instead)
+    IdentityKeyAlreadyExists,
+    /// Machine key not found
+    MachineKeyNotFound,
+    /// Cannot revoke the primary/current machine key
+    CannotRevokePrimaryMachine,
     /// Invalid passphrase
     InvalidPassphrase,
     /// Key derivation failed
@@ -50,6 +58,10 @@ pub enum KeyError {
     CryptoError(String),
     /// Storage error
     StorageError(String),
+    /// Insufficient shards for recovery (need at least 3 of 5)
+    InsufficientShards,
+    /// Invalid shard data
+    InvalidShard(String),
 }
 
 /// Errors from credential operations.

@@ -1,24 +1,14 @@
-import { useEffect, useRef } from 'react';
-import { Panel, Menu, type MenuItem } from '@cypher-asi/zui';
-import { Brain, Cpu, Info, Layers, User, Users, Lock, LogOut, Clock } from 'lucide-react';
+import { useEffect, useRef, useState, useMemo, useCallback, type ReactNode } from 'react';
+import { Panel, PanelDrill, type PanelDrillItem, Menu, type MenuItem } from '@cypher-asi/zui';
+import { Info, Layers, User, Lock, LogOut, Clock } from 'lucide-react';
 import { useIdentity, formatUserId, getSessionTimeRemaining } from '../../desktop/hooks/useIdentity';
+import { useZeroIdAuth } from '../../desktop/hooks/useZeroIdAuth';
+import { ZeroIdLoginPanel } from './panels/ZeroIdLoginPanel';
 import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelProps {
   onClose: () => void;
 }
-
-const NAV_ITEMS: MenuItem[] = [
-  { id: 'neural-key', label: 'Neural Key', icon: <Brain size={14} /> },
-  { id: 'machine-keys', label: 'Machine Keys', icon: <Cpu size={14} /> },
-  { id: 'linked-accounts', label: 'Linked Accounts', icon: <Users size={14} /> },
-  { id: 'vault', label: 'Vault', icon: <Lock size={14} /> },
-  { id: 'information', label: 'Information', icon: <Info size={14} /> },
-  { type: 'separator' },
-  { id: 'login-zero-id', label: 'Login w/ ZERO ID', icon: <User size={14} /> },
-  { type: 'separator' },
-  { id: 'logout', label: 'Logout', icon: <LogOut size={14} /> },
-];
 
 // Simple avatar component
 function Avatar({ name }: { size?: string; status?: string; name: string }) {
@@ -29,10 +19,23 @@ function Avatar({ name }: { size?: string; status?: string; name: string }) {
   );
 }
 
+/** Format a ZERO ID user key for display */
+function formatUserKey(key: string): string {
+  // Already formatted like UID-XXXX-XXXX-XXXX, just truncate
+  if (key.length > 16) {
+    return key.slice(0, 16) + '...';
+  }
+  return key;
+}
 
 export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const identity = useIdentity();
+  const { remoteAuthState } = useZeroIdAuth();
+  
+  // Stack state for drill-down navigation (subpanel overlay)
+  const [stack, setStack] = useState<PanelDrillItem[]>([]);
+  const isSubpanelOpen = stack.length > 0;
 
   // Get current user info from identity service
   const currentUser = identity?.state.currentUser;
@@ -43,6 +46,62 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const displayUid = currentUser ? formatUserId(currentUser.id) : '---';
   const sessionInfo = currentSession ? getSessionTimeRemaining(currentSession) : 'No session';
 
+  // Check if logged into ZERO ID
+  const isZeroIdConnected = !!remoteAuthState;
+  const zeroIdUserKey = remoteAuthState?.userKey;
+
+  // Handle menu selection - open subpanel overlay
+  const handleSelect = useCallback(async (id: string) => {
+    console.log('[identity-panel] Selected:', id);
+    
+    let subPanelContent: ReactNode = null;
+    let subPanelLabel = '';
+    
+    switch (id) {
+      case 'login-zero-id':
+        subPanelLabel = isZeroIdConnected ? 'ZERO ID' : 'Login w/ ZERO ID';
+        subPanelContent = <ZeroIdLoginPanel key="login-zero-id" />;
+        break;
+        
+      case 'logout':
+        if (identity) {
+          try {
+            await identity.logout();
+            console.log('[identity-panel] Logout successful');
+          } catch (error) {
+            console.error('[identity-panel] Logout failed:', error);
+          }
+          onClose();
+        }
+        return; // Don't open subpanel
+        
+      default:
+        console.log('[identity-panel] Unhandled menu item:', id);
+        return;
+    }
+
+    if (subPanelContent) {
+      // Set the subpanel stack with root item for breadcrumb navigation
+      // Root item is a placeholder - navigating to it closes the subpanel
+      setStack([
+        { id: 'identity', label: 'Identity', content: null },
+        { id, label: subPanelLabel, content: subPanelContent }
+      ]);
+    }
+  }, [identity, onClose, isZeroIdConnected]);
+
+  // Handle breadcrumb navigation within subpanel
+  const handleNavigate = useCallback((_id: string, index: number) => {
+    if (index === 0) {
+      // Navigating to root "Identity" - close the subpanel
+      setStack([]);
+    } else {
+      // Trim stack to this point (for nested navigation in future)
+      setStack(prev => prev.slice(0, index + 1));
+    }
+  }, []);
+
+  // Click outside handler
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
@@ -56,21 +115,27 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
     };
   }, [onClose]);
 
-  const handleSelect = async (id: string) => {
-    console.log('[identity-panel] Selected:', id);
-    if (id === 'logout' && identity) {
-      try {
-        await identity.logout();
-        console.log('[identity-panel] Logout successful');
-      } catch (error) {
-        console.error('[identity-panel] Logout failed:', error);
-      }
-      onClose();
-    }
-  };
+  // Dynamic nav items based on ZERO ID connection state
+  const navItems: MenuItem[] = useMemo(() => [
+    { id: 'vault', label: 'Vault', icon: <Lock size={14} />, disabled: true },
+    { id: 'information', label: 'Information', icon: <Info size={14} />, disabled: true },
+    { type: 'separator' },
+    { 
+      id: 'login-zero-id', 
+      label: isZeroIdConnected 
+        ? `Connected · ${formatUserKey(zeroIdUserKey || '')}` 
+        : 'Login w/ ZERO ID',
+      icon: isZeroIdConnected 
+        ? <div className={styles.connectedIndicator}><User size={14} /></div>
+        : <User size={14} />,
+    },
+    { type: 'separator' },
+    { id: 'logout', label: 'Logout', icon: <LogOut size={14} /> },
+  ], [isZeroIdConnected, zeroIdUserKey]);
 
   return (
     <div ref={panelRef} className={styles.panelWrapper}>
+      {/* Main Panel - Always Present */}
       <Panel className={styles.panel} variant="glass" border="future">
         {/* Section 1: Title */}
         <div className={styles.titleSection}>
@@ -100,9 +165,23 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
         {/* Section 4: Menu */}
         <div className={styles.menuSection}>
-          <Menu items={NAV_ITEMS} onChange={handleSelect} />
+          <Menu items={navItems} onChange={handleSelect} />
         </div>
       </Panel>
+
+      {/* Subpanel Overlay - Slides in over main panel */}
+      {isSubpanelOpen && (
+        <div className={styles.subpanelOverlay}>
+          <PanelDrill
+            stack={stack}
+            onNavigate={handleNavigate}
+            className={styles.subpanel}
+            background="bg"
+            border="future"
+          />
+        </div>
+      )}
     </div>
   );
 }
+

@@ -226,3 +226,53 @@ pub static PERMISSION_MANAGER_MANIFEST: AppManifest = AppManifest {
         },
     ],
 };
+
+/// IdentityService manifest (PID 3)
+pub static IDENTITY_SERVICE_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.identity_service",
+    name: "Identity Service",
+    version: "1.0.0",
+    description: "User identity and cryptographic key management service",
+    capabilities: &[
+        CapabilityRequest {
+            object_type: ObjectType::Endpoint,
+            permissions: Permissions::full(),
+            reason: "Receive identity requests and send responses",
+            required: true,
+        },
+        CapabilityRequest {
+            object_type: ObjectType::Filesystem,
+            permissions: Permissions::read_write(),
+            reason: "Read and write identity data to user home directories",
+            required: true,
+        },
+        CapabilityRequest {
+            object_type: ObjectType::Identity,
+            permissions: Permissions::full(),
+            reason: "Manage cryptographic keys and identity operations",
+            required: true,
+        },
+    ],
+};
+
+/// Settings app manifest
+pub static SETTINGS_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.settings",
+    name: "Settings",
+    version: "1.0.0",
+    description: "System settings and preferences management",
+    capabilities: &[
+        CapabilityRequest {
+            object_type: ObjectType::Endpoint,
+            permissions: Permissions::read_write(),
+            reason: "Send settings updates to display",
+            required: true,
+        },
+        CapabilityRequest {
+            object_type: ObjectType::Storage,
+            permissions: Permissions::read_write(),
+            reason: "Persist user preferences and settings",
+            required: false,
+        },
+    ],
+};

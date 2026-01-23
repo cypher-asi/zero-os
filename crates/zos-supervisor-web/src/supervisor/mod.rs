@@ -720,6 +720,314 @@ impl Supervisor {
             let _ = self.kernel.hal().kill_process(&handle);
         }
     }
+
+    // ==========================================================================
+    // Identity Bridge API - Frontend calls these to interact with identity service
+    // ==========================================================================
+
+    /// Find the identity service process ID
+    fn find_identity_service_pid(&self) -> Option<ProcessId> {
+        for (pid, proc) in self.kernel.list_processes() {
+            if proc.name == "identity_service" {
+                return Some(pid);
+            }
+        }
+        None
+    }
+
+    /// Generate a new Neural Key for a user.
+    ///
+    /// This sends a request to the identity service to:
+    /// 1. Generate 32 bytes of secure entropy
+    /// 2. Derive Ed25519/X25519 keypairs  
+    /// 3. Split entropy into 5 Shamir shards (3-of-5 threshold)
+    /// 4. Store public keys to VFS
+    /// 5. Return shards + public identifiers
+    ///
+    /// The returned shards should be displayed to the user for backup.
+    /// They are ephemeral and not stored anywhere.
+    #[wasm_bindgen]
+    pub fn identity_generate_neural_key(&mut self, user_id: &str) -> JsValue {
+        log(&format!("[supervisor] identity_generate_neural_key for user: {}", user_id));
+
+        // Parse user_id as hex u128
+        let user_id_num: u128 = match u128::from_str_radix(user_id.trim_start_matches("0x"), 16) {
+            Ok(id) => id,
+            Err(_) => {
+                log("[supervisor] Invalid user_id format");
+                return JsValue::from_str(r#"{"error":"Invalid user_id format"}"#);
+            }
+        };
+
+        // Find identity service
+        let identity_pid = match self.find_identity_service_pid() {
+            Some(pid) => pid,
+            None => {
+                log("[supervisor] Identity service not found");
+                return JsValue::from_str(r#"{"error":"Identity service not running"}"#);
+            }
+        };
+
+        // Create request
+        let request = format!(r#"{{"user_id":{}}}"#, user_id_num);
+        
+        // Send IPC to identity service
+        // MSG_GENERATE_NEURAL_KEY = 0x7054
+        let tag = 0x7054u32;
+        if let Err(e) = self.kernel.send_to_process(
+            self.supervisor_pid,
+            identity_pid,
+            tag,
+            request.into_bytes(),
+        ) {
+            log(&format!("[supervisor] Failed to send to identity service: {:?}", e));
+            return JsValue::from_str(&format!(r#"{{"error":"IPC send failed: {:?}"}}"#, e));
+        }
+
+        // Poll for response (simplified - in production would use async/promises)
+        // For now, return a pending status and let JS poll
+        JsValue::from_str(r#"{"status":"pending","message":"Request sent to identity service"}"#)
+    }
+
+    /// Recover a Neural Key from Shamir shards.
+    ///
+    /// Requires at least 3 of 5 shards to reconstruct the original entropy.
+    #[wasm_bindgen]
+    pub fn identity_recover_neural_key(&mut self, user_id: &str, shards_json: &str) -> JsValue {
+        log(&format!("[supervisor] identity_recover_neural_key for user: {}", user_id));
+
+        // Parse user_id as hex u128
+        let user_id_num: u128 = match u128::from_str_radix(user_id.trim_start_matches("0x"), 16) {
+            Ok(id) => id,
+            Err(_) => {
+                return JsValue::from_str(r#"{"error":"Invalid user_id format"}"#);
+            }
+        };
+
+        // Find identity service
+        let identity_pid = match self.find_identity_service_pid() {
+            Some(pid) => pid,
+            None => {
+                return JsValue::from_str(r#"{"error":"Identity service not running"}"#);
+            }
+        };
+
+        // Create request with shards
+        let request = format!(r#"{{"user_id":{},"shards":{}}}"#, user_id_num, shards_json);
+
+        // Send IPC to identity service
+        // MSG_RECOVER_NEURAL_KEY = 0x7056
+        let tag = 0x7056u32;
+        if let Err(e) = self.kernel.send_to_process(
+            self.supervisor_pid,
+            identity_pid,
+            tag,
+            request.into_bytes(),
+        ) {
+            return JsValue::from_str(&format!(r#"{{"error":"IPC send failed: {:?}"}}"#, e));
+        }
+
+        JsValue::from_str(r#"{"status":"pending","message":"Recovery request sent to identity service"}"#)
+    }
+
+    /// Get the stored identity key for a user.
+    ///
+    /// Returns the public identifiers if a Neural Key exists, null otherwise.
+    #[wasm_bindgen]
+    pub fn identity_get_key(&mut self, user_id: &str) -> JsValue {
+        log(&format!("[supervisor] identity_get_key for user: {}", user_id));
+
+        // Parse user_id as hex u128
+        let user_id_num: u128 = match u128::from_str_radix(user_id.trim_start_matches("0x"), 16) {
+            Ok(id) => id,
+            Err(_) => {
+                return JsValue::from_str(r#"{"error":"Invalid user_id format"}"#);
+            }
+        };
+
+        // Find identity service
+        let identity_pid = match self.find_identity_service_pid() {
+            Some(pid) => pid,
+            None => {
+                return JsValue::from_str(r#"{"error":"Identity service not running"}"#);
+            }
+        };
+
+        // Create request
+        let request = format!(r#"{{"user_id":{}}}"#, user_id_num);
+
+        // Send IPC to identity service  
+        // MSG_GET_IDENTITY_KEY = 0x7052
+        let tag = 0x7052u32;
+        if let Err(e) = self.kernel.send_to_process(
+            self.supervisor_pid,
+            identity_pid,
+            tag,
+            request.into_bytes(),
+        ) {
+            return JsValue::from_str(&format!(r#"{{"error":"IPC send failed: {:?}"}}"#, e));
+        }
+
+        JsValue::from_str(r#"{"status":"pending","message":"Get key request sent to identity service"}"#)
+    }
+
+    /// Create a new machine key record for a user.
+    #[wasm_bindgen]
+    pub fn identity_create_machine(&mut self, user_id: &str, name: &str, caps_json: &str) -> JsValue {
+        log(&format!("[supervisor] identity_create_machine for user: {} name: {}", user_id, name));
+
+        let user_id_num: u128 = match u128::from_str_radix(user_id.trim_start_matches("0x"), 16) {
+            Ok(id) => id,
+            Err(_) => {
+                return JsValue::from_str(r#"{"error":"Invalid user_id format"}"#);
+            }
+        };
+
+        let identity_pid = match self.find_identity_service_pid() {
+            Some(pid) => pid,
+            None => {
+                return JsValue::from_str(r#"{"error":"Identity service not running"}"#);
+            }
+        };
+
+        // Create request
+        let request = format!(
+            r#"{{"user_id":{},"machine_name":"{}","capabilities":{}}}"#,
+            user_id_num, name, caps_json
+        );
+
+        // MSG_CREATE_MACHINE_KEY = 0x7060
+        let tag = 0x7060u32;
+        if let Err(e) = self.kernel.send_to_process(
+            self.supervisor_pid,
+            identity_pid,
+            tag,
+            request.into_bytes(),
+        ) {
+            return JsValue::from_str(&format!(r#"{{"error":"IPC send failed: {:?}"}}"#, e));
+        }
+
+        JsValue::from_str(r#"{"status":"pending","message":"Create machine request sent"}"#)
+    }
+
+    /// List all machine keys for a user.
+    #[wasm_bindgen]
+    pub fn identity_list_machines(&mut self, user_id: &str) -> JsValue {
+        log(&format!("[supervisor] identity_list_machines for user: {}", user_id));
+
+        let user_id_num: u128 = match u128::from_str_radix(user_id.trim_start_matches("0x"), 16) {
+            Ok(id) => id,
+            Err(_) => {
+                return JsValue::from_str(r#"{"error":"Invalid user_id format"}"#);
+            }
+        };
+
+        let identity_pid = match self.find_identity_service_pid() {
+            Some(pid) => pid,
+            None => {
+                return JsValue::from_str(r#"{"error":"Identity service not running"}"#);
+            }
+        };
+
+        let request = format!(r#"{{"user_id":{}}}"#, user_id_num);
+
+        // MSG_LIST_MACHINE_KEYS = 0x7062
+        let tag = 0x7062u32;
+        if let Err(e) = self.kernel.send_to_process(
+            self.supervisor_pid,
+            identity_pid,
+            tag,
+            request.into_bytes(),
+        ) {
+            return JsValue::from_str(&format!(r#"{{"error":"IPC send failed: {:?}"}}"#, e));
+        }
+
+        JsValue::from_str(r#"{"status":"pending","message":"List machines request sent"}"#)
+    }
+
+    /// Revoke/delete a machine key.
+    #[wasm_bindgen]
+    pub fn identity_revoke_machine(&mut self, user_id: &str, machine_id: &str) -> JsValue {
+        log(&format!("[supervisor] identity_revoke_machine for user: {} machine: {}", user_id, machine_id));
+
+        let user_id_num: u128 = match u128::from_str_radix(user_id.trim_start_matches("0x"), 16) {
+            Ok(id) => id,
+            Err(_) => {
+                return JsValue::from_str(r#"{"error":"Invalid user_id format"}"#);
+            }
+        };
+
+        let machine_id_num: u128 = match u128::from_str_radix(machine_id.trim_start_matches("0x"), 16) {
+            Ok(id) => id,
+            Err(_) => {
+                return JsValue::from_str(r#"{"error":"Invalid machine_id format"}"#);
+            }
+        };
+
+        let identity_pid = match self.find_identity_service_pid() {
+            Some(pid) => pid,
+            None => {
+                return JsValue::from_str(r#"{"error":"Identity service not running"}"#);
+            }
+        };
+
+        let request = format!(r#"{{"user_id":{},"machine_id":{}}}"#, user_id_num, machine_id_num);
+
+        // MSG_REVOKE_MACHINE_KEY = 0x7066
+        let tag = 0x7066u32;
+        if let Err(e) = self.kernel.send_to_process(
+            self.supervisor_pid,
+            identity_pid,
+            tag,
+            request.into_bytes(),
+        ) {
+            return JsValue::from_str(&format!(r#"{{"error":"IPC send failed: {:?}"}}"#, e));
+        }
+
+        JsValue::from_str(r#"{"status":"pending","message":"Revoke machine request sent"}"#)
+    }
+
+    /// Rotate keys for a machine.
+    #[wasm_bindgen]
+    pub fn identity_rotate_machine(&mut self, user_id: &str, machine_id: &str) -> JsValue {
+        log(&format!("[supervisor] identity_rotate_machine for user: {} machine: {}", user_id, machine_id));
+
+        let user_id_num: u128 = match u128::from_str_radix(user_id.trim_start_matches("0x"), 16) {
+            Ok(id) => id,
+            Err(_) => {
+                return JsValue::from_str(r#"{"error":"Invalid user_id format"}"#);
+            }
+        };
+
+        let machine_id_num: u128 = match u128::from_str_radix(machine_id.trim_start_matches("0x"), 16) {
+            Ok(id) => id,
+            Err(_) => {
+                return JsValue::from_str(r#"{"error":"Invalid machine_id format"}"#);
+            }
+        };
+
+        let identity_pid = match self.find_identity_service_pid() {
+            Some(pid) => pid,
+            None => {
+                return JsValue::from_str(r#"{"error":"Identity service not running"}"#);
+            }
+        };
+
+        let request = format!(r#"{{"user_id":{},"machine_id":{}}}"#, user_id_num, machine_id_num);
+
+        // MSG_ROTATE_MACHINE_KEY = 0x7068
+        let tag = 0x7068u32;
+        if let Err(e) = self.kernel.send_to_process(
+            self.supervisor_pid,
+            identity_pid,
+            tag,
+            request.into_bytes(),
+        ) {
+            return JsValue::from_str(&format!(r#"{{"error":"IPC send failed: {:?}"}}"#, e));
+        }
+
+        JsValue::from_str(r#"{"status":"pending","message":"Rotate machine request sent"}"#)
+    }
 }
 
 impl Default for Supervisor {

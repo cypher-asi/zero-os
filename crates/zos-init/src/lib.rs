@@ -128,13 +128,17 @@ impl Init {
         }
     }
 
-    /// Boot sequence - spawn PermissionManager and initial apps
+    /// Boot sequence - spawn PermissionManager, IdentityService, and initial apps
     fn boot_sequence(&mut self) {
         self.log("Starting boot sequence...");
 
         // 1. Spawn PermissionManager (PID 2) - the capability authority
         self.log("Spawning PermissionManager (PID 2)...");
         syscall::debug("INIT:SPAWN:permission_manager");
+
+        // 2. Spawn IdentityService (PID 3) - user identity and key management
+        self.log("Spawning IdentityService (PID 3)...");
+        syscall::debug("INIT:SPAWN:identity_service");
 
         // NOTE: Terminal is no longer auto-spawned here.
         // Each terminal window is spawned by the Desktop component via launchTerminal(),
@@ -144,6 +148,7 @@ impl Init {
         self.boot_complete = true;
         self.log("Boot sequence complete");
         self.log("  PermissionManager: handles capability requests");
+        self.log("  IdentityService: handles identity and key management");
         self.log("  Terminal: spawned per-window by Desktop");
         self.log("Init entering minimal idle state");
     }

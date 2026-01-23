@@ -1,9 +1,9 @@
 import { PageEmptyState } from '@cypher-asi/zui';
-import { Settings, FolderOpen, Construction } from 'lucide-react';
+import { FolderOpen, Construction } from 'lucide-react';
 import { TerminalApp } from '../TerminalApp/TerminalApp';
 import { ClockApp } from '../ClockApp/ClockApp';
 import { CalculatorApp } from '../CalculatorApp/CalculatorApp';
-import { PermissionsApp } from '../PermissionsApp/PermissionsApp';
+import { SettingsApp } from '../SettingsApp/SettingsApp';
 
 interface AppRouterProps {
   appId: string;
@@ -22,16 +22,9 @@ export function AppRouter({ appId, windowId, processId }: AppRouterProps) {
     case 'calculator':
     case 'com.zero.calculator':
       return <CalculatorApp />;
-    case 'permissions':
-      return <PermissionsApp />;
     case 'settings':
-      return (
-        <PageEmptyState
-          icon={<Settings size={48} />}
-          title="Settings"
-          description="System settings are not yet implemented"
-        />
-      );
+    case 'com.zero.settings':
+      return <SettingsApp />;
     case 'files':
       return (
         <PageEmptyState

@@ -1725,6 +1725,9 @@ checksum = "bd8f3f50b848df28f887acb68e41201b5aea6bc8a8dacc00fb40635ff9a72fea"
 name = "zos-apps"
 version = "0.1.0"
 dependencies = [
+ "serde",
+ "serde_json",
+ "zos-identity",
  "zos-process",
  "zos-vfs",
 ]

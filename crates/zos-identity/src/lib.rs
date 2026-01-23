@@ -59,4 +59,19 @@ pub use session::{LocalSession, RemoteAuthState, SessionMetadata};
 pub use types::{User, UserPreferences, UserRegistry, UserRegistryEntry, UserStatus};
 
 // IPC message constants
-pub use ipc::{perm_msg, user_msg};
+pub use ipc::{key_msg, perm_msg, user_msg};
+
+// Key management IPC types
+pub use ipc::{
+    CreateMachineKeyRequest, CreateMachineKeyResponse, GetIdentityKeyRequest,
+    GetIdentityKeyResponse, GetMachineKeyRequest, GetMachineKeyResponse, ListMachineKeysRequest,
+    ListMachineKeysResponse, RegisterIdentityKeyRequest, RegisterIdentityKeyResponse,
+    RevokeMachineKeyRequest, RevokeMachineKeyResponse, RotateMachineKeyRequest,
+    RotateMachineKeyResponse,
+};
+
+// Neural Key IPC types
+pub use ipc::{
+    GenerateNeuralKeyRequest, GenerateNeuralKeyResponse, NeuralKeyGenerated, NeuralShard,
+    PublicIdentifiers, RecoverNeuralKeyRequest, RecoverNeuralKeyResponse,
+};
