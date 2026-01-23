@@ -218,6 +218,44 @@ export function useWindowActions() {
     }
   }, [supervisor, desktop]);
 
+  // Launch app or focus existing window if already open
+  // Optionally restores minimized windows
+  const launchOrFocusApp = useCallback(
+    (appId: string, restoreMinimized: boolean = true): number | null => {
+      if (!desktop) return null;
+
+      try {
+        // Get all windows and find one with matching appId
+        const windowsJson = desktop.get_windows_json();
+        const windows = JSON.parse(windowsJson) as Array<{
+          id: number;
+          appId: string;
+          state: string;
+        }>;
+
+        const existingWindow = windows.find((w) => w.appId === appId);
+
+        if (existingWindow) {
+          // Window exists - focus it and optionally restore if minimized
+          if (existingWindow.state === 'minimized' && restoreMinimized) {
+            desktop.restore_window(BigInt(existingWindow.id));
+          }
+          desktop.focus_window(BigInt(existingWindow.id));
+          desktop.pan_to_window(BigInt(existingWindow.id));
+          return existingWindow.id;
+        } else {
+          // No existing window - launch new one
+          return Number(desktop.launch_app(appId));
+        }
+      } catch (e) {
+        console.error('[useWindows] Error in launchOrFocusApp:', e);
+        // Fall back to launching new window
+        return Number(desktop.launch_app(appId));
+      }
+    },
+    [desktop]
+  );
+
   return {
     createWindow,
     closeWindow,
@@ -228,5 +266,6 @@ export function useWindowActions() {
     restoreWindow,
     launchApp,
     launchTerminal,
+    launchOrFocusApp,
   };
 }

@@ -7,6 +7,21 @@ import { PermissionsPanel } from './panels/PermissionsPanel';
 import { ThemePanel } from './panels/ThemePanel';
 import styles from './SettingsApp.module.css';
 
+// Custom event type for settings navigation
+declare global {
+  interface WindowEventMap {
+    'settings:navigate': CustomEvent<{ section: SettingsArea }>;
+  }
+}
+
+// Pending navigation state - used when Settings is opened from another component
+// This handles the race condition where the event is dispatched before Settings mounts
+let pendingNavigation: SettingsArea | null = null;
+
+export function setPendingSettingsNavigation(section: SettingsArea) {
+  pendingNavigation = section;
+}
+
 // Settings areas
 type SettingsArea = 'general' | 'identity' | 'permissions' | 'theme';
 
@@ -171,6 +186,38 @@ export function SettingsApp() {
       return prev;
     });
   }, [state.timeFormat24h, state.timezone, state.hasNeuralKey, state.machineKeyCount, state.linkedAccountCount, createContentForArea]);
+
+  // Listen for external navigation events (e.g., from Identity Panel)
+  useEffect(() => {
+    const handleNavigateEvent = (event: CustomEvent<{ section: SettingsArea }>) => {
+      const { section } = event.detail;
+      console.log('[SettingsApp] Received navigation event:', section);
+      
+      // Navigate to the requested section
+      if (section && AREA_LABELS[section]) {
+        handleAreaSelect(section);
+      }
+    };
+
+    window.addEventListener('settings:navigate', handleNavigateEvent);
+    return () => {
+      window.removeEventListener('settings:navigate', handleNavigateEvent);
+    };
+  }, [handleAreaSelect]);
+
+  // Check for pending navigation on mount (handles race condition when Settings is opened)
+  // Note: We intentionally use a ref to capture handleAreaSelect to avoid re-running
+  // this effect when handleAreaSelect changes - we only want to check pending navigation once
+  const handleAreaSelectRef = useRef(handleAreaSelect);
+  handleAreaSelectRef.current = handleAreaSelect;
+  
+  useEffect(() => {
+    if (pendingNavigation) {
+      console.log('[SettingsApp] Found pending navigation:', pendingNavigation);
+      handleAreaSelectRef.current(pendingNavigation);
+      pendingNavigation = null;
+    }
+  }, []); // Only run on mount
 
   return (
     <Panel border="none" className={styles.container}>

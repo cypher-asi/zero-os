@@ -126,19 +126,6 @@
   padding: 0;
 }
 
-/* Avatar */
-.avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--color-accent-muted, rgba(1, 244, 203, 0.2));
-  border: 1px solid var(--color-accent, rgba(1, 244, 203, 0.4));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-accent, #01f4cb);
-  flex-shrink: 0;
-}
 
 /* Menu */
 .menu {

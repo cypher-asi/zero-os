@@ -1,22 +1,15 @@
 import { useEffect, useRef, useState, useMemo, useCallback, type ReactNode } from 'react';
-import { Panel, PanelDrill, type PanelDrillItem, Menu, type MenuItem } from '@cypher-asi/zui';
-import { Info, Layers, User, Lock, LogOut, Clock } from 'lucide-react';
+import { Panel, PanelDrill, type PanelDrillItem, Menu, type MenuItem, Avatar } from '@cypher-asi/zui';
+import { Info, Layers, User, Lock, LogOut, Clock, Brain, Cpu, Link } from 'lucide-react';
 import { useIdentity, formatUserId, getSessionTimeRemaining } from '../../desktop/hooks/useIdentity';
 import { useZeroIdAuth } from '../../desktop/hooks/useZeroIdAuth';
+import { useWindowActions } from '../../desktop/hooks/useWindows';
+import { setPendingSettingsNavigation } from '../../apps/SettingsApp/SettingsApp';
 import { ZeroIdLoginPanel } from './panels/ZeroIdLoginPanel';
 import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelProps {
   onClose: () => void;
-}
-
-// Simple avatar component
-function Avatar({ name }: { size?: string; status?: string; name: string }) {
-  return (
-    <div className={styles.avatar}>
-      <User size={20} />
-    </div>
-  );
 }
 
 /** Format a ZERO ID user key for display */
@@ -32,6 +25,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const identity = useIdentity();
   const { remoteAuthState } = useZeroIdAuth();
+  const { launchOrFocusApp } = useWindowActions();
   
   // Stack state for drill-down navigation (subpanel overlay)
   const [stack, setStack] = useState<PanelDrillItem[]>([]);
@@ -50,6 +44,20 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
   const isZeroIdConnected = !!remoteAuthState;
   const zeroIdUserKey = remoteAuthState?.userKey;
 
+  // Open Settings app at Identity section
+  const openIdentitySettings = useCallback(() => {
+    // Set pending navigation (handles case when Settings isn't open yet)
+    setPendingSettingsNavigation('identity');
+    // Also dispatch custom event (handles case when Settings is already open)
+    window.dispatchEvent(new CustomEvent('settings:navigate', {
+      detail: { section: 'identity' }
+    }));
+    // Launch or focus the Settings app
+    launchOrFocusApp('settings');
+    // Close the identity panel
+    onClose();
+  }, [launchOrFocusApp, onClose]);
+
   // Handle menu selection - open subpanel overlay
   const handleSelect = useCallback(async (id: string) => {
     console.log('[identity-panel] Selected:', id);
@@ -58,8 +66,15 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
     let subPanelLabel = '';
     
     switch (id) {
+      case 'neural-key':
+      case 'machine-keys':
+      case 'linked-accounts':
+        // These items open Settings > Identity
+        openIdentitySettings();
+        return;
+        
       case 'login-zero-id':
-        subPanelLabel = isZeroIdConnected ? 'ZERO ID' : 'Login w/ ZERO ID';
+        subPanelLabel = isZeroIdConnected ? 'ZERO ID' : 'Login';
         subPanelContent = <ZeroIdLoginPanel key="login-zero-id" />;
         break;
         
@@ -88,7 +103,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
         { id, label: subPanelLabel, content: subPanelContent }
       ]);
     }
-  }, [identity, onClose, isZeroIdConnected]);
+  }, [identity, onClose, isZeroIdConnected, openIdentitySettings]);
 
   // Handle breadcrumb navigation within subpanel
   const handleNavigate = useCallback((_id: string, index: number) => {
@@ -117,6 +132,10 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
   // Dynamic nav items based on ZERO ID connection state
   const navItems: MenuItem[] = useMemo(() => [
+    // Identity settings shortcuts (open Settings > Identity)
+    { id: 'neural-key', label: 'Neural Key', icon: <Brain size={14} /> },
+    { id: 'machine-keys', label: 'Machine Keys', icon: <Cpu size={14} /> },
+    { id: 'linked-accounts', label: 'Linked Accounts', icon: <Link size={14} /> },
     { id: 'vault', label: 'Vault', icon: <Lock size={14} />, disabled: true },
     { id: 'information', label: 'Information', icon: <Info size={14} />, disabled: true },
     { type: 'separator' },
@@ -124,7 +143,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
       id: 'login-zero-id', 
       label: isZeroIdConnected 
         ? `Connected · ${formatUserKey(zeroIdUserKey || '')}` 
-        : 'Login w/ ZERO ID',
+        : 'Login',
       icon: isZeroIdConnected 
         ? <div className={styles.connectedIndicator}><User size={14} /></div>
         : <User size={14} />,
@@ -151,7 +170,7 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
         {/* Section 3: Profile Data */}
         <div className={styles.profileSection}>
-          <Avatar name={displayName} />
+          <Avatar name={displayName} icon size="lg" />
           <div className={styles.userInfo}>
             <span className={styles.userName}>{displayName}</span>
             <span className={styles.userUid}>{displayUid}</span>
