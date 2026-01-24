@@ -53,9 +53,16 @@
 
 .buttons {
   display: flex;
-  gap: 4px;
+  gap: 0;
   position: relative;
   z-index: 11; /* Above resize handles (z-index: 10) so they don't show resize cursor */
+}
+
+/* Make maximize icon smaller and thinner for visual balance */
+.buttons :global([data-action="maximize"]) svg,
+.buttons :global(button:nth-child(2)) svg {
+  transform: scale(0.81);
+  stroke-width: 1.75;
 }
 
 .content {

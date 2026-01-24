@@ -15,13 +15,13 @@ pub struct FrameStyle {
 
 /// Default frame style matching the UI design
 pub const FRAME_STYLE: FrameStyle = FrameStyle {
-    title_bar_height: 28.0,
+    title_bar_height: 34.0,
     border_radius: 0.0,
     border_width: 1.0,
     shadow_blur: 20.0,
     shadow_offset_y: 4.0,
     resize_handle_size: 8.0,
-    button_size: 28.0,  // ZUI --control-height-xs
+    button_size: 32.0,  // ZUI --control-height-sm
     button_spacing: 0.0,
     button_margin: 0.0,
 };
