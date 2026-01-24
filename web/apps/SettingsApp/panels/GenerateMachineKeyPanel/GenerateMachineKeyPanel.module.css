@@ -1,0 +1,137 @@
+/* GenerateMachineKeyPanel specific styles */
+
+.panelContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Identity section container with padding */
+.identitySection {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  text-align: center;
+}
+
+/* Hero icon */
+.heroIcon {
+  color: var(--color-accent, #01f4cb);
+  opacity: 0.8;
+}
+
+.heroTitle {
+  font-weight: 600;
+  color: var(--color-text-primary, #fff);
+}
+
+.heroDescription {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+  max-width: 300px;
+  line-height: 1.5;
+}
+
+/* Add form */
+.addForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.addFormButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Key scheme section */
+.schemeSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.schemeLabel {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+  text-align: left;
+}
+
+/* Key scheme select dropdown */
+.schemeSelect {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--color-text-primary, #fff);
+  background-color: var(--color-surface, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.5)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.schemeSelect:hover {
+  border-color: var(--color-border-hover, rgba(255, 255, 255, 0.2));
+}
+
+.schemeSelect:focus {
+  border-color: var(--color-accent, #01f4cb);
+  box-shadow: 0 0 0 2px rgba(1, 244, 203, 0.15);
+}
+
+.schemeSelect option {
+  background-color: var(--color-surface-elevated, #1a1a1a);
+  color: var(--color-text-primary, #fff);
+  padding: 8px;
+}
+
+/* Info card (for PQ warning) */
+.infoCard {
+  background: var(--color-info-muted, rgba(59, 130, 246, 0.08));
+  border: 1px solid var(--color-info, rgba(59, 130, 246, 0.25));
+}
+
+.infoCardItem {
+  color: var(--color-info, #3b82f6);
+}
+
+.infoCardItem svg {
+  color: var(--color-info, #3b82f6);
+}
+
+/* Danger card */
+.dangerCard {
+  background: var(--color-danger-muted, rgba(239, 68, 68, 0.08));
+  border: 1px solid var(--color-danger, rgba(239, 68, 68, 0.25));
+}
+
+.dangerCardItem {
+  color: var(--color-danger, #ef4444);
+}
+
+.dangerCardItem svg {
+  color: var(--color-danger, #ef4444);
+}
+
+/* Spinner animation */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

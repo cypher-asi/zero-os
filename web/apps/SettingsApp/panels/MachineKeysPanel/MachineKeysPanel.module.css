@@ -1,0 +1,187 @@
+/* MachineKeysPanel specific styles */
+
+.panelContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Collapsible Section - full bleed */
+.collapsibleSection {
+  border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.collapsibleSection:last-child {
+  border-bottom: none;
+}
+
+/* Menu content wrapper with bottom padding only */
+.menuContent {
+  padding: 0 0 12px 0;
+  overflow: visible;
+}
+
+/* Remove left/right padding from direct children of collapsible (GroupCollapsible content area) */
+.collapsibleSection > :global(div) > :global(div) {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Centered content wrapper - for hero screens that should be vertically centered */
+.centeredContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px 16px;
+  gap: 12px;
+  text-align: center;
+}
+
+/* Hero icon */
+.heroIcon {
+  color: var(--color-accent, #01f4cb);
+  opacity: 0.8;
+}
+
+.heroTitle {
+  font-weight: 600;
+  color: var(--color-text-primary, #fff);
+}
+
+.heroDescription {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+  max-width: 300px;
+  line-height: 1.5;
+}
+
+/* Identity section container with padding */
+.identitySection {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Danger card */
+.dangerCard {
+  background: var(--color-danger-muted, rgba(239, 68, 68, 0.08));
+  border: 1px solid var(--color-danger, rgba(239, 68, 68, 0.25));
+}
+
+.dangerCardItem {
+  color: var(--color-danger, #ef4444);
+}
+
+.dangerCardItem svg {
+  color: var(--color-danger, #ef4444);
+}
+
+/* Warning card */
+.warningCard {
+  background: var(--color-warning-muted, rgba(245, 158, 11, 0.08));
+  border: 1px solid var(--color-warning, rgba(245, 158, 11, 0.25));
+}
+
+.warningCardItem {
+  color: var(--color-warning, #f59e0b);
+}
+
+.warningCardItem svg {
+  color: var(--color-warning, #f59e0b);
+}
+
+/* Confirm buttons */
+.confirmButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+/* Spinner animation */
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =============================================================================
+   Machine Item - Single line layout to match other settings items
+   Icon | Name · Key | Copy | Current | Action
+   ============================================================================= */
+
+.machineItem {
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 16px;
+  gap: 8px;
+  transition: background 0.15s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.machineItem:hover {
+  background: var(--color-surface-hover, rgba(255, 255, 255, 0.04));
+}
+
+/* Raise z-index when dropdown is open (focus-within) */
+.machineItem:focus-within {
+  z-index: 100;
+}
+
+/* Icon section */
+.machineItemIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.6));
+}
+
+/* Content section - Single line: Name · Key */
+.machineItemContentSingle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Primary label (machine name) */
+.machineItemLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary, #fff);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Key fingerprint (inline) */
+.machineItemKey {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: relative;
+  top: 2px;
+}
+
+/* Action section - ButtonMore */
+.machineItemAction {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}

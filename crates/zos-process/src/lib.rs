@@ -14,6 +14,8 @@
 #![no_std]
 extern crate alloc;
 
+// ToString is used in wasm32 target builds
+#[allow(unused_imports)]
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -156,6 +158,18 @@ pub mod syscall {
     /// Returns: request_id (response delivered via IPC with bool)
     pub const SYS_STORAGE_EXISTS: u32 = 0x74;
 
+    // === Network (0x90 - 0x9F) ===
+    // These are HAL-level HTTP fetch operations for the Network Service.
+    // Applications should use the Network Service via IPC (MSG_NET_REQUEST).
+    //
+    // Network syscalls are ASYNC and return a request_id immediately.
+    // The result is delivered via IPC (MSG_NET_RESULT) to the requesting process.
+
+    /// Start async HTTP fetch (returns request_id)
+    /// Args: request JSON in data buffer
+    /// Returns: request_id (response delivered via IPC with HttpResponse)
+    pub const SYS_NETWORK_FETCH: u32 = 0x90;
+
     // =========================================================================
     // Deprecated VFS syscalls (kept for backward compatibility)
     // These are superseded by the VFS IPC service (zos_vfs::VfsClient)
@@ -228,8 +242,9 @@ pub mod error {
 // Re-export all IPC modules for convenient access
 pub use zos_ipc::{
     console, diagnostics, identity_cred, identity_key, identity_machine, identity_perm,
-    identity_query, identity_remote, identity_session, identity_user, init, kernel, permission,
-    pm, revoke_reason, slots, storage, supervisor, vfs_dir, vfs_file, vfs_meta, vfs_quota,
+    identity_query, identity_remote, identity_session, identity_user, identity_zid, init, kernel,
+    net, permission, pm, revoke_reason, slots, storage, supervisor, vfs_dir, vfs_file, vfs_meta,
+    vfs_quota,
 };
 
 /// Console input message tag - used by terminal for receiving keyboard input.
@@ -475,7 +490,8 @@ pub fn send(_endpoint_slot: u32, _tag: u32, _data: &[u8]) -> Result<(), u32> {
 /// Receive a message from an endpoint (non-blocking)
 #[cfg(target_arch = "wasm32")]
 pub fn receive(endpoint_slot: u32) -> Option<ReceivedMessage> {
-    let mut buffer = [0u8; 4096];
+    // Buffer sized to support large IPC messages (e.g., PQ hybrid keys ~6KB)
+    let mut buffer = [0u8; 16384];
     unsafe {
         let result = zos_syscall(SYS_RECEIVE, endpoint_slot, 0, 0) as i32;
         if result <= 0 {
@@ -1259,6 +1275,44 @@ pub fn storage_exists_async(key: &str) -> Result<u32, u32> {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn storage_exists_async(_key: &str) -> Result<u32, u32> {
+    Err(error::E_NOSYS)
+}
+
+// ============================================================================
+// Async Network Syscalls (for Network Service)
+// ============================================================================
+//
+// These syscalls initiate async network (HTTP) operations and return a request_id
+// immediately. The result is delivered via MSG_NET_RESULT IPC message.
+//
+// Only the Network Service should use these - applications use IPC to Network Service.
+
+/// Start async HTTP fetch operation.
+///
+/// This syscall returns immediately with a request_id. When the operation
+/// completes, the result is delivered via MSG_NET_RESULT IPC message.
+///
+/// # Arguments
+/// - `request_json`: JSON-serialized HttpRequest bytes
+///
+/// # Returns
+/// - `Ok(request_id)`: Request ID to match with result
+/// - `Err(code)`: Failed to start operation
+#[cfg(target_arch = "wasm32")]
+pub fn network_fetch_async(request_json: &[u8]) -> Result<u32, u32> {
+    unsafe {
+        zos_send_bytes(request_json.as_ptr(), request_json.len() as u32);
+        let result = zos_syscall(SYS_NETWORK_FETCH, request_json.len() as u32, 0, 0);
+        if result as i32 >= 0 {
+            Ok(result)
+        } else {
+            Err(result)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn network_fetch_async(_request_json: &[u8]) -> Result<u32, u32> {
     Err(error::E_NOSYS)
 }
 

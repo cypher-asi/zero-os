@@ -1,17 +1,17 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ZERO OS Desktop</title>
-    <link rel="icon" href="data:,">
-</head>
-<body>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
     <!-- Loading overlay -->
     <div id="loading">
-        <h2>Zero OS</h2>
-        <div class="spinner"></div>
-        <p id="loading-status">Loading...</p>
+      <h2>Zero OS</h2>
+      <div class="spinner"></div>
+      <p id="loading-status">Loading...</p>
     </div>
 
     <!-- React root -->
@@ -19,126 +19,129 @@
 
     <!-- Axiom IndexedDB Storage -->
     <script>
-        window.AxiomStorage = {
-            db: null,
-            DB_NAME: 'zos-axiom',
-            DB_VERSION: 2,
-            STORE_NAME: 'commits',
-            
-            async init() {
-                if (this.db) return true;
-                
-                return new Promise((resolve, reject) => {
-                    const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
-                    
-                    request.onupgradeneeded = (event) => {
-                        const db = event.target.result;
-                        if (db.objectStoreNames.contains('log')) {
-                            db.deleteObjectStore('log');
-                        }
-                        if (!db.objectStoreNames.contains(this.STORE_NAME)) {
-                            const store = db.createObjectStore(this.STORE_NAME, { keyPath: 'seq' });
-                            store.createIndex('timestamp', 'timestamp', { unique: false });
-                            store.createIndex('commit_type', 'commit_type', { unique: false });
-                        }
-                    };
-                    
-                    request.onsuccess = () => {
-                        this.db = request.result;
-                        console.log('[axiom-storage] IndexedDB initialized');
-                        resolve(true);
-                    };
-                    
-                    request.onerror = () => {
-                        console.error('[axiom-storage] IndexedDB error:', request.error);
-                        reject(request.error);
-                    };
-                });
-            },
-            
-            async persistEntry(entry) {
-                if (!this.db) await this.init();
-                return new Promise((resolve, reject) => {
-                    const tx = this.db.transaction(this.STORE_NAME, 'readwrite');
-                    const store = tx.objectStore(this.STORE_NAME);
-                    const request = store.put(entry);
-                    request.onsuccess = () => resolve(entry.seq);
-                    request.onerror = () => reject(request.error);
-                });
-            },
-            
-            async persistEntries(entries) {
-                if (!this.db) await this.init();
-                if (!entries || entries.length === 0) return 0;
-                return new Promise((resolve, reject) => {
-                    const tx = this.db.transaction(this.STORE_NAME, 'readwrite');
-                    const store = tx.objectStore(this.STORE_NAME);
-                    let count = 0;
-                    for (const entry of entries) {
-                        const request = store.put(entry);
-                        request.onsuccess = () => count++;
-                    }
-                    tx.oncomplete = () => resolve(count);
-                    tx.onerror = () => reject(tx.error);
-                });
-            },
-            
-            async loadAll() {
-                if (!this.db) await this.init();
-                return new Promise((resolve, reject) => {
-                    const tx = this.db.transaction(this.STORE_NAME, 'readonly');
-                    const store = tx.objectStore(this.STORE_NAME);
-                    const request = store.getAll();
-                    request.onsuccess = () => {
-                        const entries = request.result || [];
-                        entries.sort((a, b) => a.seq - b.seq);
-                        resolve(entries);
-                    };
-                    request.onerror = () => reject(request.error);
-                });
-            },
-            
-            async getCount() {
-                if (!this.db) await this.init();
-                return new Promise((resolve, reject) => {
-                    const tx = this.db.transaction(this.STORE_NAME, 'readonly');
-                    const store = tx.objectStore(this.STORE_NAME);
-                    const request = store.count();
-                    request.onsuccess = () => resolve(request.result);
-                    request.onerror = () => reject(request.error);
-                });
-            },
-            
-            async clear() {
-                if (!this.db) await this.init();
-                return new Promise((resolve, reject) => {
-                    const tx = this.db.transaction(this.STORE_NAME, 'readwrite');
-                    const store = tx.objectStore(this.STORE_NAME);
-                    const request = store.clear();
-                    request.onsuccess = () => resolve();
-                    request.onerror = () => reject(request.error);
-                });
-            },
-            
-            async getLastSeq() {
-                if (!this.db) await this.init();
-                return new Promise((resolve, reject) => {
-                    const tx = this.db.transaction(this.STORE_NAME, 'readonly');
-                    const store = tx.objectStore(this.STORE_NAME);
-                    const request = store.openCursor(null, 'prev');
-                    request.onsuccess = () => {
-                        const cursor = request.result;
-                        resolve(cursor ? cursor.value.seq : -1);
-                    };
-                    request.onerror = () => reject(request.error);
-                });
+      window.AxiomStorage = {
+        db: null,
+        DB_NAME: 'zos-axiom',
+        DB_VERSION: 2,
+        STORE_NAME: 'commits',
+
+        async init() {
+          if (this.db) return true;
+
+          return new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.DB_NAME, this.DB_VERSION);
+
+            request.onupgradeneeded = (event) => {
+              const db = event.target.result;
+              if (db.objectStoreNames.contains('log')) {
+                db.deleteObjectStore('log');
+              }
+              if (!db.objectStoreNames.contains(this.STORE_NAME)) {
+                const store = db.createObjectStore(this.STORE_NAME, { keyPath: 'seq' });
+                store.createIndex('timestamp', 'timestamp', { unique: false });
+                store.createIndex('commit_type', 'commit_type', { unique: false });
+              }
+            };
+
+            request.onsuccess = () => {
+              this.db = request.result;
+              console.log('[axiom-storage] IndexedDB initialized');
+              resolve(true);
+            };
+
+            request.onerror = () => {
+              console.error('[axiom-storage] IndexedDB error:', request.error);
+              reject(request.error);
+            };
+          });
+        },
+
+        async persistEntry(entry) {
+          if (!this.db) await this.init();
+          return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(this.STORE_NAME, 'readwrite');
+            const store = tx.objectStore(this.STORE_NAME);
+            const request = store.put(entry);
+            request.onsuccess = () => resolve(entry.seq);
+            request.onerror = () => reject(request.error);
+          });
+        },
+
+        async persistEntries(entries) {
+          if (!this.db) await this.init();
+          if (!entries || entries.length === 0) return 0;
+          return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(this.STORE_NAME, 'readwrite');
+            const store = tx.objectStore(this.STORE_NAME);
+            let count = 0;
+            for (const entry of entries) {
+              const request = store.put(entry);
+              request.onsuccess = () => count++;
             }
-        };
+            tx.oncomplete = () => resolve(count);
+            tx.onerror = () => reject(tx.error);
+          });
+        },
+
+        async loadAll() {
+          if (!this.db) await this.init();
+          return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(this.STORE_NAME, 'readonly');
+            const store = tx.objectStore(this.STORE_NAME);
+            const request = store.getAll();
+            request.onsuccess = () => {
+              const entries = request.result || [];
+              entries.sort((a, b) => a.seq - b.seq);
+              resolve(entries);
+            };
+            request.onerror = () => reject(request.error);
+          });
+        },
+
+        async getCount() {
+          if (!this.db) await this.init();
+          return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(this.STORE_NAME, 'readonly');
+            const store = tx.objectStore(this.STORE_NAME);
+            const request = store.count();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+        },
+
+        async clear() {
+          if (!this.db) await this.init();
+          return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(this.STORE_NAME, 'readwrite');
+            const store = tx.objectStore(this.STORE_NAME);
+            const request = store.clear();
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+          });
+        },
+
+        async getLastSeq() {
+          if (!this.db) await this.init();
+          return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(this.STORE_NAME, 'readonly');
+            const store = tx.objectStore(this.STORE_NAME);
+            const request = store.openCursor(null, 'prev');
+            request.onsuccess = () => {
+              const cursor = request.result;
+              resolve(cursor ? cursor.value.seq : -1);
+            };
+            request.onerror = () => reject(request.error);
+          });
+        },
+      };
     </script>
 
     <!-- ZosStorage - Unified IndexedDB Storage -->
     <script src="/zos-storage.js"></script>
 
+    <!-- ZosNetwork - Network HAL for HTTP requests -->
+    <script src="/zos-network.js"></script>
+
     <script type="module" src="./main.tsx"></script>
-</body>
+  </body>
 </html>

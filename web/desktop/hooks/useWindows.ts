@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import { useDesktopController, useSupervisor } from './useSupervisor';
-import { 
-  useWindowStore, 
-  selectWindows, 
+import {
+  useWindowStore,
+  selectWindows,
   selectFocusedId,
   type WindowInfo,
   type WindowData,
@@ -16,6 +16,42 @@ import {
 export type { WindowInfo, WindowData, WindowType };
 
 // =============================================================================
+// Return Types
+// =============================================================================
+
+/** Return type for useWindowActions hook */
+export interface UseWindowActionsReturn {
+  /** Create a new window */
+  createWindow: (
+    title: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    appId: string,
+    contentInteractive?: boolean
+  ) => number | null;
+  /** Close a window by ID */
+  closeWindow: (id: number) => void;
+  /** Focus a window by ID */
+  focusWindow: (id: number) => void;
+  /** Pan viewport to center on a window */
+  panToWindow: (id: number) => void;
+  /** Minimize a window */
+  minimizeWindow: (id: number) => void;
+  /** Maximize a window */
+  maximizeWindow: (id: number) => void;
+  /** Restore a window from minimized/maximized state */
+  restoreWindow: (id: number) => void;
+  /** Launch an app by ID */
+  launchApp: (appId: string) => number | null;
+  /** Launch a terminal with its own process */
+  launchTerminal: () => Promise<number | null>;
+  /** Launch an app or focus existing window */
+  launchOrFocusApp: (appId: string, restoreMinimized?: boolean) => number | null;
+}
+
+// =============================================================================
 // DEPRECATED POLLING HOOKS
 // =============================================================================
 // These hooks now use Zustand stores instead of polling.
@@ -24,7 +60,7 @@ export type { WindowInfo, WindowData, WindowType };
 
 /**
  * Hook to get all windows data.
- * 
+ *
  * @deprecated Use `useWindowStore(selectWindows)` directly for better performance.
  * This hook is kept for backward compatibility.
  */
@@ -34,7 +70,7 @@ export function useWindows(): WindowInfo[] {
 
 /**
  * Hook to get focused window ID.
- * 
+ *
  * @deprecated Use `useWindowStore(selectFocusedId)` directly for better performance.
  * This hook is kept for backward compatibility.
  */
@@ -46,12 +82,20 @@ export function useFocusedWindow(): number | null {
 let terminalWasmCache: Uint8Array | null = null;
 
 // Hook for window actions
-export function useWindowActions() {
+export function useWindowActions(): UseWindowActionsReturn {
   const desktop = useDesktopController();
   const supervisor = useSupervisor();
 
   const createWindow = useCallback(
-    (title: string, x: number, y: number, w: number, h: number, appId: string, contentInteractive: boolean = false) => {
+    (
+      title: string,
+      x: number,
+      y: number,
+      w: number,
+      h: number,
+      appId: string,
+      contentInteractive: boolean = false
+    ) => {
       if (!desktop) return null;
       return Number(desktop.create_window(title, x, y, w, h, appId, contentInteractive));
     },
@@ -61,14 +105,14 @@ export function useWindowActions() {
   const closeWindow = useCallback(
     (id: number) => {
       if (!desktop) return;
-      
+
       // Get the process ID associated with this window (if any)
       // Note: Returns BigInt (u64) from Rust, or undefined
       const processId = desktop.get_window_process_id(BigInt(id));
-      
+
       // Close the window
       desktop.close_window(BigInt(id));
-      
+
       // Kill the associated process if it exists
       // Note: kill_process takes u64 (BigInt), processId is already BigInt from Rust
       if (processId !== undefined && supervisor) {

@@ -24,7 +24,6 @@ extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::String;
-use alloc::vec;
 use alloc::vec::Vec;
 use zos_apps::manifest::TIME_SERVICE_MANIFEST;
 use zos_apps::syscall;

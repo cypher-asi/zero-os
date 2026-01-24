@@ -1,13 +1,13 @@
 /**
  * Permission Store - Centralized state for app permission management.
- * 
+ *
  * Manages capability permission requests, grants, and revocations.
  * Replaces the PermissionsContext and usePermissions hook state.
  */
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import type { ObjectType, Permissions, CapabilityRequest } from '../apps/shared/app-protocol';
+import type { ObjectType, Permissions, CapabilityRequest } from '../apps/_wire-format/app-protocol';
 
 // =============================================================================
 // Permission Types
@@ -56,7 +56,7 @@ interface PermissionStoreState {
   pendingRequest: PermissionRequest | null;
   grantedCapabilities: Map<number, CapabilityInfo[]>;
   isLoading: boolean;
-  
+
   // Actions
   setPendingRequest: (request: PermissionRequest | null) => void;
   grantCapabilities: (pid: number, caps: CapabilityInfo[]) => void;
@@ -76,29 +76,35 @@ export const usePermissionStore = create<PermissionStoreState>()(
     pendingRequest: null,
     grantedCapabilities: new Map(),
     isLoading: false,
-    
+
     setPendingRequest: (pendingRequest) => set({ pendingRequest }),
-    
-    grantCapabilities: (pid, caps) => set((state) => {
-      const next = new Map(state.grantedCapabilities);
-      const existing = next.get(pid) || [];
-      next.set(pid, [...existing, ...caps]);
-      return { grantedCapabilities: next };
-    }),
-    
-    revokeCapability: (pid, objectType) => set((state) => {
-      const next = new Map(state.grantedCapabilities);
-      const existing = next.get(pid) || [];
-      next.set(pid, existing.filter(c => c.objectType !== objectType));
-      return { grantedCapabilities: next };
-    }),
-    
-    revokeAllCapabilities: (pid) => set((state) => {
-      const next = new Map(state.grantedCapabilities);
-      next.delete(pid);
-      return { grantedCapabilities: next };
-    }),
-    
+
+    grantCapabilities: (pid, caps) =>
+      set((state) => {
+        const next = new Map(state.grantedCapabilities);
+        const existing = next.get(pid) || [];
+        next.set(pid, [...existing, ...caps]);
+        return { grantedCapabilities: next };
+      }),
+
+    revokeCapability: (pid, objectType) =>
+      set((state) => {
+        const next = new Map(state.grantedCapabilities);
+        const existing = next.get(pid) || [];
+        next.set(
+          pid,
+          existing.filter((c) => c.objectType !== objectType)
+        );
+        return { grantedCapabilities: next };
+      }),
+
+    revokeAllCapabilities: (pid) =>
+      set((state) => {
+        const next = new Map(state.grantedCapabilities);
+        next.delete(pid);
+        return { grantedCapabilities: next };
+      }),
+
     clearPendingRequest: () => {
       const pending = get().pendingRequest;
       if (pending) {
@@ -106,9 +112,9 @@ export const usePermissionStore = create<PermissionStoreState>()(
       }
       set({ pendingRequest: null });
     },
-    
+
     setLoading: (isLoading) => set({ isLoading }),
-    
+
     getGrantedCaps: (pid) => {
       return get().grantedCapabilities.get(pid) || [];
     },
@@ -126,7 +132,7 @@ export const selectPendingRequest = (state: PermissionStoreState) => state.pendi
 export const selectIsLoading = (state: PermissionStoreState) => state.isLoading;
 
 /** Select all granted capabilities (the Map) */
-export const selectAllGrantedCapabilities = (state: PermissionStoreState) => 
+export const selectAllGrantedCapabilities = (state: PermissionStoreState) =>
   state.grantedCapabilities;
 
 /** Select granted capabilities for a specific PID (returns selector function) */
@@ -138,8 +144,7 @@ export const selectHasCapabilities = (pid: number) => (state: PermissionStoreSta
   (state.grantedCapabilities.get(pid)?.length ?? 0) > 0;
 
 /** Select count of processes with capabilities */
-export const selectProcessCount = (state: PermissionStoreState) => 
-  state.grantedCapabilities.size;
+export const selectProcessCount = (state: PermissionStoreState) => state.grantedCapabilities.size;
 
 /** Select total capability count across all processes */
 export const selectTotalCapabilityCount = (state: PermissionStoreState) => {

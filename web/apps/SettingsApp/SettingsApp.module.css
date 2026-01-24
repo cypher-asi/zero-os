@@ -24,8 +24,8 @@
 }
 
 /* Override ZUI navigator item height to match window header (34px) */
-.sidebar :global([class*="navItem"]),
-.sidebar :global([class*="NavItem"]) {
+.sidebar :global([class*='navItem']),
+.sidebar :global([class*='NavItem']) {
   min-height: 34px;
   height: 34px;
 }
@@ -47,17 +47,17 @@
 }
 
 /* Override ZUI menu item height to match window header (34px) */
-.content :global([class*="menuItem"]),
-.content :global([class*="MenuItem"]) {
+.content :global([class*='menuItem']),
+.content :global([class*='MenuItem']) {
   min-height: 34px;
   height: 34px;
 }
 
 /* Override ZUI breadcrumb header height to match (34px) */
-.content :global([class*="breadcrumb"]),
-.content :global([class*="Breadcrumb"]),
-.content :global([class*="panelHeader"]),
-.content :global([class*="PanelHeader"]) {
+.content :global([class*='breadcrumb']),
+.content :global([class*='Breadcrumb']),
+.content :global([class*='panelHeader']),
+.content :global([class*='PanelHeader']) {
   min-height: 34px;
   height: 34px;
 }

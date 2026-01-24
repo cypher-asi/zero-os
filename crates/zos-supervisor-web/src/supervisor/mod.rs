@@ -55,8 +55,9 @@ mod spawn;
 use std::collections::HashMap;
 
 use zos_hal::HAL;
-use zos_kernel::{Kernel, ProcessId};
+use zos_kernel::{ProcessId, System};
 use wasm_bindgen::prelude::*;
+use js_sys;
 
 use crate::hal::WasmHal;
 use crate::pingpong::PingPongTestState;
@@ -84,13 +85,20 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, &'static str> {
         .collect()
 }
 
-/// Supervisor - manages the kernel and processes
+/// Supervisor - manages the system and processes
+///
+/// The Supervisor is a thin boundary layer between userspace WASM processes
+/// and the System (which combines Axiom verification + KernelCore execution).
+///
+/// All syscalls flow through `system.process_syscall()` to ensure proper
+/// audit logging via SysLog and state recording via CommitLog.
 ///
 /// Note: Desktop functionality has been moved to the `zos-desktop` crate.
 /// Load `DesktopController` from `zos_desktop.js` for desktop operations.
 #[wasm_bindgen]
 pub struct Supervisor {
-    kernel: Kernel<WasmHal>,
+    /// System combines Axiom (verification layer) and KernelCore (execution layer)
+    system: System<WasmHal>,
     /// Per-process console callbacks (PID -> JS callback function)
     /// Each terminal instance registers its own callback to receive output
     console_callbacks: HashMap<u64, js_sys::Function>,
@@ -169,10 +177,10 @@ impl Supervisor {
         console_error_panic_hook::set_once();
 
         let hal = WasmHal::new();
-        let kernel = Kernel::new(hal);
+        let system = System::new(hal);
 
         Self {
-            kernel,
+            system,
             console_callbacks: HashMap::new(),
             console_callback: None,
             spawn_callback: None,
@@ -295,7 +303,7 @@ impl Supervisor {
         let process_id = ProcessId(pid);
         
         // Verify process exists
-        if self.kernel.get_process(process_id).is_none() {
+        if self.system.get_process(process_id).is_none() {
             log(&format!("[supervisor] send_input_to_process: PID {} not found", pid));
             return;
         }
@@ -316,7 +324,7 @@ impl Supervisor {
         
         // Send console input via capability-checked IPC
         let supervisor_pid = ProcessId(0);
-        match self.kernel.ipc_send(
+        match self.system.ipc_send(
             supervisor_pid,
             supervisor_slot,
             zos_kernel::MSG_CONSOLE_INPUT,
@@ -359,7 +367,7 @@ impl Supervisor {
         let supervisor_pid = ProcessId(0);
         use zos_ipc::supervisor::MSG_SUPERVISOR_CONSOLE_INPUT;
         
-        match self.kernel.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_CONSOLE_INPUT, payload) {
+        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_CONSOLE_INPUT, payload) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Routed {} bytes to PID {} via Init",
@@ -409,7 +417,7 @@ impl Supervisor {
         
         let supervisor_pid = ProcessId(0);
         
-        match self.kernel.ipc_send(supervisor_pid, pm_slot, MSG_SUPERVISOR_REVOKE_CAP, payload) {
+        match self.system.ipc_send(supervisor_pid, pm_slot, MSG_SUPERVISOR_REVOKE_CAP, payload) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Sent revoke request to PM for PID {} slot {}",
@@ -447,7 +455,7 @@ impl Supervisor {
     
     /// Find the terminal process ID (returns first terminal found)
     fn find_terminal_pid(&self) -> Option<ProcessId> {
-        for (pid, proc) in self.kernel.list_processes() {
+        for (pid, proc) in self.system.list_processes() {
             if proc.name == "terminal" {
                 return Some(pid);
             }
@@ -476,7 +484,7 @@ impl Supervisor {
         };
 
         let mut ctx = PingPongContext {
-            kernel: &mut self.kernel,
+            system: &mut self.system,
             write_console: &write_console,
             request_spawn: &request_spawn,
         };
@@ -500,14 +508,14 @@ impl Supervisor {
     /// Poll and process syscalls from Worker SharedArrayBuffer mailboxes
     #[wasm_bindgen]
     pub fn poll_syscalls(&mut self) -> usize {
-        let pending = self.kernel.hal().poll_syscalls();
+        let pending = self.system.hal().poll_syscalls();
         let count = pending.len();
 
         // Collect syscall info to process (to avoid borrowing issues)
         let syscalls: Vec<_> = pending
             .into_iter()
             .map(|s| {
-                let data = self.kernel.hal().read_syscall_data(s.pid);
+                let data = self.system.hal().read_syscall_data(s.pid);
                 (s, data)
             })
             .collect();
@@ -524,7 +532,7 @@ impl Supervisor {
             );
 
             // Write result and wake worker
-            self.kernel.hal().complete_syscall(syscall_info.pid, result);
+            self.system.hal().complete_syscall(syscall_info.pid, result);
         }
 
         // Progress the ping-pong test state machine if running
@@ -545,7 +553,7 @@ impl Supervisor {
         data: &[u8],
     ) -> i32 {
         // Check if process exists in kernel
-        if self.kernel.get_process(pid).is_none() {
+        if self.system.get_process(pid).is_none() {
             log(&format!(
                 "[supervisor] Syscall from unknown process {}",
                 pid.0
@@ -572,12 +580,12 @@ impl Supervisor {
         // Route all other syscalls through the Axiom gateway
         let args4 = [args[0], args[1], args[2], 0];
         let (result, _rich_result, response_data) =
-            self.kernel.execute_raw_syscall(pid, syscall_num, args4, data);
+            self.system.process_syscall(pid, syscall_num, args4, data);
 
         // Always write response data (even if empty) to clear stale data from previous syscalls.
         // This prevents the process from reading leftover data from a prior syscall
         // (e.g., SYS_DEBUG text being misinterpreted as an IPC message).
-        self.kernel.hal().write_syscall_data(pid.0, &response_data);
+        self.system.hal().write_syscall_data(pid.0, &response_data);
 
         result as i32
     }
@@ -597,7 +605,7 @@ impl Supervisor {
         let args4 = [0u32, 0, 0, 0];
 
         // Route through gateway for audit logging
-        let (result, _, _) = self.kernel.execute_raw_syscall(pid, 0x01, args4, data);
+        let (result, _, _) = self.system.process_syscall(pid, 0x01, args4, data);
 
         // Process the debug message for supervisor-level actions
         if let Ok(s) = std::str::from_utf8(data) {
@@ -606,7 +614,7 @@ impl Supervisor {
 
         // Clear data buffer to prevent stale debug message text from being
         // misinterpreted as IPC message data by subsequent syscalls
-        self.kernel.hal().write_syscall_data(pid.0, &[]);
+        self.system.hal().write_syscall_data(pid.0, &[]);
 
         result as i32
     }
@@ -617,9 +625,9 @@ impl Supervisor {
         if let Some(service_name) = msg.strip_prefix("INIT:SPAWN:") {
             self.handle_debug_spawn(service_name);
         } else if msg.starts_with("INIT:GRANT:") {
-            syscall::handle_init_grant(&mut self.kernel, msg);
+            syscall::handle_init_grant(&mut self.system, msg);
         } else if msg.starts_with("INIT:REVOKE:") {
-            syscall::handle_init_revoke(&mut self.kernel, msg);
+            syscall::handle_init_revoke(&mut self.system, msg);
         } else if msg.starts_with("INIT:PERM_RESPONSE:") {
             log(&format!("[supervisor] Permission response: {}", msg));
         } else if msg.starts_with("INIT:PERM_LIST:") {
@@ -871,7 +879,7 @@ impl Supervisor {
         
         let supervisor_pid = ProcessId(0);
         
-        match self.kernel.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_IPC_DELIVERY, payload) {
+        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_IPC_DELIVERY, payload) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Routed IPC to PID {} endpoint {} tag 0x{:x} via Init",
@@ -908,11 +916,11 @@ impl Supervisor {
 
         // Route through gateway for kernel state + audit logging
         let args4 = [exit_code, 0, 0, 0];
-        let (result, _, _) = self.kernel.execute_raw_syscall(pid, 0x11, args4, &[]);
+        let (result, _, _) = self.system.process_syscall(pid, 0x11, args4, &[]);
 
         // Kill the worker process
         let handle = WasmProcessHandle::new(pid.0);
-        let _ = self.kernel.hal().kill_process(&handle);
+        let _ = self.system.hal().kill_process(&handle);
 
         result as i32
     }
@@ -926,7 +934,7 @@ impl Supervisor {
         let args4 = [0u32, 0, 0, 0];
 
         // Route through gateway for audit logging
-        let (result, _, _) = self.kernel.execute_raw_syscall(pid, 0x07, args4, data);
+        let (result, _, _) = self.system.process_syscall(pid, 0x07, args4, data);
 
         // Deliver console output directly to UI
         if let Ok(text) = std::str::from_utf8(data) {
@@ -947,7 +955,7 @@ impl Supervisor {
     pub fn process_worker_messages(&mut self) -> usize {
         const MAX_MESSAGES_PER_BATCH: usize = 5000;
 
-        let incoming = self.kernel.hal().incoming_messages();
+        let incoming = self.system.hal().incoming_messages();
         let messages: Vec<WorkerMessage> = {
             if let Ok(mut queue) = incoming.lock() {
                 let take_count = queue.len().min(MAX_MESSAGES_PER_BATCH);
@@ -962,7 +970,7 @@ impl Supervisor {
         for msg in messages {
             match msg.msg_type {
                 WorkerMessageType::Ready { memory_size } => {
-                    self.kernel
+                    self.system
                         .hal()
                         .update_process_memory(msg.pid, memory_size);
                     log(&format!(
@@ -982,7 +990,7 @@ impl Supervisor {
                 WorkerMessageType::Terminated => {
                     log(&format!("[supervisor] Worker {} terminated", msg.pid));
                     let pid = ProcessId(msg.pid);
-                    if self.kernel.get_process(pid).is_some() {
+                    if self.system.get_process(pid).is_some() {
                         // Route through Init for proper auditing
                         self.cleanup_process_state(msg.pid);
                         if msg.pid != 1 && self.init_endpoint_slot.is_some() {
@@ -993,11 +1001,11 @@ impl Supervisor {
                     }
                 }
                 WorkerMessageType::MemoryUpdate { memory_size } => {
-                    self.kernel
+                    self.system
                         .hal()
                         .update_process_memory(msg.pid, memory_size);
                     let pid = ProcessId(msg.pid);
-                    self.kernel.update_process_memory(pid, memory_size);
+                    self.system.update_process_memory(pid, memory_size);
                 }
                 WorkerMessageType::Yield => {
                     // Worker yielded - nothing to do
@@ -1015,7 +1023,7 @@ impl Supervisor {
         let process_id = ProcessId(pid);
 
         // Check if process exists in kernel
-        if self.kernel.get_process(process_id).is_none() {
+        if self.system.get_process(process_id).is_none() {
             log(&format!(
                 "[supervisor] Syscall from unknown process {}",
                 pid
@@ -1036,9 +1044,9 @@ impl Supervisor {
                         ));
                         self.request_spawn(service_name, service_name);
                     } else if s.starts_with("INIT:GRANT:") {
-                        syscall::handle_init_grant(&mut self.kernel, s);
+                        syscall::handle_init_grant(&mut self.system, s);
                     } else if s.starts_with("INIT:REVOKE:") {
-                        syscall::handle_init_revoke(&mut self.kernel, s);
+                        syscall::handle_init_revoke(&mut self.system, s);
                     } else if let Some(init_msg) = s.strip_prefix("INIT:") {
                         log(&format!("[init] {}", init_msg));
                     } else {
@@ -1048,7 +1056,7 @@ impl Supervisor {
                 SyscallResult::Ok(0)
             }
             2 => self
-                .kernel
+                .system
                 .handle_syscall(process_id, Syscall::CreateEndpoint),
             3 => {
                 let slot = args[0];
@@ -1058,18 +1066,18 @@ impl Supervisor {
                     tag,
                     data: data.to_vec(),
                 };
-                self.kernel.handle_syscall(process_id, syscall)
+                self.system.handle_syscall(process_id, syscall)
             }
             4 => {
                 let slot = args[0];
                 let syscall = Syscall::Receive {
                     endpoint_slot: slot,
                 };
-                self.kernel.handle_syscall(process_id, syscall)
+                self.system.handle_syscall(process_id, syscall)
             }
-            5 => self.kernel.handle_syscall(process_id, Syscall::ListCaps),
+            5 => self.system.handle_syscall(process_id, Syscall::ListCaps),
             6 => self
-                .kernel
+                .system
                 .handle_syscall(process_id, Syscall::ListProcesses),
             7 => {
                 let exit_code = args[0] as i32;
@@ -1086,7 +1094,7 @@ impl Supervisor {
                 }
                 SyscallResult::Ok(0)
             }
-            8 => self.kernel.handle_syscall(process_id, Syscall::GetTime),
+            8 => self.system.handle_syscall(process_id, Syscall::GetTime),
             9 => SyscallResult::Ok(0), // SYS_YIELD
             _ => {
                 log(&format!(
@@ -1098,7 +1106,7 @@ impl Supervisor {
         };
 
         // Send result back to Worker
-        syscall::send_syscall_result(self.kernel.hal(), pid, result);
+        syscall::send_syscall_result(self.system.hal(), pid, result);
     }
 
     /// Kill a process by PID.
@@ -1149,7 +1157,7 @@ impl Supervisor {
         let payload = (target_pid.0 as u32).to_le_bytes().to_vec();
         let supervisor_pid = ProcessId(0);
         
-        match self.kernel.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_KILL_PROCESS, payload) {
+        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_KILL_PROCESS, payload) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Sent kill request for PID {} to Init",
@@ -1158,7 +1166,7 @@ impl Supervisor {
                 // Init will invoke SYS_KILL and notify supervisor via INIT:KILL_OK/FAIL
                 // We still need to kill the HAL worker
                 let handle = WasmProcessHandle::new(target_pid.0);
-                let _ = self.kernel.hal().kill_process(&handle);
+                let _ = self.system.hal().kill_process(&handle);
             }
             Err(e) => {
                 log(&format!(
@@ -1178,9 +1186,9 @@ impl Supervisor {
             "[supervisor] Direct kill of PID {} (Init unavailable or bootstrap)",
             process_id.0
         ));
-        self.kernel.kill_process(process_id);
+        self.system.kill_process(process_id);
         let handle = WasmProcessHandle::new(process_id.0);
-        let _ = self.kernel.hal().kill_process(&handle);
+        let _ = self.system.hal().kill_process(&handle);
     }
 
     /// Clean up supervisor state for a killed process
@@ -1204,7 +1212,7 @@ impl Supervisor {
     pub fn kill_all_processes(&mut self) {
         log("[supervisor] Killing all processes");
         let pids: Vec<ProcessId> = self
-            .kernel
+            .system
             .list_processes()
             .into_iter()
             .map(|(pid, _)| pid)
@@ -1308,7 +1316,7 @@ impl Supervisor {
         
         let supervisor_pid = ProcessId(0);
         
-        match self.kernel.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_IPC_DELIVERY, payload) {
+        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_IPC_DELIVERY, payload) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Routed {} bytes to {} service PID {} via Init",
@@ -1325,7 +1333,7 @@ impl Supervisor {
     /// Looks up "{service_name}_service" in the process list.
     fn find_service_pid(&self, service_name: &str) -> Option<ProcessId> {
         let expected_name = format!("{}_service", service_name);
-        for (pid, proc) in self.kernel.list_processes() {
+        for (pid, proc) in self.system.list_processes() {
             if proc.name == expected_name {
                 return Some(pid);
             }
@@ -1375,7 +1383,7 @@ impl Supervisor {
         ));
         
         // Look up which PID requested this
-        let pid = match self.kernel.hal().take_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
             None => {
                 log(&format!(
@@ -1406,7 +1414,7 @@ impl Supervisor {
             request_id
         ));
         
-        let pid = match self.kernel.hal().take_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
             None => return,
         };
@@ -1428,7 +1436,7 @@ impl Supervisor {
             request_id
         ));
         
-        let pid = match self.kernel.hal().take_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
             None => return,
         };
@@ -1454,7 +1462,7 @@ impl Supervisor {
             request_id, keys_json.len()
         ));
         
-        let pid = match self.kernel.hal().take_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
             None => return,
         };
@@ -1481,7 +1489,7 @@ impl Supervisor {
             request_id, exists
         ));
         
-        let pid = match self.kernel.hal().take_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
             None => return,
         };
@@ -1503,7 +1511,7 @@ impl Supervisor {
             request_id, error
         ));
         
-        let pid = match self.kernel.hal().take_storage_request_pid(request_id) {
+        let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
             None => return,
         };
@@ -1528,6 +1536,75 @@ impl Supervisor {
         const INPUT_ENDPOINT_SLOT: u32 = 1;
         
         self.route_ipc_via_init(pid, INPUT_ENDPOINT_SLOT, storage_const::MSG_STORAGE_RESULT, payload);
+    }
+
+    // =========================================================================
+    // Network HAL Callbacks (called from JavaScript ZosNetwork)
+    // =========================================================================
+
+    /// Called by JavaScript ZosNetwork when a network fetch completes.
+    ///
+    /// # Arguments
+    /// * `request_id` - The request ID returned from network_fetch_async
+    /// * `pid` - The process ID that made the request
+    /// * `result` - JSON object with result: { Ok: HttpResponse } or { Err: string }
+    #[wasm_bindgen(js_name = "onNetworkResult")]
+    pub fn on_network_result(&mut self, request_id: u32, pid: u64, result: JsValue) {
+        log(&format!(
+            "[supervisor] onNetworkResult: request_id={}, pid={}",
+            request_id, pid
+        ));
+
+        // Verify the PID matches and remove from pending
+        let expected_pid = match self.system.hal().take_network_request_pid(request_id) {
+            Some(p) => p,
+            None => {
+                log(&format!(
+                    "[supervisor] Unknown network request_id: {}",
+                    request_id
+                ));
+                return;
+            }
+        };
+
+        if expected_pid != pid {
+            log(&format!(
+                "[supervisor] Network request PID mismatch: expected {}, got {}",
+                expected_pid, pid
+            ));
+            return;
+        }
+
+        // Serialize the result to JSON bytes
+        let result_json = match js_sys::JSON::stringify(&result) {
+            Ok(s) => s.as_string().unwrap_or_default(),
+            Err(_) => {
+                log("[supervisor] Failed to stringify network result");
+                r#"{"result":{"Err":"Internal error"}}"#.to_string()
+            }
+        };
+
+        // Build MSG_NET_RESULT payload
+        // Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+        let result_bytes = result_json.as_bytes();
+        let mut payload = Vec::with_capacity(9 + result_bytes.len());
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(0); // NET_OK - the actual result status is in the JSON
+        payload.extend_from_slice(&(result_bytes.len() as u32).to_le_bytes());
+        payload.extend_from_slice(result_bytes);
+
+        // Deliver to requesting process via Init
+        self.deliver_network_result(pid, &payload);
+    }
+
+    /// Deliver a network result to a process via IPC through Init.
+    fn deliver_network_result(&mut self, pid: u64, payload: &[u8]) {
+        // Route through Init for capability-checked delivery
+        const INPUT_ENDPOINT_SLOT: u32 = 1;
+        // MSG_NET_RESULT = 0x9002
+        const MSG_NET_RESULT: u32 = 0x9002;
+        
+        self.route_ipc_via_init(pid, INPUT_ENDPOINT_SLOT, MSG_NET_RESULT, payload);
     }
 
 }

@@ -117,7 +117,7 @@ impl Supervisor {
         // This is the first of two allowed direct kernel calls during bootstrap.
         // See module-level documentation for justification.
         self.supervisor_pid = self
-            .kernel
+            .system
             .register_process_with_pid(ProcessId(0), "supervisor");
         log(&format!(
             "[supervisor] Registered supervisor process as PID {} (bootstrap exception)",

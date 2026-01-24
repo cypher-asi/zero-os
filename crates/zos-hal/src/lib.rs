@@ -255,6 +255,49 @@ pub trait HAL: Send + Sync + 'static {
         None
     }
 
+    // === Async Network Operations ===
+    // These methods start async network (HTTP) operations and return immediately with a request_id.
+    // Results are delivered via push callbacks (see onNetworkResult in JS HAL).
+
+    /// Start async HTTP fetch operation (returns immediately)
+    ///
+    /// The result will be delivered via MSG_NET_RESULT IPC callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation
+    /// * `request` - Serialized HttpRequest (JSON bytes)
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn network_fetch_async(&self, _pid: u64, _request: &[u8]) -> Result<NetworkRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Get the PID associated with a pending network request
+    ///
+    /// # Arguments
+    /// * `request_id` - The request ID to look up
+    ///
+    /// # Returns
+    /// * `Some(pid)` - The PID that initiated this request
+    /// * `None` - Request ID not found
+    fn get_network_request_pid(&self, _request_id: NetworkRequestId) -> Option<u64> {
+        None
+    }
+
+    /// Remove and return the PID for a completed network request
+    ///
+    /// # Arguments
+    /// * `request_id` - The request ID to remove
+    ///
+    /// # Returns
+    /// * `Some(pid)` - The PID that initiated this request (now removed)
+    /// * `None` - Request ID not found
+    fn take_network_request_pid(&self, _request_id: NetworkRequestId) -> Option<u64> {
+        None
+    }
+
     // === Bootstrap Storage (Supervisor Only) ===
     // These methods are used ONLY during supervisor initialization before processes exist.
     // They provide direct storage access for bootstrap operations like creating the root
@@ -343,6 +386,9 @@ pub enum HalError {
 /// Request ID for tracking async storage operations
 pub type StorageRequestId = u32;
 
+/// Request ID for tracking async network operations
+pub type NetworkRequestId = u32;
+
 /// Process message types (used in IPC between HAL and processes)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -390,5 +436,90 @@ impl NumericProcessHandle {
 
     pub fn id(&self) -> u64 {
         self.0
+    }
+}
+
+/// A minimal test HAL for unit testing
+///
+/// This HAL implementation provides stub implementations for all HAL methods,
+/// suitable for unit tests that don't need full platform functionality.
+#[derive(Default)]
+pub struct TestHal {
+    time: core::sync::atomic::AtomicU64,
+}
+
+impl TestHal {
+    pub fn new() -> Self {
+        Self {
+            time: core::sync::atomic::AtomicU64::new(0),
+        }
+    }
+}
+
+unsafe impl Send for TestHal {}
+unsafe impl Sync for TestHal {}
+
+impl HAL for TestHal {
+    type ProcessHandle = NumericProcessHandle;
+
+    fn spawn_process(&self, _name: &str, _binary: &[u8]) -> Result<Self::ProcessHandle, HalError> {
+        Ok(NumericProcessHandle::new(1))
+    }
+
+    fn kill_process(&self, _handle: &Self::ProcessHandle) -> Result<(), HalError> {
+        Ok(())
+    }
+
+    fn send_to_process(&self, _handle: &Self::ProcessHandle, _msg: &[u8]) -> Result<(), HalError> {
+        Ok(())
+    }
+
+    fn is_process_alive(&self, _handle: &Self::ProcessHandle) -> bool {
+        true
+    }
+
+    fn get_process_memory_size(&self, _handle: &Self::ProcessHandle) -> Result<usize, HalError> {
+        Ok(65536)
+    }
+
+    fn allocate(&self, size: usize, _align: usize) -> Result<*mut u8, HalError> {
+        let layout = core::alloc::Layout::from_size_align(size, 8)
+            .map_err(|_| HalError::InvalidArgument)?;
+        let ptr = unsafe { alloc::alloc::alloc(layout) };
+        if ptr.is_null() {
+            Err(HalError::OutOfMemory)
+        } else {
+            Ok(ptr)
+        }
+    }
+
+    fn deallocate(&self, ptr: *mut u8, size: usize, _align: usize) {
+        if !ptr.is_null() {
+            let layout = core::alloc::Layout::from_size_align(size, 8).unwrap();
+            unsafe { alloc::alloc::dealloc(ptr, layout) };
+        }
+    }
+
+    fn now_nanos(&self) -> u64 {
+        self.time.load(core::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn wallclock_ms(&self) -> u64 {
+        1737504000000
+    }
+
+    fn random_bytes(&self, buf: &mut [u8]) -> Result<(), HalError> {
+        for byte in buf.iter_mut() {
+            *byte = 0x42;
+        }
+        Ok(())
+    }
+
+    fn debug_write(&self, _msg: &str) {
+        // No-op for tests
+    }
+
+    fn poll_messages(&self) -> Vec<(Self::ProcessHandle, Vec<u8>)> {
+        Vec::new()
     }
 }

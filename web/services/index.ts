@@ -12,9 +12,21 @@ export {
   type PublicIdentifiers,
   type NeuralKeyGenerated,
   type MachineKeyCapabilities,
+  type MachineKeyCapability,
+  type LegacyMachineKeyCapabilities,
   type MachineKeyRecord,
   type LocalKeyStore,
   type Supervisor,
+  type KeyScheme,
+  // Capability format helpers
+  isLegacyCapabilities,
+  convertLegacyCapabilities,
+  // Credential types
+  type CredentialType,
+  type LinkedCredential,
+  // ZID types
+  type ZidTokens,
+  type ZidSession,
   // Typed Error Classes
   IdentityServiceError,
   ServiceNotFoundError,
@@ -27,7 +39,24 @@ export {
   InvalidShardError,
   StorageError,
   DerivationFailedError,
-} from './IdentityServiceClient';
+  // Credential Error Classes
+  CredentialAlreadyLinkedError,
+  InvalidCredentialFormatError,
+  VerificationFailedError,
+  VerificationCodeExpiredError,
+  NoPendingVerificationError,
+  CredentialNotFoundError,
+  // ZID Error Classes
+  ZidNetworkError,
+  ZidAuthenticationFailedError,
+  ZidInvalidChallengeError,
+  ZidMachineKeyNotFoundError,
+  ZidServerError,
+  ZidMachineNotRegisteredError,
+  ZidSessionExpiredError,
+  ZidInvalidRefreshTokenError,
+  ZidEnrollmentFailedError,
+} from './identity';
 
 // Time service for time settings
 export {
@@ -47,5 +76,10 @@ export {
   getIdentityKeyStorePath,
   getMachineKeysDir,
   getMachineKeyPath,
+  getCredentialsPath,
+  getZidSessionPath,
   type VfsInode,
 } from './VfsStorageClient';
+
+// Identity utilities
+export { userIdToBigInt } from './identityUtils';

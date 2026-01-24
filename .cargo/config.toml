@@ -11,6 +11,8 @@
 # - initial-memory/max-memory: Set memory size (4MB initial, 16MB max)
 #
 # NOTE: This requires nightly Rust and -Z build-std to compile std with atomics
+# The atomics/bulk-memory/mutable-globals target features are still unstable,
+# which produces warnings. These are expected and harmless.
 rustflags = [
     "-C", "target-feature=+atomics,+bulk-memory,+mutable-globals",
     "-C", "link-args=--import-memory --shared-memory --initial-memory=4194304 --max-memory=16777216"

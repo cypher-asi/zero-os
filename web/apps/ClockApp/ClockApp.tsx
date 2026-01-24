@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Panel, Text, Label } from '@cypher-asi/zui';
 import { Clock } from 'lucide-react';
-import { decodeClockState, ClockState } from '../shared/app-protocol';
+import { decodeClockState, ClockState } from '../_wire-format/app-protocol';
 import styles from './ClockApp.module.css';
 
 /**
@@ -27,7 +27,20 @@ export function ClockApp() {
       const timeDisplay = `${hours}:${minutes}:${seconds}`;
 
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const months = [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ];
       const dayName = days[now.getUTCDay()];
       const monthName = months[now.getUTCMonth()];
       const dayOfMonth = now.getUTCDate();
@@ -47,7 +60,8 @@ export function ClockApp() {
     if (decoded) setState(decoded);
   };
 
-  (window as unknown as { clockAppHandler?: (data: Uint8Array) => void }).clockAppHandler = handleMessage;
+  (window as unknown as { clockAppHandler?: (data: Uint8Array) => void }).clockAppHandler =
+    handleMessage;
 
   return (
     <Panel className={styles.container}>
@@ -70,7 +84,11 @@ export function ClockApp() {
         {/* Timezone Info */}
         <Panel className={styles.infoRow}>
           <Label size="xs">{state.timezone}</Label>
-          {state.is24Hour && <Label size="xs" variant="success">24h</Label>}
+          {state.is24Hour && (
+            <Label size="xs" variant="success">
+              24h
+            </Label>
+          )}
         </Panel>
       </Panel>
     </Panel>

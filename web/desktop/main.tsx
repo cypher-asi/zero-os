@@ -38,10 +38,7 @@ async function init() {
     ]);
 
     // Initialize both modules
-    await Promise.all([
-      supervisorModule.default(),
-      desktopModule.default(),
-    ]);
+    await Promise.all([supervisorModule.default(), desktopModule.default()]);
 
     showLoading('Creating supervisor...');
     const supervisor = new supervisorModule.Supervisor() as Supervisor;
@@ -97,6 +94,37 @@ async function init() {
       console.warn('[main] ZosStorage not available - storage syscalls will fail');
     }
 
+    // Initialize ZosNetwork with the supervisor reference for async network callbacks
+    // This enables network_fetch_async syscalls for HTTP requests (used by identity service for ZID auth)
+    console.log('[main] Checking for ZosNetwork...', {
+      hasZosNetwork: !!window.ZosNetwork,
+      hasZosStorage: !!window.ZosStorage,
+      windowKeys: Object.keys(window).filter(k => k.startsWith('Zos')),
+    });
+    
+    if (window.ZosNetwork) {
+      window.ZosNetwork.initSupervisor(supervisor);
+      console.log('[main] ZosNetwork supervisor reference set');
+    } else {
+      console.warn('[main] ZosNetwork not available - attempting dynamic load');
+      // Try to load the script dynamically
+      const script = document.createElement('script');
+      script.src = '/zos-network.js';
+      script.onload = () => {
+        console.log('[main] ZosNetwork script loaded dynamically');
+        if (window.ZosNetwork) {
+          window.ZosNetwork.initSupervisor(supervisor);
+          console.log('[main] ZosNetwork supervisor reference set (after dynamic load)');
+        } else {
+          console.error('[main] ZosNetwork still not available after script load');
+        }
+      };
+      script.onerror = (e) => {
+        console.error('[main] Failed to load ZosNetwork script:', e);
+      };
+      document.head.appendChild(script);
+    }
+
     // Initialize settings store with supervisor reference
     // This enables time settings sync with time_service when it's running
     useSettingsStore.getState().initializeService(supervisor);
@@ -113,7 +141,7 @@ async function init() {
     // Start main processing loop
     // Process syscalls from workers using SharedArrayBuffer + Atomics.
     // Workers make syscalls (including SYS_RECEIVE for IPC) which are processed here.
-    // 
+    //
     // Note: deliver_pending_messages() is DEPRECATED and intentionally not called.
     // See crates/zos-supervisor-web/src/supervisor/ipc.rs for details.
     setInterval(() => {

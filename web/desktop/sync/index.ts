@@ -1,6 +1,6 @@
 /**
  * Desktop Sync Module
- * 
+ *
  * Re-exports sync utilities for the desktop render loop and callbacks.
  */
 

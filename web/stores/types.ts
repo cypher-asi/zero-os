@@ -1,6 +1,6 @@
 /**
  * Shared types used across Zustand stores.
- * 
+ *
  * These types are the single source of truth for state shape.
  * They consolidate types previously scattered across individual hooks.
  */

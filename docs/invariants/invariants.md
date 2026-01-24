@@ -26,7 +26,8 @@ The supervisor communicates with the system via **IPC to processes**, which then
 1. **All Authority Flows Through Axiom**
 
    * No process, service, or supervisor may directly invoke the kernel
-   * **Axiom is the sole syscall entry point**
+   * **Axiom is the verification layer through which all syscalls must pass**
+   * Axiom and KernelCore are **separate components** - Axiom gates access to KernelCore
    * All kernel interaction is mediated, verified, and recorded by Axiom
 
 2. **Kernel State Is Mutated Only by Commits**
@@ -103,12 +104,55 @@ The supervisor communicates with the system via **IPC to processes**, which then
 
 ## 3. Axiom Invariants (Verification & Recording Layer)
 
+**Architecture: System Struct**
+
+The `System<H>` struct combines Axiom (verification layer) and KernelCore (execution layer):
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                          SYSTEM                              │
+│                                                             │
+│   ┌───────────────────────────────────────────────────┐     │
+│   │                      AXIOM                         │     │
+│   │   - Verification layer (sender identity)          │     │
+│   │   - SysLog (audit trail)                          │     │
+│   │   - CommitLog (state mutations)                   │     │
+│   │   - THE entry point for all syscalls              │     │
+│   └───────────────────────────────────────────────────┘     │
+│                              │                               │
+│                              │ (verified request)            │
+│                              ▼                               │
+│   ┌───────────────────────────────────────────────────┐     │
+│   │                   KERNEL CORE                      │     │
+│   │   - Capabilities & CSpaces                        │     │
+│   │   - Process state                                 │     │
+│   │   - IPC endpoints                                 │     │
+│   │   - Emits Commits for state changes               │     │
+│   └───────────────────────────────────────────────────┘     │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+The System struct instantiates Axiom and KernelCore separately:
+
+```rust
+pub struct System<H: HAL> {
+    pub axiom: AxiomGateway,  // Verification layer
+    pub kernel: KernelCore<H>, // Execution layer
+}
+```
+
+This architecture ensures Axiom and Kernel remain **separate concerns** with no coupling or ownership relationship.
+
 9. **Axiom Is the Single Syscall Gateway**
 
-   * All syscalls follow:
+   * Axiom does **not** own the kernel; rather, it **gates all access** to the kernel
+   * Axiom and KernelCore are separate components combined in the `System` struct
+   * The syscall flow is:
 
      ```
-     Process → Axiom → Kernel → Axiom → Process
+     Process → System.process_syscall() → Axiom (verify, log request) →
+     KernelCore (execute, emit commits) → Axiom (record commits, log response) → Process
      ```
    * No bypass paths exist
 
@@ -341,7 +385,19 @@ The following are known violations in the current codebase that must be fixed to
 | ~~`Supervisor.revoke_capability()`~~ | `zos-supervisor-web/src/supervisor/mod.rs` | 14, 16 | **FIXED** | ~~Route through PermissionManager process via IPC~~ |
 | ~~`kernel.deliver_console_input()`~~ | `zos-kernel/src/kernel_impl.rs` | 13, 16 | **FIXED** | ~~Use IPC with capability granted by Init~~ |
 | ~~`kernel.deliver_supervisor_ipc()`~~ | `zos-kernel/src/kernel_impl.rs` | 13, 16 | **FIXED** | ~~Method removed; routes via Init~~ |
+| ~~Kernel owns Axiom~~ | `zos-kernel/src/kernel.rs` | 1, 9 | **FIXED** | ~~System struct separates Axiom and KernelCore~~ |
 | Direct `kernel.kill_process()` | `zos-supervisor-web/src/supervisor/mod.rs` | 13, 16 | **NOT FIXED** | Route kill requests through Init via `MSG_SUPERVISOR_KILL_PROCESS` |
+
+### Architectural Changes
+
+**Axiom/Kernel Boundary Refactor**: The architecture has been refactored so that Axiom and KernelCore are **separate components**:
+
+- **Before**: `Kernel` struct owned `AxiomGateway` (inverted relationship)
+- **After**: `System<H>` struct holds both `Axiom` and `KernelCore` separately
+
+The old `Kernel` wrapper is deprecated and will be removed in a future version. All new code should use `System::new(hal)` instead of `Kernel::new(hal)`.
+
+**Direct KernelCore Access Violation**: Any code that calls `KernelCore` methods directly without going through `System.process_syscall()` violates the verification boundary. All syscalls must flow through Axiom to ensure proper audit logging and commit recording.
 
 ### Fixed Violations
 

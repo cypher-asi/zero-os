@@ -78,7 +78,7 @@ impl PingPongTestState {
 
 /// Context needed for ping-pong test operations
 pub(crate) struct PingPongContext<'a, H: zos_hal::HAL> {
-    pub kernel: &'a mut zos_kernel::Kernel<H>,
+    pub system: &'a mut zos_kernel::System<H>,
     pub write_console: &'a dyn Fn(&str),
     #[allow(dead_code)]
     pub request_spawn: &'a dyn Fn(&str, &str),
@@ -106,7 +106,7 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
             let ponger = ProcessId(ponger_pid);
 
             // Grant pinger's endpoint (slot 0) to ponger (so ponger can send pongs back)
-            match ctx.kernel.grant_capability(
+            match ctx.system.grant_capability(
                 pinger,
                 0,
                 ponger,
@@ -125,7 +125,7 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
             }
 
             // Grant ponger's endpoint (slot 0) to pinger (so pinger can send pings)
-            match ctx.kernel.grant_capability(
+            match ctx.system.grant_capability(
                 ponger,
                 0,
                 pinger,
@@ -166,7 +166,7 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
 
             // Put ponger in pong mode
             if let Err(e) = ctx
-                .kernel
+                .system
                 .send_to_process(ProcessId(2), ponger, CMD_PONG_MODE, vec![])
             {
                 (ctx.write_console)(&format!("  Error sending PONG_MODE: {:?}\n", e));
@@ -175,14 +175,14 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
             // Send ping command to pinger with iterations count
             let ping_data = iterations.to_le_bytes().to_vec();
             if let Err(e) = ctx
-                .kernel
+                .system
                 .send_to_process(ProcessId(2), pinger, CMD_PING, ping_data)
             {
                 (ctx.write_console)(&format!("  Error sending PING cmd: {:?}\n", e));
             }
 
             // Move to running state
-            let start_time = ctx.kernel.uptime_nanos();
+            let start_time = ctx.system.uptime_nanos();
             (ctx.write_console)("  Test running... (watch for results from processes)\n");
 
             PingPongTestState::Running {
@@ -200,7 +200,7 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
             start_time,
         } => {
             // Check if enough time has passed (timeout after 30 seconds)
-            let elapsed = ctx.kernel.uptime_nanos() - start_time;
+            let elapsed = ctx.system.uptime_nanos() - start_time;
             let elapsed_secs = elapsed / 1_000_000_000;
 
             if elapsed_secs >= 30 {
@@ -227,17 +227,17 @@ pub(crate) fn progress_pingpong_test<H: zos_hal::HAL>(
             // Send exit commands
             // NOTE: Uses deprecated send_to_process() - see module docs for migration plan
             let _ = ctx
-                .kernel
+                .system
                 .send_to_process(ProcessId(2), pinger, CMD_EXIT, vec![]);
             let _ = ctx
-                .kernel
+                .system
                 .send_to_process(ProcessId(2), ponger, CMD_EXIT, vec![]);
 
             // Kill processes in kernel
             // NOTE: Direct kernel.kill_process() for test cleanup.
             // In production code, this should route through Init.
-            ctx.kernel.kill_process(pinger);
-            ctx.kernel.kill_process(ponger);
+            ctx.system.kill_process(pinger);
+            ctx.system.kill_process(ponger);
 
             (ctx.write_console)(&format!(
                 "  Killed processes {} and {}\n",

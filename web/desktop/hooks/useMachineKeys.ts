@@ -1,12 +1,19 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { useIdentityStore, selectCurrentUser, useMachineKeysStore, selectMachineKeysState } from '../../stores';
-import { useSupervisor } from './useSupervisor';
 import {
-  IdentityServiceClient,
+  useIdentityStore,
+  selectCurrentUser,
+  useMachineKeysStore,
+  selectMachineKeysState,
+} from '../../stores';
+import type { KeyScheme, MachineKeyCapability } from '../../stores';
+import { useIdentityServiceClient } from './useIdentityServiceClient';
+import {
   type MachineKeyCapabilities as ServiceMachineKeyCapabilities,
   type MachineKeyRecord as ServiceMachineKeyRecord,
-  type Supervisor,
+  type KeyScheme as ServiceKeyScheme,
+  isLegacyCapabilities,
+  convertLegacyCapabilities,
   VfsStorageClient,
   getMachineKeysDir,
 } from '../../services';
@@ -16,6 +23,8 @@ export type {
   MachineKeyCapabilities,
   MachineKeyRecord,
   MachineKeysState,
+  KeyScheme,
+  MachineKeyCapability,
 } from '../../stores';
 
 /**
@@ -29,7 +38,11 @@ export interface UseMachineKeysReturn {
   /** Get a specific machine key */
   getMachineKey: (machineId: string) => Promise<import('../../stores').MachineKeyRecord | null>;
   /** Create a new machine key */
-  createMachineKey: (machineName?: string, capabilities?: Partial<import('../../stores').MachineKeyCapabilities>) => Promise<import('../../stores').MachineKeyRecord>;
+  createMachineKey: (
+    machineName?: string,
+    capabilities?: MachineKeyCapability[],
+    keyScheme?: KeyScheme
+  ) => Promise<import('../../stores').MachineKeyRecord>;
   /** Revoke a machine key */
   revokeMachineKey: (machineId: string) => Promise<void>;
   /** Rotate a machine key (new epoch) */
@@ -44,49 +57,63 @@ export interface UseMachineKeysReturn {
 
 function bytesToHex(bytes: number[] | string): string {
   if (typeof bytes === 'string') return bytes;
-  return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+  return bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
- * Convert service capabilities to public API format
+ * Convert service capabilities to public API format.
+ * Handles both modern (string array) and legacy (boolean struct) formats.
  */
-function convertCapabilities(caps: ServiceMachineKeyCapabilities): import('../../stores').MachineKeyCapabilities {
+function convertCapabilities(
+  caps: ServiceMachineKeyCapabilities
+): import('../../stores').MachineKeyCapabilities {
+  // Handle legacy format (boolean struct)
+  if (isLegacyCapabilities(caps)) {
+    const converted = convertLegacyCapabilities(caps);
+    return {
+      capabilities: converted.capabilities as MachineKeyCapability[],
+      expiresAt: converted.expires_at,
+    };
+  }
+
+  // Modern format (string array)
   return {
-    canAuthenticate: caps.can_authenticate,
-    canEncrypt: caps.can_encrypt,
-    canSignMessages: caps.can_sign_messages,
-    canAuthorizeMachines: caps.can_authorize_machines,
-    canRevokeMachines: caps.can_revoke_machines,
+    capabilities: caps.capabilities as MachineKeyCapability[],
     expiresAt: caps.expires_at,
   };
 }
 
 /**
- * Convert public API capabilities to service format
+ * Convert public API capabilities (string array) to service format.
  */
-function convertCapabilitiesForService(caps: Partial<import('../../stores').MachineKeyCapabilities>): ServiceMachineKeyCapabilities {
+function convertCapabilitiesForService(caps?: MachineKeyCapability[]): ServiceMachineKeyCapabilities {
+  // Default capabilities if none provided
+  const defaultCaps: MachineKeyCapability[] = ['AUTHENTICATE', 'ENCRYPT'];
+  const capabilities = caps && caps.length > 0 ? caps : defaultCaps;
+
   return {
-    can_authenticate: caps.canAuthenticate ?? true,
-    can_encrypt: caps.canEncrypt ?? true,
-    can_sign_messages: caps.canSignMessages ?? false,
-    can_authorize_machines: caps.canAuthorizeMachines ?? false,
-    can_revoke_machines: caps.canRevokeMachines ?? false,
-    expires_at: caps.expiresAt ?? null,
+    capabilities,
+    expires_at: null,
   };
 }
 
 /**
  * Convert service machine record to public API format
  */
-function convertMachineRecord(record: ServiceMachineKeyRecord, currentMachineId?: string): import('../../stores').MachineKeyRecord {
+function convertMachineRecord(
+  record: ServiceMachineKeyRecord,
+  currentMachineId?: string
+): import('../../stores').MachineKeyRecord {
   // machine_id comes as a number from JSON, convert to hex string
-  const machineIdHex = typeof record.machine_id === 'number'
-    ? '0x' + record.machine_id.toString(16).padStart(32, '0')
-    : record.machine_id.toString();
-  
-  const authorizedByHex = typeof record.authorized_by === 'number'
-    ? '0x' + record.authorized_by.toString(16).padStart(32, '0')
-    : record.authorized_by.toString();
+  const machineIdHex =
+    typeof record.machine_id === 'number'
+      ? '0x' + record.machine_id.toString(16).padStart(32, '0')
+      : record.machine_id.toString();
+
+  const authorizedByHex =
+    typeof record.authorized_by === 'number'
+      ? '0x' + record.authorized_by.toString(16).padStart(32, '0')
+      : record.authorized_by.toString();
 
   return {
     machineId: machineIdHex,
@@ -99,6 +126,13 @@ function convertMachineRecord(record: ServiceMachineKeyRecord, currentMachineId?
     lastSeenAt: record.last_seen_at,
     isCurrentDevice: machineIdHex === currentMachineId,
     epoch: record.epoch ?? 1, // Use service value, fallback to 1 for backward compatibility
+    keyScheme: record.key_scheme ?? 'classical', // Default to classical for backward compatibility
+    pqSigningPublicKey: record.pq_signing_public_key
+      ? bytesToHex(record.pq_signing_public_key)
+      : undefined,
+    pqEncryptionPublicKey: record.pq_encryption_public_key
+      ? bytesToHex(record.pq_encryption_public_key)
+      : undefined,
   };
 }
 
@@ -108,8 +142,10 @@ function convertMachineRecord(record: ServiceMachineKeyRecord, currentMachineId?
 
 export function useMachineKeys(): UseMachineKeysReturn {
   const currentUser = useIdentityStore(selectCurrentUser);
-  const supervisor = useSupervisor();
-  
+
+  // Use shared IdentityServiceClient hook
+  const { userId, getClientOrThrow, getUserIdOrThrow } = useIdentityServiceClient();
+
   // Use Zustand store for shared state
   // useShallow prevents infinite loops by comparing object values instead of references
   const state = useMachineKeysStore(useShallow(selectMachineKeysState));
@@ -122,42 +158,13 @@ export function useMachineKeys(): UseMachineKeysReturn {
   const setInitializing = useMachineKeysStore((s) => s.setInitializing);
   const reset = useMachineKeysStore((s) => s.reset);
 
-  // Create a stable reference to the IdentityServiceClient
-  const clientRef = useRef<IdentityServiceClient | null>(null);
-
-  // Initialize client when supervisor becomes available
-  useEffect(() => {
-    if (supervisor && !clientRef.current) {
-      clientRef.current = new IdentityServiceClient(supervisor as unknown as Supervisor);
-      console.log('[useMachineKeys] IdentityServiceClient initialized');
-    }
-  }, [supervisor]);
-
-  // Get user ID as BigInt for client API
-  const getUserIdBigInt = useCallback((): bigint | null => {
-    const userId = currentUser?.id;
-    if (!userId) return null;
-    if (typeof userId === 'string') {
-      if (userId.startsWith('0x')) {
-        return BigInt(userId);
-      }
-      try {
-        return BigInt(userId);
-      } catch {
-        return null;
-      }
-    }
-    return BigInt(userId);
-  }, [currentUser?.id]);
-
-  const listMachineKeys = useCallback(async (): Promise<import('../../stores').MachineKeyRecord[]> => {
-    const userId = getUserIdBigInt();
-    if (!userId) {
-      throw new Error('No user logged in');
-    }
+  const listMachineKeys = useCallback(async (): Promise<
+    import('../../stores').MachineKeyRecord[]
+  > => {
+    const userIdVal = getUserIdOrThrow();
 
     // Read directly from VfsStorage cache (synchronous, no IPC deadlock)
-    const machineDir = getMachineKeysDir(userId);
+    const machineDir = getMachineKeysDir(userIdVal);
 
     console.log(`[useMachineKeys] Listing machine keys from VFS cache: ${machineDir}`);
 
@@ -194,123 +201,140 @@ export function useMachineKeys(): UseMachineKeysReturn {
       setError(errorMsg);
       throw err;
     }
-  }, [getUserIdBigInt, state.currentMachineId, setLoading, setMachines, setError]);
+  }, [getUserIdOrThrow, state.currentMachineId, setLoading, setMachines, setError]);
 
-  const getMachineKey = useCallback(async (machineId: string): Promise<import('../../stores').MachineKeyRecord | null> => {
-    // For now, look up in current state
-    // Could add a specific get endpoint later
-    return state.machines.find(m => m.machineId === machineId) || null;
-  }, [state.machines]);
+  const getMachineKey = useCallback(
+    async (machineId: string): Promise<import('../../stores').MachineKeyRecord | null> => {
+      // For now, look up in current state
+      // Could add a specific get endpoint later
+      return state.machines.find((m) => m.machineId === machineId) || null;
+    },
+    [state.machines]
+  );
 
-  const createMachineKey = useCallback(async (
-    machineName?: string,
-    capabilities?: Partial<import('../../stores').MachineKeyCapabilities>
-  ): Promise<import('../../stores').MachineKeyRecord> => {
-    const userId = getUserIdBigInt();
-    if (!userId) {
-      throw new Error('No user logged in');
-    }
+  const createMachineKey = useCallback(
+    async (
+      machineName?: string,
+      capabilities?: MachineKeyCapability[],
+      keyScheme?: KeyScheme
+    ): Promise<import('../../stores').MachineKeyRecord> => {
+      const userIdVal = getUserIdOrThrow();
+      const client = getClientOrThrow();
 
-    const client = clientRef.current;
-    if (!client) {
-      throw new Error('Identity service client not available');
-    }
+      setLoading(true);
 
-    setLoading(true);
+      try {
+        const schemeToUse = keyScheme ?? 'classical';
+        console.log(
+          `[useMachineKeys] Creating machine key for user ${userIdVal} (scheme: ${schemeToUse})`
+        );
+        const serviceCaps = convertCapabilitiesForService(capabilities);
+        const serviceRecord = await client.createMachineKey(
+          userIdVal,
+          machineName || 'New Device',
+          serviceCaps,
+          schemeToUse as ServiceKeyScheme
+        );
+        const newMachine = convertMachineRecord(serviceRecord, state.currentMachineId || undefined);
 
-    try {
-      console.log(`[useMachineKeys] Creating machine key for user ${userId}`);
-      const serviceCaps = convertCapabilitiesForService(capabilities || {});
-      const serviceRecord = await client.createMachineKey(
-        userId,
-        machineName || 'New Device',
-        serviceCaps
-      );
-      const newMachine = convertMachineRecord(serviceRecord, state.currentMachineId || undefined);
+        addMachine(newMachine);
 
-      addMachine(newMachine);
+        return newMachine;
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to create machine key';
+        console.error('[useMachineKeys] createMachineKey error:', errorMsg);
+        setError(errorMsg);
+        throw err;
+      }
+    },
+    [getClientOrThrow, getUserIdOrThrow, state.currentMachineId, setLoading, addMachine, setError]
+  );
 
-      return newMachine;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to create machine key';
-      console.error('[useMachineKeys] createMachineKey error:', errorMsg);
-      setError(errorMsg);
-      throw err;
-    }
-  }, [getUserIdBigInt, state.currentMachineId, setLoading, addMachine, setError]);
+  const revokeMachineKey = useCallback(
+    async (machineId: string): Promise<void> => {
+      const userIdVal = getUserIdOrThrow();
+      const client = getClientOrThrow();
 
-  const revokeMachineKey = useCallback(async (machineId: string): Promise<void> => {
-    const userId = getUserIdBigInt();
-    if (!userId) {
-      throw new Error('No user logged in');
-    }
+      // Cannot revoke current machine
+      if (machineId === state.currentMachineId) {
+        throw new Error('Cannot revoke the current machine key');
+      }
 
-    const client = clientRef.current;
-    if (!client) {
-      throw new Error('Identity service client not available');
-    }
+      setLoading(true);
 
-    // Cannot revoke current machine
-    if (machineId === state.currentMachineId) {
-      throw new Error('Cannot revoke the current machine key');
-    }
+      try {
+        console.log(`[useMachineKeys] Revoking machine key ${machineId}`);
+        // Parse machine ID from hex string to bigint
+        const machineIdBigInt = BigInt(machineId);
+        await client.revokeMachineKey(userIdVal, machineIdBigInt);
 
-    setLoading(true);
+        removeMachine(machineId);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to revoke machine key';
+        console.error('[useMachineKeys] revokeMachineKey error:', errorMsg);
+        setError(errorMsg);
+        throw err;
+      }
+    },
+    [
+      getClientOrThrow,
+      getUserIdOrThrow,
+      state.currentMachineId,
+      setLoading,
+      removeMachine,
+      setError,
+    ]
+  );
 
-    try {
-      console.log(`[useMachineKeys] Revoking machine key ${machineId}`);
-      // Parse machine ID from hex string to bigint
-      const machineIdBigInt = BigInt(machineId);
-      await client.revokeMachineKey(userId, machineIdBigInt);
+  const rotateMachineKey = useCallback(
+    async (machineId: string): Promise<import('../../stores').MachineKeyRecord> => {
+      const userIdVal = getUserIdOrThrow();
+      const client = getClientOrThrow();
 
-      removeMachine(machineId);
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to revoke machine key';
-      console.error('[useMachineKeys] revokeMachineKey error:', errorMsg);
-      setError(errorMsg);
-      throw err;
-    }
-  }, [getUserIdBigInt, state.currentMachineId, setLoading, removeMachine, setError]);
+      const existingMachine = state.machines.find((m) => m.machineId === machineId);
+      if (!existingMachine) {
+        throw new Error('Machine not found');
+      }
 
-  const rotateMachineKey = useCallback(async (machineId: string): Promise<import('../../stores').MachineKeyRecord> => {
-    const userId = getUserIdBigInt();
-    if (!userId) {
-      throw new Error('No user logged in');
-    }
+      setLoading(true);
 
-    const client = clientRef.current;
-    if (!client) {
-      throw new Error('Identity service client not available');
-    }
+      try {
+        const oldEpoch = existingMachine.epoch;
+        console.log(
+          `[useMachineKeys] Rotating machine key ${machineId} (current epoch: ${oldEpoch})`
+        );
+        const machineIdBigInt = BigInt(machineId);
+        const serviceRecord = await client.rotateMachineKey(userIdVal, machineIdBigInt);
+        const rotatedMachine = convertMachineRecord(
+          serviceRecord,
+          state.currentMachineId || undefined
+        );
 
-    const existingMachine = state.machines.find(m => m.machineId === machineId);
-    if (!existingMachine) {
-      throw new Error('Machine not found');
-    }
+        console.log(
+          `[useMachineKeys] Machine key rotated - epoch ${oldEpoch} -> ${rotatedMachine.epoch}`
+        );
+        updateMachine(machineId, rotatedMachine);
 
-    setLoading(true);
-
-    try {
-      const oldEpoch = existingMachine.epoch;
-      console.log(`[useMachineKeys] Rotating machine key ${machineId} (current epoch: ${oldEpoch})`);
-      const machineIdBigInt = BigInt(machineId);
-      const serviceRecord = await client.rotateMachineKey(userId, machineIdBigInt);
-      const rotatedMachine = convertMachineRecord(serviceRecord, state.currentMachineId || undefined);
-
-      console.log(`[useMachineKeys] Machine key rotated - epoch ${oldEpoch} -> ${rotatedMachine.epoch}`);
-      updateMachine(machineId, rotatedMachine);
-
-      return rotatedMachine;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to rotate machine key';
-      console.error('[useMachineKeys] rotateMachineKey error:', errorMsg);
-      setError(errorMsg);
-      throw err;
-    }
-  }, [getUserIdBigInt, state.machines, state.currentMachineId, setLoading, updateMachine, setError]);
+        return rotatedMachine;
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to rotate machine key';
+        console.error('[useMachineKeys] rotateMachineKey error:', errorMsg);
+        setError(errorMsg);
+        throw err;
+      }
+    },
+    [
+      getClientOrThrow,
+      getUserIdOrThrow,
+      state.machines,
+      state.currentMachineId,
+      setLoading,
+      updateMachine,
+      setError,
+    ]
+  );
 
   const refresh = useCallback(async (): Promise<void> => {
-    const userId = getUserIdBigInt();
     if (!userId) {
       reset();
       setLoading(false);
@@ -325,7 +349,7 @@ export function useMachineKeys(): UseMachineKeysReturn {
       // Error already logged in listMachineKeys
       // isInitializing is set to false in setError
     }
-  }, [getUserIdBigInt, listMachineKeys, reset, setLoading, setInitializing]);
+  }, [userId, listMachineKeys, reset, setLoading, setInitializing]);
 
   // Auto-refresh on mount and when user changes
   // Reads directly from VfsStorage cache, no IPC client needed

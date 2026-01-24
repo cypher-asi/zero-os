@@ -1,10 +1,10 @@
 import { useCallback } from 'react';
 import { useDesktopController } from './useSupervisor';
-import { 
-  useDesktopStore, 
+import {
+  useDesktopStore,
   selectDesktops,
   selectActiveIndex,
-  selectViewMode, 
+  selectViewMode,
   selectInVoid,
   selectLayerOpacities,
   type DesktopInfo,
@@ -19,6 +19,26 @@ import {
 export type { DesktopInfo, ViewMode, LayerOpacities };
 
 // =============================================================================
+// Return Types
+// =============================================================================
+
+/** Return type for useDesktopActions hook */
+export interface UseDesktopActionsReturn {
+  /** Create a new desktop with the given name */
+  createDesktop: (name: string) => number | null;
+  /** Switch to a desktop by index */
+  switchDesktop: (index: number) => void;
+}
+
+/** Return type for useVoidActions hook */
+export interface UseVoidActionsReturn {
+  /** Enter void (overview) mode */
+  enterVoid: () => void;
+  /** Exit void mode to a specific desktop */
+  exitVoid: (desktopIndex: number) => void;
+}
+
+// =============================================================================
 // DEPRECATED POLLING HOOKS
 // =============================================================================
 // These hooks now use Zustand stores instead of polling.
@@ -27,7 +47,7 @@ export type { DesktopInfo, ViewMode, LayerOpacities };
 
 /**
  * Hook to get all desktops.
- * 
+ *
  * @deprecated Use `useDesktopStore(selectDesktops)` directly for better performance.
  * This hook is kept for backward compatibility.
  */
@@ -37,7 +57,7 @@ export function useDesktops(): DesktopInfo[] {
 
 /**
  * Hook to get active desktop index.
- * 
+ *
  * @deprecated Use `useDesktopStore(selectActiveIndex)` directly for better performance.
  * This hook is kept for backward compatibility.
  */
@@ -46,11 +66,11 @@ export function useActiveDesktop(): number {
 }
 
 // Hook for desktop actions (kept unchanged - wraps WASM calls)
-export function useDesktopActions() {
+export function useDesktopActions(): UseDesktopActionsReturn {
   const desktop = useDesktopController();
 
   const createDesktop = useCallback(
-    (name: string) => {
+    (name: string): number | null => {
       if (!desktop) return null;
       return desktop.create_desktop(name);
     },
@@ -58,7 +78,7 @@ export function useDesktopActions() {
   );
 
   const switchDesktop = useCallback(
-    (index: number) => {
+    (index: number): void => {
       desktop?.switch_desktop(index);
     },
     [desktop]
@@ -72,7 +92,7 @@ export function useDesktopActions() {
 
 /**
  * Hook to get the current view mode.
- * 
+ *
  * @deprecated Use `useDesktopStore(selectViewMode)` directly for better performance.
  * This hook is kept for backward compatibility.
  */
@@ -82,7 +102,7 @@ export function useViewMode(): ViewMode {
 
 /**
  * Hook to check if in void mode.
- * 
+ *
  * @deprecated Use `useDesktopStore(selectInVoid)` directly for better performance.
  * This hook is kept for backward compatibility.
  */
@@ -91,15 +111,15 @@ export function useIsInVoid(): boolean {
 }
 
 // Hook for void actions (kept unchanged - wraps WASM calls)
-export function useVoidActions() {
+export function useVoidActions(): UseVoidActionsReturn {
   const desktop = useDesktopController();
 
-  const enterVoid = useCallback(() => {
+  const enterVoid = useCallback((): void => {
     desktop?.enter_void();
   }, [desktop]);
 
   const exitVoid = useCallback(
-    (desktopIndex: number) => {
+    (desktopIndex: number): void => {
       desktop?.exit_void(desktopIndex);
     },
     [desktop]
@@ -111,7 +131,7 @@ export function useVoidActions() {
 /**
  * Hook to get layer opacities during crossfade transitions.
  * Returns { desktop: number, void: number } where values are 0.0-1.0.
- * 
+ *
  * @deprecated Use `useDesktopStore(selectLayerOpacities)` directly for better performance.
  * This hook is kept for backward compatibility.
  */
@@ -133,10 +153,10 @@ export const useWorkspaces = useDesktops;
 export const useActiveWorkspace = useActiveDesktop;
 
 /** @deprecated Use useDesktopActions instead */
-export function useWorkspaceActions() {
+export function useWorkspaceActions(): UseDesktopActionsReturn {
   const actions = useDesktopActions();
   return {
     createWorkspace: actions.createDesktop,
     switchWorkspace: actions.switchDesktop,
-  };
+  } as UseDesktopActionsReturn;
 }

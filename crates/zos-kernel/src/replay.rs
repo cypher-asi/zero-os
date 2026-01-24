@@ -1,6 +1,6 @@
-//! Deterministic replay implementation for the Kernel.
+//! Deterministic replay implementation for the System.
 //!
-//! This module implements the `Replayable` trait, allowing kernel state to be
+//! This module implements the `Replayable` trait, allowing system state to be
 //! reconstructed from a commit log for auditing and verification purposes.
 
 use alloc::collections::VecDeque;
@@ -8,12 +8,12 @@ use alloc::string::String;
 
 use crate::ipc::Endpoint;
 use crate::types::{EndpointId, EndpointMetrics, ObjectType, Process, ProcessId, ProcessMetrics, ProcessState};
-use crate::kernel::Kernel;
+use crate::system::System;
 use crate::{Capability, CapabilitySpace, Permissions};
 use zos_axiom::{ReplayError, ReplayResult, Replayable, StateHasher};
 use zos_hal::HAL;
 
-impl<H: HAL> Replayable for Kernel<H> {
+impl<H: HAL> Replayable for System<H> {
     fn replay_genesis(&mut self) -> ReplayResult<()> {
         Ok(())
     }
@@ -25,12 +25,12 @@ impl<H: HAL> Replayable for Kernel<H> {
             state: ProcessState::Running,
             metrics: ProcessMetrics::default(),
         };
-        self.core.processes.insert(ProcessId(pid), process);
-        self.core.cap_spaces.insert(ProcessId(pid), CapabilitySpace::new());
+        self.kernel.processes.insert(ProcessId(pid), process);
+        self.kernel.cap_spaces.insert(ProcessId(pid), CapabilitySpace::new());
 
         // Update next_pid to avoid collisions
-        if pid >= self.core.next_pid {
-            self.core.next_pid = pid + 1;
+        if pid >= self.kernel.next_pid {
+            self.kernel.next_pid = pid + 1;
         }
 
         Ok(())
@@ -38,7 +38,7 @@ impl<H: HAL> Replayable for Kernel<H> {
 
     fn replay_exit_process(&mut self, pid: u64, _code: i32) -> ReplayResult<()> {
         let process = self
-            .core
+            .kernel
             .processes
             .get_mut(&ProcessId(pid))
             .ok_or(ReplayError::ProcessNotFound(pid))?;
@@ -53,7 +53,7 @@ impl<H: HAL> Replayable for Kernel<H> {
         _description: String,
     ) -> ReplayResult<()> {
         let process = self
-            .core
+            .kernel
             .processes
             .get_mut(&ProcessId(pid))
             .ok_or(ReplayError::ProcessNotFound(pid))?;
@@ -82,7 +82,7 @@ impl<H: HAL> Replayable for Kernel<H> {
         };
 
         let cspace = self
-            .core
+            .kernel
             .cap_spaces
             .get_mut(&ProcessId(pid))
             .ok_or(ReplayError::ProcessNotFound(pid))?;
@@ -95,8 +95,8 @@ impl<H: HAL> Replayable for Kernel<H> {
         }
 
         // Update next_cap_id to avoid collisions
-        if cap_id >= self.core.next_cap_id {
-            self.core.next_cap_id = cap_id + 1;
+        if cap_id >= self.kernel.next_cap_id {
+            self.kernel.next_cap_id = cap_id + 1;
         }
 
         Ok(())
@@ -104,7 +104,7 @@ impl<H: HAL> Replayable for Kernel<H> {
 
     fn replay_remove_capability(&mut self, pid: u64, slot: u32) -> ReplayResult<()> {
         let cspace = self
-            .core
+            .kernel
             .cap_spaces
             .get_mut(&ProcessId(pid))
             .ok_or(ReplayError::ProcessNotFound(pid))?;
@@ -122,14 +122,14 @@ impl<H: HAL> Replayable for Kernel<H> {
         _perms: zos_axiom::Permissions,
     ) -> ReplayResult<()> {
         // Just update next_cap_id (actual insertion handled by CapInserted)
-        if new_cap_id >= self.core.next_cap_id {
-            self.core.next_cap_id = new_cap_id + 1;
+        if new_cap_id >= self.kernel.next_cap_id {
+            self.kernel.next_cap_id = new_cap_id + 1;
         }
         Ok(())
     }
 
     fn replay_create_endpoint(&mut self, id: u64, owner: u64) -> ReplayResult<()> {
-        if !self.core.processes.contains_key(&ProcessId(owner)) {
+        if !self.kernel.processes.contains_key(&ProcessId(owner)) {
             return Err(ReplayError::ProcessNotFound(owner));
         }
 
@@ -139,18 +139,18 @@ impl<H: HAL> Replayable for Kernel<H> {
             pending_messages: VecDeque::new(),
             metrics: EndpointMetrics::default(),
         };
-        self.core.endpoints.insert(EndpointId(id), endpoint);
+        self.kernel.endpoints.insert(EndpointId(id), endpoint);
 
         // Update next_endpoint_id to avoid collisions
-        if id >= self.core.next_endpoint_id {
-            self.core.next_endpoint_id = id + 1;
+        if id >= self.kernel.next_endpoint_id {
+            self.kernel.next_endpoint_id = id + 1;
         }
 
         Ok(())
     }
 
     fn replay_destroy_endpoint(&mut self, id: u64) -> ReplayResult<()> {
-        self.core.endpoints.remove(&EndpointId(id));
+        self.kernel.endpoints.remove(&EndpointId(id));
         Ok(())
     }
 
@@ -169,16 +169,16 @@ impl<H: HAL> Replayable for Kernel<H> {
         let mut hasher = StateHasher::new();
 
         // Hash process table
-        hasher.write_u64(self.core.processes.len() as u64);
-        for (pid, proc) in &self.core.processes {
+        hasher.write_u64(self.kernel.processes.len() as u64);
+        for (pid, proc) in &self.kernel.processes {
             hasher.write_u64(pid.0);
             hasher.write_str(&proc.name);
             hasher.write_u8(process_state_to_u8(proc.state));
         }
 
         // Hash capability spaces
-        hasher.write_u64(self.core.cap_spaces.len() as u64);
-        for (pid, cspace) in &self.core.cap_spaces {
+        hasher.write_u64(self.kernel.cap_spaces.len() as u64);
+        for (pid, cspace) in &self.kernel.cap_spaces {
             hasher.write_u64(pid.0);
             hasher.write_u64(cspace.slots.len() as u64);
             for (slot, cap) in &cspace.slots {
@@ -193,8 +193,8 @@ impl<H: HAL> Replayable for Kernel<H> {
         }
 
         // Hash endpoints
-        hasher.write_u64(self.core.endpoints.len() as u64);
-        for (id, ep) in &self.core.endpoints {
+        hasher.write_u64(self.kernel.endpoints.len() as u64);
+        for (id, ep) in &self.kernel.endpoints {
             hasher.write_u64(id.0);
             hasher.write_u64(ep.owner.0);
         }

@@ -52,7 +52,7 @@ impl Supervisor {
             return 0;
         }
 
-        let commitlog = self.kernel.commitlog();
+        let commitlog = self.system.commitlog();
         let current_seq = commitlog.current_seq() + 1;
 
         // Nothing new to persist

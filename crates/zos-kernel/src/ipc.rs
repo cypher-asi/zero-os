@@ -16,7 +16,8 @@ use zos_axiom::CapSlot;
 pub const MAX_CAPS_PER_MESSAGE: usize = 8;
 
 /// Maximum message payload size in bytes
-pub const MAX_MESSAGE_SIZE: usize = 4096;
+/// Sized to support large IPC responses (e.g., PQ hybrid keys ~6KB)
+pub const MAX_MESSAGE_SIZE: usize = 16384;
 
 /// A capability being transferred via IPC.
 ///

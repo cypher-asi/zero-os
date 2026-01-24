@@ -21,6 +21,7 @@
 //! | 0x5000-0x50FF | Identity permission checks           |
 //! | 0x7000-0x70FF | Identity service                     |
 //! | 0x8000-0x80FF | VFS service                          |
+//! | 0x9000-0x901F | Network service                      |
 //!
 //! # Usage
 //!
@@ -388,6 +389,18 @@ pub mod identity_cred {
     pub const MSG_GET_CREDENTIALS: u32 = 0x7042;
     /// Get credentials response.
     pub const MSG_GET_CREDENTIALS_RESPONSE: u32 = 0x7043;
+    /// Verify email request.
+    /// DEPRECATED: With ZID integration, email verification is handled server-side.
+    #[deprecated(note = "ZID handles email verification server-side")]
+    pub const MSG_VERIFY_EMAIL: u32 = 0x7044;
+    /// Verify email response.
+    /// DEPRECATED: With ZID integration, email verification is handled server-side.
+    #[deprecated(note = "ZID handles email verification server-side")]
+    pub const MSG_VERIFY_EMAIL_RESPONSE: u32 = 0x7045;
+    /// Unlink credential request.
+    pub const MSG_UNLINK_CREDENTIAL: u32 = 0x7046;
+    /// Unlink credential response.
+    pub const MSG_UNLINK_CREDENTIAL_RESPONSE: u32 = 0x7047;
 }
 
 /// Identity service messages - Identity Keys (0x7050-0x705F).
@@ -432,6 +445,31 @@ pub mod identity_machine {
     pub const MSG_ROTATE_MACHINE_KEY: u32 = 0x7068;
     /// Rotate machine key response.
     pub const MSG_ROTATE_MACHINE_KEY_RESPONSE: u32 = 0x7069;
+}
+
+/// Identity service messages - ZID Auth (0x7080-0x708F).
+///
+/// These messages handle authentication with the ZERO-ID remote server
+/// using machine key challenge-response flow.
+pub mod identity_zid {
+    /// ZID login request (machine key challenge-response).
+    /// Payload: JSON-serialized ZidLoginRequest
+    pub const MSG_ZID_LOGIN: u32 = 0x7080;
+    /// ZID login response.
+    /// Payload: JSON-serialized ZidLoginResponse
+    pub const MSG_ZID_LOGIN_RESPONSE: u32 = 0x7081;
+    /// ZID token refresh request.
+    /// Payload: JSON-serialized ZidRefreshRequest
+    pub const MSG_ZID_REFRESH: u32 = 0x7082;
+    /// ZID token refresh response.
+    /// Payload: JSON-serialized ZidRefreshResponse
+    pub const MSG_ZID_REFRESH_RESPONSE: u32 = 0x7083;
+    /// ZID enroll machine request (register with ZID server).
+    /// Payload: JSON-serialized ZidEnrollMachineRequest
+    pub const MSG_ZID_ENROLL_MACHINE: u32 = 0x7084;
+    /// ZID enroll machine response.
+    /// Payload: JSON-serialized ZidEnrollMachineResponse
+    pub const MSG_ZID_ENROLL_MACHINE_RESPONSE: u32 = 0x7085;
 }
 
 // =============================================================================
@@ -508,6 +546,26 @@ pub mod vfs_quota {
     pub const MSG_VFS_GET_QUOTA: u32 = 0x8032;
     /// Get quota response.
     pub const MSG_VFS_GET_QUOTA_RESPONSE: u32 = 0x8033;
+}
+
+// =============================================================================
+// Network Service (0x9000 - 0x901F)
+// =============================================================================
+
+/// Network service messages (0x9000-0x901F).
+///
+/// The Network Service mediates HTTP requests from other processes,
+/// enforcing network access policies and providing a unified network API.
+pub mod net {
+    /// HTTP request to network service.
+    /// Payload: JSON-serialized HttpRequest
+    pub const MSG_NET_REQUEST: u32 = 0x9000;
+    /// HTTP response from network service.
+    /// Payload: JSON-serialized HttpResponse
+    pub const MSG_NET_RESPONSE: u32 = 0x9001;
+    /// Network result delivered via IPC (async callback).
+    /// Payload format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+    pub const MSG_NET_RESULT: u32 = 0x9002;
 }
 
 // =============================================================================

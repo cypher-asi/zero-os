@@ -1,0 +1,8 @@
+dist
+node_modules
+*.wasm
+*.md
+pkg
+pkg-desktop
+public
+package-lock.json

@@ -10,16 +10,20 @@ import {
 
 // Mock the @cypher-asi/zui components
 vi.mock('@cypher-asi/zui', () => ({
-  Panel: ({ children, className, style, onPointerDown, ...props }: any) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Panel: ({ children, className, style, onPointerDown, ...props }: Record<string, any>) =>
     createElement('div', { className, style, onPointerDown, ...props }, children),
-  ButtonWindow: ({ action, onClick }: any) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ButtonWindow: ({ action, onClick }: Record<string, any>) =>
     createElement('button', { onClick, 'data-testid': `btn-${action}` }, action),
-  Menu: ({ title, items, value, onChange, ...props }: any) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Menu: ({ title, items, value, onChange, ...props }: Record<string, any>) =>
     createElement(
       'div',
       { 'data-testid': 'background-menu', ...props },
       createElement('div', null, title),
-      items.map((item: any) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      items.map((item: Record<string, any>) =>
         createElement(
           'button',
           {
@@ -53,10 +57,12 @@ vi.mock('../../pkg/zos_supervisor_web.js', () => ({
     is_initialized: vi.fn().mockReturnValue(true),
     resize: vi.fn(),
     render: vi.fn(),
-    get_available_backgrounds: vi.fn().mockReturnValue(JSON.stringify([
-      { id: 'grain', name: 'Film Grain' },
-      { id: 'mist', name: 'Misty Smoke' },
-    ])),
+    get_available_backgrounds: vi.fn().mockReturnValue(
+      JSON.stringify([
+        { id: 'grain', name: 'Film Grain' },
+        { id: 'mist', name: 'Misty Smoke' },
+      ])
+    ),
     get_current_background: vi.fn().mockReturnValue('grain'),
     set_background: vi.fn().mockReturnValue(true),
     set_viewport: vi.fn(),
@@ -456,7 +462,7 @@ describe('Desktop Selection Box', () => {
     });
 
     // Selection box should appear
-    const selectionBox = container.querySelector('[class*="selectionBox"]');
+    const _selectionBox = container.querySelector('[class*="selectionBox"]');
     // Note: Selection box visibility depends on minimum size (width > 2 && height > 2)
   });
 

@@ -51,24 +51,24 @@ export interface Supervisor {
 
   /**
    * Register a callback for IPC responses from services.
-   * 
+   *
    * This callback is invoked immediately when a SERVICE:RESPONSE debug message
    * is received from a service process. The callback receives:
    * - requestId: The response tag as hex string (e.g., "00007055")
    * - data: The JSON response data as a string
-   * 
+   *
    * This is event-based, not polling-based.
    */
   set_ipc_response_callback(callback: (requestId: string, data: string) => void): void;
 
   /**
    * Send an IPC message to a named service.
-   * 
+   *
    * This is a generic method that:
    * 1. Finds the service by name (e.g., "identity" -> "identity_service")
    * 2. Delivers the message to the service's input endpoint (slot 1)
    * 3. Returns a request_id for tracking the response
-   * 
+   *
    * @param serviceName - Service name without "_service" suffix (e.g., "identity", "vfs")
    * @param tag - Request message tag (e.g., 0x7054 for MSG_GENERATE_NEURAL_KEY)
    * @param data - JSON request data as a string
@@ -92,7 +92,15 @@ export interface DesktopController {
   get_viewport_json(): string;
 
   // Windows
-  create_window(title: string, x: number, y: number, w: number, h: number, app_id: string, content_interactive: boolean): bigint;
+  create_window(
+    title: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    app_id: string,
+    content_interactive: boolean
+  ): bigint;
   close_window(id: bigint): void;
   get_window_process_id(id: bigint): bigint | undefined;
   /** Link a window to its associated process */

@@ -75,6 +75,17 @@ declare global {
       startList(requestId: number, prefix: string): Promise<void>;
       startExists(requestId: number, key: string): Promise<void>;
     };
+    /** ZosNetwork - network HAL for HTTP requests */
+    ZosNetwork?: {
+      // Supervisor initialization
+      initSupervisor(supervisor: unknown): void;
+      // Async fetch operation
+      startFetch(requestId: number, pid: number, request: unknown): Promise<void>;
+      // Cancel a pending request
+      cancelRequest(requestId: number): void;
+      // Get pending request count
+      getPendingCount(): number;
+    };
   }
 }
 
@@ -103,8 +114,9 @@ export class VfsStorageClient {
    * @returns true if the path exists
    */
   static existsSync(path: string): boolean {
-    if (!this.isAvailable()) return false;
-    return window.ZosStorage!.existsSync(path);
+    const storage = window.ZosStorage;
+    if (!storage) return false;
+    return storage.existsSync(path);
   }
 
   /**
@@ -114,8 +126,9 @@ export class VfsStorageClient {
    * @returns The file content as Uint8Array, or null if not found
    */
   static readFileSync(path: string): Uint8Array | null {
-    if (!this.isAvailable()) return null;
-    return window.ZosStorage!.getContentSync(path);
+    const storage = window.ZosStorage;
+    if (!storage) return null;
+    return storage.getContentSync(path);
   }
 
   /**
@@ -144,8 +157,9 @@ export class VfsStorageClient {
    * @returns The inode metadata, or null if not found
    */
   static getInodeSync(path: string): VfsInode | null {
-    if (!this.isAvailable()) return null;
-    return window.ZosStorage!.getInodeSync(path);
+    const storage = window.ZosStorage;
+    if (!storage) return null;
+    return storage.getInodeSync(path);
   }
 
   /**
@@ -155,8 +169,9 @@ export class VfsStorageClient {
    * @returns Array of child inodes
    */
   static listChildrenSync(parentPath: string): VfsInode[] {
-    if (!this.isAvailable()) return [];
-    return window.ZosStorage!.listChildrenSync(parentPath);
+    const storage = window.ZosStorage;
+    if (!storage) return [];
+    return storage.listChildrenSync(parentPath);
   }
 
   /**
@@ -169,10 +184,11 @@ export class VfsStorageClient {
    * @returns Array of matching paths
    */
   static listPathsWithPrefix(prefix: string): string[] {
-    if (!this.isAvailable()) return [];
+    const storage = window.ZosStorage;
+    if (!storage) return [];
 
     const paths: string[] = [];
-    const pathCache = window.ZosStorage!.pathCache;
+    const pathCache = storage.pathCache;
 
     for (const path of pathCache) {
       if (path.startsWith(prefix)) {
@@ -188,14 +204,15 @@ export class VfsStorageClient {
    * Useful for debugging cache population.
    */
   static getCacheStats(): { paths: number; inodes: number; content: number } {
-    if (!this.isAvailable()) {
+    const storage = window.ZosStorage;
+    if (!storage) {
       return { paths: 0, inodes: 0, content: 0 };
     }
 
     return {
-      paths: window.ZosStorage!.pathCache.size,
-      inodes: window.ZosStorage!.inodeCache.size,
-      content: window.ZosStorage!.contentCache.size,
+      paths: storage.pathCache.size,
+      inodes: storage.inodeCache.size,
+      content: storage.contentCache.size,
     };
   }
 }
@@ -257,4 +274,18 @@ export function getMachineKeyPath(
         : BigInt(machineId).toString(16).padStart(32, '0');
 
   return `/home/${formatUserId(userId)}/.zos/identity/machine/${machineIdHex}.json`;
+}
+
+/**
+ * Get the canonical path for a user's credentials store.
+ */
+export function getCredentialsPath(userId: bigint | string | number): string {
+  return `/home/${formatUserId(userId)}/.zos/credentials/credentials.json`;
+}
+
+/**
+ * Get the canonical path for a user's ZID session.
+ */
+export function getZidSessionPath(userId: bigint | string | number): string {
+  return `/home/${formatUserId(userId)}/.zos/identity/zid_session.json`;
 }

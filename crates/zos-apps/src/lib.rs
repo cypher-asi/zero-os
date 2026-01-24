@@ -32,6 +32,7 @@ extern crate alloc;
 pub mod app;
 pub mod app_protocol;
 pub mod error;
+pub mod identity;
 pub mod manifest;
 pub mod runtime;
 

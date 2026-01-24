@@ -27,9 +27,18 @@ interface AxiomStats {
 
 // Color palette for processes
 const COLORS = [
-  '#01f4cb', '#60a5fa', '#f472b6', '#facc15',
-  '#a78bfa', '#fb923c', '#01f4cb', '#f87171',
-  '#818cf8', '#01f4cb', '#fbbf24', '#f97316',
+  '#01f4cb',
+  '#60a5fa',
+  '#f472b6',
+  '#facc15',
+  '#a78bfa',
+  '#fb923c',
+  '#01f4cb',
+  '#f87171',
+  '#818cf8',
+  '#01f4cb',
+  '#fbbf24',
+  '#f97316',
 ];
 
 function formatBytes(bytes: number): string {
@@ -51,7 +60,12 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
 
   // Set up console callback - either per-process (if processId provided) or legacy global
   useEffect(() => {
-    console.log('[TerminalApp] useEffect running, supervisor:', supervisor ? 'available' : 'null', 'processId:', processId);
+    console.log(
+      '[TerminalApp] useEffect running, supervisor:',
+      supervisor ? 'available' : 'null',
+      'processId:',
+      processId
+    );
     if (!supervisor) return;
 
     const handleOutput = (text: string) => {
@@ -132,7 +146,7 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
     }
 
     setOutput((prev) => [...prev, { text: `z::> ${line}\n`, className: styles.inputEcho }]);
-    
+
     // Send input to specific process (if processId provided) or legacy global
     if (processId != null) {
       supervisor.send_input_to_process(BigInt(processId), line);
@@ -154,7 +168,8 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         if (commandHistory.length > 0) {
-          const newIndex = historyIndex < 0 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1);
+          const newIndex =
+            historyIndex < 0 ? commandHistory.length - 1 : Math.max(0, historyIndex - 1);
           setHistoryIndex(newIndex);
           if (inputRef.current) {
             inputRef.current.value = commandHistory[newIndex];
@@ -205,13 +220,18 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
     <div className={styles.terminalApp}>
       {/* Terminal panel - main content */}
       <div className={styles.terminalPanel}>
-        <div ref={terminalRef} className={styles.terminal} data-selectable-text onClick={() => {
-          // Only focus input if no text is selected (preserve text selection)
-          const selection = window.getSelection();
-          if (!selection || selection.isCollapsed) {
-            inputRef.current?.focus();
-          }
-        }}>
+        <div
+          ref={terminalRef}
+          className={styles.terminal}
+          data-selectable-text
+          onClick={() => {
+            // Only focus input if no text is selected (preserve text selection)
+            const selection = window.getSelection();
+            if (!selection || selection.isCollapsed) {
+              inputRef.current?.focus();
+            }
+          }}
+        >
           {output.map((line, i) => (
             <span key={i} className={line.className}>
               {line.text}
@@ -255,24 +275,29 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
             <div className={styles.panelContent}>
               {processes.map((p, i) => (
                 <div key={p.pid} className={styles.processItem}>
-                  <Text as="span" size="xs" variant="muted" className={styles.processPid}>{p.pid}</Text>
+                  <Text as="span" size="xs" variant="muted" className={styles.processPid}>
+                    {p.pid}
+                  </Text>
                   <span className={styles.processName} style={{ color: COLORS[i % COLORS.length] }}>
                     {p.name}
                   </span>
-                  <Text as="span" size="xs" variant="muted" className={styles.processMem}>{formatBytes(p.memory)}</Text>
+                  <Text as="span" size="xs" variant="muted" className={styles.processMem}>
+                    {formatBytes(p.memory)}
+                  </Text>
                   <Label
-                    variant={p.state === 'Running' ? 'success' : p.state === 'Blocked' ? 'warning' : 'danger'}
+                    variant={
+                      p.state === 'Running'
+                        ? 'success'
+                        : p.state === 'Blocked'
+                          ? 'warning'
+                          : 'danger'
+                    }
                     size="xs"
                   >
                     {p.state}
                   </Label>
                   {p.pid > 2 && (
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      iconOnly
-                      onClick={() => killProcess(p.pid)}
-                    >
+                    <Button variant="danger" size="sm" iconOnly onClick={() => killProcess(p.pid)}>
                       ×
                     </Button>
                   )}
@@ -322,9 +347,15 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
             >
               <div className={styles.panelContent}>
                 <div className={styles.axiomStats}>
-                  <Text as="div" size="xs" variant="muted">Storage: {axiomStats.storage_ready ? '✓ Ready' : 'Not initialized'}</Text>
-                  <Text as="div" size="xs" variant="muted">Events: {axiomStats.events}</Text>
-                  <Text as="div" size="xs" variant="muted">Persisted: {axiomStats.persisted} | Pending: {axiomStats.pending}</Text>
+                  <Text as="div" size="xs" variant="muted">
+                    Storage: {axiomStats.storage_ready ? '✓ Ready' : 'Not initialized'}
+                  </Text>
+                  <Text as="div" size="xs" variant="muted">
+                    Events: {axiomStats.events}
+                  </Text>
+                  <Text as="div" size="xs" variant="muted">
+                    Persisted: {axiomStats.persisted} | Pending: {axiomStats.pending}
+                  </Text>
                 </div>
               </div>
             </GroupCollapsible>

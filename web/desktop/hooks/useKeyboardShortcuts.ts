@@ -10,7 +10,7 @@ interface UseKeyboardShortcutsOptions {
 
 /**
  * Hook for managing desktop keyboard shortcuts.
- * 
+ *
  * Supported shortcuts:
  * - T: Create new terminal with its own process
  * - C: Close focused window
@@ -23,7 +23,7 @@ export function useKeyboardShortcuts({
   desktop,
   supervisor,
   launchTerminal,
-}: UseKeyboardShortcutsOptions) {
+}: UseKeyboardShortcutsOptions): void {
   useEffect(() => {
     if (!initialized) return;
 
@@ -134,8 +134,12 @@ function handleDesktopSwitch(desktop: DesktopController, isLeft: boolean) {
 
     const current = desktop.get_active_desktop();
     const next = isLeft
-      ? (current > 0 ? current - 1 : count - 1)
-      : (current < count - 1 ? current + 1 : 0);
+      ? current > 0
+        ? current - 1
+        : count - 1
+      : current < count - 1
+        ? current + 1
+        : 0;
 
     // If in void, exit to target desktop; otherwise switch
     if (desktop.get_view_mode() === 'void') {
@@ -159,7 +163,7 @@ function handleWindowCycle(desktop: DesktopController, isLeft: boolean) {
     // Filter to only visible windows (not minimized)
     // Windows are already sorted by ID (creation order) from get_windows_json
     // This matches the order shown in the taskbar (left to right)
-    const visibleWindows = windows.filter(w => w.state !== 'minimized');
+    const visibleWindows = windows.filter((w) => w.state !== 'minimized');
 
     if (visibleWindows.length === 0) {
       return;
@@ -168,7 +172,7 @@ function handleWindowCycle(desktop: DesktopController, isLeft: boolean) {
     const focusedId = desktop.get_focused_window();
     // Convert BigInt to number for comparison
     const focusedIdNum = focusedId !== undefined ? Number(focusedId) : undefined;
-    const currentIndex = visibleWindows.findIndex(w => w.id === focusedIdNum);
+    const currentIndex = visibleWindows.findIndex((w) => w.id === focusedIdNum);
 
     let nextIndex;
     if (currentIndex === -1) {

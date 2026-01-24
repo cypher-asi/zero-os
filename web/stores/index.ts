@@ -1,12 +1,12 @@
 /**
  * Zustand Stores - Central State Management
- * 
+ *
  * Re-exports all stores and selectors for convenient importing.
- * 
+ *
  * Usage:
  * ```ts
  * import { useWindowStore, selectWindows, useIdentityStore } from '../stores';
- * 
+ *
  * // In component:
  * const windows = useWindowStore(selectWindows);
  * const currentUser = useIdentityStore(state => state.currentUser);
@@ -14,7 +14,7 @@
  */
 
 // Window store
-export { 
+export {
   useWindowStore,
   selectWindows,
   selectFocusedId,
@@ -82,13 +82,17 @@ export {
   useSettingsStore,
   selectTimeFormat24h,
   selectTimezone,
+  selectRpcEndpoint,
   selectSettingsIsLoading,
   selectSettingsIsSynced,
   selectSettingsError,
+  selectPendingNavigation,
   formatTime,
   formatDate,
   formatShortDate,
   COMMON_TIMEZONES,
+  DEFAULT_RPC_ENDPOINT,
+  type SettingsArea,
 } from './settingsStore';
 
 // Machine Keys store
@@ -104,8 +108,10 @@ export {
   selectCurrentDevice,
   selectMachineKeysState,
   type MachineKeyCapabilities,
+  type MachineKeyCapability,
   type MachineKeyRecord,
   type MachineKeysState,
+  type KeyScheme,
 } from './machineKeysStore';
 
 // Shared types

@@ -8,21 +8,32 @@
 
 import { create } from 'zustand';
 import { persist, subscribeWithSelector } from 'zustand/middleware';
-import {
-  TimeServiceClient,
-  DEFAULT_TIME_SETTINGS,
-  type TimeSettings,
-  type Supervisor,
-} from '../services';
+import { TimeServiceClient, DEFAULT_TIME_SETTINGS, type Supervisor } from '../services';
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+/** Default RPC endpoint for Zero-ID service */
+export const DEFAULT_RPC_ENDPOINT = '127.0.0.1:9999';
 
 // =============================================================================
 // Store Types
 // =============================================================================
 
+/** Settings navigation areas */
+export type SettingsArea = 'general' | 'identity' | 'network' | 'permissions' | 'theme';
+
 interface SettingsStoreState {
   // Time settings
   timeFormat24h: boolean;
   timezone: string;
+
+  // Network settings
+  rpcEndpoint: string;
+
+  // Navigation state (replaces module-level pendingNavigation)
+  pendingNavigation: SettingsArea | null;
 
   // Loading state
   isLoading: boolean;
@@ -35,6 +46,11 @@ interface SettingsStoreState {
   // Actions
   setTimeFormat24h: (value: boolean) => Promise<void>;
   setTimezone: (value: string) => Promise<void>;
+  setRpcEndpoint: (value: string) => void;
+
+  // Navigation actions
+  setPendingNavigation: (section: SettingsArea) => void;
+  clearPendingNavigation: () => void;
 
   // Service sync
   initializeService: (supervisor: Supervisor) => void;
@@ -52,12 +68,25 @@ export const useSettingsStore = create<SettingsStoreState>()(
         // Default values
         timeFormat24h: DEFAULT_TIME_SETTINGS.time_format_24h,
         timezone: DEFAULT_TIME_SETTINGS.timezone,
+        rpcEndpoint: DEFAULT_RPC_ENDPOINT,
+
+        // Navigation state
+        pendingNavigation: null,
 
         isLoading: false,
         isSynced: false,
         error: null,
 
         _serviceClient: null,
+
+        // Navigation actions
+        setPendingNavigation: (section: SettingsArea) => {
+          set({ pendingNavigation: section });
+        },
+
+        clearPendingNavigation: () => {
+          set({ pendingNavigation: null });
+        },
 
         // Initialize with supervisor reference
         initializeService: (supervisor: Supervisor) => {
@@ -147,13 +176,21 @@ export const useSettingsStore = create<SettingsStoreState>()(
             }
           }
         },
+
+        // Set RPC endpoint
+        // TODO: Persist via identity service when wired up
+        setRpcEndpoint: (value: string) => {
+          set({ rpcEndpoint: value });
+          console.log('[SettingsStore] RPC endpoint saved:', value);
+        },
       }),
       {
         name: 'zero-settings-store',
-        // Persist time settings to localStorage as fallback cache
+        // Persist settings to localStorage as fallback cache
         partialize: (state) => ({
           timeFormat24h: state.timeFormat24h,
           timezone: state.timezone,
+          rpcEndpoint: state.rpcEndpoint,
         }),
       }
     )
@@ -170,6 +207,9 @@ export const selectTimeFormat24h = (state: SettingsStoreState) => state.timeForm
 /** Select timezone */
 export const selectTimezone = (state: SettingsStoreState) => state.timezone;
 
+/** Select RPC endpoint */
+export const selectRpcEndpoint = (state: SettingsStoreState) => state.rpcEndpoint;
+
 /** Select loading state */
 export const selectSettingsIsLoading = (state: SettingsStoreState) => state.isLoading;
 
@@ -178,6 +218,9 @@ export const selectSettingsIsSynced = (state: SettingsStoreState) => state.isSyn
 
 /** Select error state */
 export const selectSettingsError = (state: SettingsStoreState) => state.error;
+
+/** Select pending navigation */
+export const selectPendingNavigation = (state: SettingsStoreState) => state.pendingNavigation;
 
 // =============================================================================
 // Time Formatting Utilities
@@ -191,11 +234,7 @@ export const selectSettingsError = (state: SettingsStoreState) => state.error;
  * @param timeFormat24h - Use 24-hour format
  * @returns Formatted time string (e.g., "2:30 PM" or "14:30")
  */
-export function formatTime(
-  timestamp: number,
-  timezone: string,
-  timeFormat24h: boolean
-): string {
+export function formatTime(timestamp: number, timezone: string, timeFormat24h: boolean): string {
   try {
     const date = new Date(timestamp);
     return date.toLocaleTimeString('en-US', {

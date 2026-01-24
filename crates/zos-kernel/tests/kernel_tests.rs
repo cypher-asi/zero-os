@@ -12,7 +12,7 @@ use core::cell::RefCell;
 use core::sync::atomic::{AtomicU64, Ordering};
 use zos_hal::{HalError, NumericProcessHandle, HAL};
 use zos_kernel::{
-    axiom_check, AxiomError, Capability, CapabilitySpace, Kernel, ObjectType, Permissions,
+    axiom_check, AxiomError, Capability, CapabilitySpace, System, ObjectType, Permissions,
     ProcessId, ProcessState,
 };
 
@@ -21,6 +21,7 @@ use zos_kernel::{
 // ============================================================================
 
 struct MockProcess {
+    #[allow(dead_code)]
     name: String,
     alive: bool,
     memory_size: usize,
@@ -198,7 +199,7 @@ impl HAL for MockHal {
 #[test]
 fn test_kernel_creation() {
     let hal = MockHal::new();
-    let kernel = Kernel::new(hal);
+    let kernel = System::new(hal);
 
     assert_eq!(kernel.list_processes().len(), 0);
     assert_eq!(kernel.list_endpoints().len(), 0);
@@ -207,7 +208,7 @@ fn test_kernel_creation() {
 #[test]
 fn test_process_registration() {
     let hal = MockHal::new();
-    let mut kernel = Kernel::new(hal);
+    let mut kernel = System::new(hal);
 
     let pid1 = kernel.register_process("init");
     let pid2 = kernel.register_process("terminal");
@@ -224,7 +225,7 @@ fn test_process_registration() {
 #[test]
 fn test_process_kill() {
     let hal = MockHal::new();
-    let mut kernel = Kernel::new(hal);
+    let mut kernel = System::new(hal);
 
     let pid = kernel.register_process("test");
     assert!(kernel.get_process(pid).is_some());
@@ -236,7 +237,7 @@ fn test_process_kill() {
 #[test]
 fn test_endpoint_creation() {
     let hal = MockHal::new();
-    let mut kernel = Kernel::new(hal);
+    let mut kernel = System::new(hal);
 
     let pid = kernel.register_process("test");
     let (eid, slot) = kernel
@@ -254,7 +255,7 @@ fn test_endpoint_creation() {
 #[test]
 fn test_capability_grant() {
     let hal = MockHal::new();
-    let mut kernel = Kernel::new(hal);
+    let mut kernel = System::new(hal);
 
     let pid1 = kernel.register_process("owner");
     let pid2 = kernel.register_process("recipient");
@@ -287,7 +288,7 @@ fn test_capability_grant() {
 #[test]
 fn test_ipc_send_receive() {
     let hal = MockHal::new();
-    let mut kernel = Kernel::new(hal);
+    let mut kernel = System::new(hal);
 
     let sender_pid = kernel.register_process("sender");
     let receiver_pid = kernel.register_process("receiver");
@@ -397,7 +398,7 @@ fn test_axiom_check_expired_capability() {
 #[test]
 fn test_sys_register_process_init_only() {
     let hal = MockHal::new();
-    let mut kernel = Kernel::new(hal);
+    let mut kernel = System::new(hal);
 
     // Create Init (PID 1)
     let init_pid = kernel.register_process_with_pid(ProcessId(1), "init");
@@ -411,7 +412,7 @@ fn test_sys_register_process_init_only() {
     const SYS_REGISTER_PROCESS: u32 = 0x14;
 
     // Init (PID 1) should be able to register a new process
-    let (result, _rich, _data) = kernel.execute_raw_syscall(
+    let (result, _rich, _data) = kernel.process_syscall(
         init_pid,
         SYS_REGISTER_PROCESS,
         [0, 0, 0, 0],
@@ -426,7 +427,7 @@ fn test_sys_register_process_init_only() {
     assert_eq!(proc.name, "test_proc");
 
     // Other processes should NOT be able to register processes
-    let (result2, _rich2, _data2) = kernel.execute_raw_syscall(
+    let (result2, _rich2, _data2) = kernel.process_syscall(
         other_pid,
         SYS_REGISTER_PROCESS,
         [0, 0, 0, 0],
@@ -442,7 +443,7 @@ fn test_sys_register_process_init_only() {
 #[test]
 fn test_sys_create_endpoint_for_init_only() {
     let hal = MockHal::new();
-    let mut kernel = Kernel::new(hal);
+    let mut kernel = System::new(hal);
 
     // Create Init (PID 1)
     let init_pid = kernel.register_process_with_pid(ProcessId(1), "init");
@@ -460,7 +461,7 @@ fn test_sys_create_endpoint_for_init_only() {
     const SYS_CREATE_ENDPOINT_FOR: u32 = 0x15;
 
     // Init (PID 1) should be able to create an endpoint for another process
-    let (result, _rich, _data) = kernel.execute_raw_syscall(
+    let (result, _rich, _data) = kernel.process_syscall(
         init_pid,
         SYS_CREATE_ENDPOINT_FOR,
         [target_pid.0 as u32, 0, 0, 0],
@@ -474,7 +475,7 @@ fn test_sys_create_endpoint_for_init_only() {
     assert_eq!(endpoints[0].owner, target_pid, "Endpoint should be owned by target");
 
     // Other processes should NOT be able to create endpoints for others
-    let (result2, _rich2, _data2) = kernel.execute_raw_syscall(
+    let (result2, _rich2, _data2) = kernel.process_syscall(
         attacker_pid,
         SYS_CREATE_ENDPOINT_FOR,
         [target_pid.0 as u32, 0, 0, 0],

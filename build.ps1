@@ -59,6 +59,52 @@ function Build-WebModules {
     }
 }
 
+function Invoke-CargoBuild {
+    param(
+        [string]$Package,
+        [string]$ExtraArgs = ""
+    )
+    
+    # Build with cargo and filter out expected unstable feature warnings
+    $cmd = "cargo +nightly build -p $Package --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort $ExtraArgs"
+    
+    # Run cargo and capture output, filtering unstable feature warnings
+    $pinfo = New-Object System.Diagnostics.ProcessStartInfo
+    $pinfo.FileName = "cmd.exe"
+    $pinfo.Arguments = "/c $cmd 2>&1"
+    $pinfo.RedirectStandardOutput = $true
+    $pinfo.UseShellExecute = $false
+    $pinfo.WorkingDirectory = $ProjectRoot
+    
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $pinfo
+    $process.Start() | Out-Null
+    
+    $skipLines = 0
+    while (-not $process.StandardOutput.EndOfStream) {
+        $line = $process.StandardOutput.ReadLine()
+        
+        # Skip the unstable feature warning block (warning + empty line + note)
+        if ($line -match "warning: unstable feature specified for .+-Ctarget-feature") {
+            $skipLines = 3  # Skip this line and next 3 lines (|, = note:, empty)
+            continue
+        }
+        if ($skipLines -gt 0) {
+            $skipLines--
+            continue
+        }
+        # Skip duplicate warning notes
+        if ($line -match "warning: .+ generated 1 warning \(1 duplicate\)") {
+            continue
+        }
+        
+        Write-Host $line
+    }
+    
+    $process.WaitForExit()
+    return $process.ExitCode
+}
+
 function Build-Processes {
     Write-Step "Building process WASM binaries (with threading support)"
     
@@ -66,18 +112,18 @@ function Build-Processes {
     try {
         # Build init
         Write-Host "Building zos-init..."
-        cargo +nightly build -p zos-init --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
-        if ($LASTEXITCODE -ne 0) { throw "zos-init build failed" }
+        $exitCode = Invoke-CargoBuild -Package "zos-init"
+        if ($exitCode -ne 0) { throw "zos-init build failed" }
         
         # Build test processes
         Write-Host "Building zos-system-procs..."
-        cargo +nightly build -p zos-system-procs --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
-        if ($LASTEXITCODE -ne 0) { throw "zos-system-procs build failed" }
+        $exitCode = Invoke-CargoBuild -Package "zos-system-procs"
+        if ($exitCode -ne 0) { throw "zos-system-procs build failed" }
         
         # Build apps
         Write-Host "Building zos-apps..."
-        cargo +nightly build -p zos-apps --bins --target wasm32-unknown-unknown --release -Z build-std=std,panic_abort
-        if ($LASTEXITCODE -ne 0) { throw "zos-apps build failed" }
+        $exitCode = Invoke-CargoBuild -Package "zos-apps" -ExtraArgs "--bins"
+        if ($exitCode -ne 0) { throw "zos-apps build failed" }
         
         # Copy to web/processes
         Write-Host "Copying process binaries to web/processes..."

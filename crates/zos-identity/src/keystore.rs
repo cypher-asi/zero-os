@@ -3,6 +3,7 @@
 //! Provides types and operations for Zero-ID key management.
 
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
@@ -66,6 +67,105 @@ mod u128_hex_string {
     }
 }
 
+/// Serde module for serializing/deserializing Option<Vec<u8>> as hex string.
+/// This is used for large byte vectors (like PQ keys) to avoid massive JSON arrays.
+mod option_bytes_hex {
+    use alloc::format;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+    use core::fmt;
+    use serde::{self, de, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &Option<Vec<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(bytes) => {
+                let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+                serializer.serialize_some(&hex)
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct OptionBytesVisitor;
+
+        impl<'de> de::Visitor<'de> for OptionBytesVisitor {
+            type Value = Option<Vec<u8>>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string, byte array, or null")
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(None)
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                deserializer.deserialize_any(BytesVisitor).map(Some)
+            }
+
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(None)
+            }
+        }
+
+        struct BytesVisitor;
+
+        impl<'de> de::Visitor<'de> for BytesVisitor {
+            type Value = Vec<u8>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a hex string or byte array")
+            }
+
+            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                // Parse hex string
+                let s = s.trim_start_matches("0x").trim_start_matches("0X");
+                let mut bytes = Vec::with_capacity(s.len() / 2);
+                let mut chars = s.chars();
+                while let (Some(h), Some(l)) = (chars.next(), chars.next()) {
+                    let byte = u8::from_str_radix(&format!("{}{}", h, l), 16)
+                        .map_err(de::Error::custom)?;
+                    bytes.push(byte);
+                }
+                Ok(bytes)
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: de::SeqAccess<'de>,
+            {
+                // Parse array of numbers (backward compatibility)
+                let mut bytes = Vec::new();
+                while let Some(b) = seq.next_element::<u8>()? {
+                    bytes.push(b);
+                }
+                Ok(bytes)
+            }
+        }
+
+        deserializer.deserialize_option(OptionBytesVisitor)
+    }
+}
+
 /// Local storage for user cryptographic material (public keys).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LocalKeyStore {
@@ -91,9 +191,11 @@ pub struct LocalKeyStore {
     pub epoch: u64,
 
     /// Post-quantum signing public key (if PqHybrid scheme)
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "option_bytes_hex")]
     pub pq_signing_public_key: Option<Vec<u8>>,
 
     /// Post-quantum encryption public key (if PqHybrid scheme)
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "option_bytes_hex")]
     pub pq_encryption_public_key: Option<Vec<u8>>,
 
     /// Timestamp when the key was created (milliseconds since Unix epoch)
@@ -132,50 +234,135 @@ impl LocalKeyStore {
 
 /// Cryptographic key scheme.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum KeyScheme {
     /// Ed25519 signing + X25519 encryption (default)
-    Ed25519X25519,
+    #[serde(alias = "Ed25519X25519")]
+    Classical,
 
-    /// Hybrid: Ed25519/X25519 + Dilithium/Kyber (post-quantum)
+    /// Hybrid: Ed25519/X25519 + ML-DSA-65/ML-KEM-768 (post-quantum)
+    #[serde(alias = "PqHybrid")]
     PqHybrid,
 }
 
 impl Default for KeyScheme {
     fn default() -> Self {
-        Self::Ed25519X25519
+        Self::Classical
     }
 }
 
-/// Capabilities of machine-level keys.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MachineKeyCapabilities {
+// ============================================================================
+// Machine Key Capabilities (string array format)
+// ============================================================================
+
+/// Capability string constants for machine keys.
+pub mod capability {
     /// Can sign authentication challenges
-    pub can_authenticate: bool,
-
-    /// Can encrypt/decrypt local data
-    pub can_encrypt: bool,
-
+    pub const AUTHENTICATE: &str = "AUTHENTICATE";
     /// Can sign messages on behalf of user
-    pub can_sign_messages: bool,
-
+    pub const SIGN: &str = "SIGN";
+    /// Can encrypt/decrypt data
+    pub const ENCRYPT: &str = "ENCRYPT";
+    /// Can unwrap SVK (Storage Vault Key)
+    pub const SVK_UNWRAP: &str = "SVK_UNWRAP";
+    /// Can participate in MLS messaging
+    pub const MLS_MESSAGING: &str = "MLS_MESSAGING";
+    /// Can perform vault operations
+    pub const VAULT_OPERATIONS: &str = "VAULT_OPERATIONS";
     /// Can authorize new machines
-    pub can_authorize_machines: bool,
-
+    pub const AUTHORIZE_MACHINES: &str = "AUTHORIZE_MACHINES";
     /// Can revoke other machines
-    pub can_revoke_machines: bool,
+    pub const REVOKE_MACHINES: &str = "REVOKE_MACHINES";
+}
 
+/// Capabilities of machine-level keys as a string array.
+///
+/// Modern format: `["AUTHENTICATE", "SIGN", "ENCRYPT", ...]`
+///
+/// Supports deserialization from legacy boolean struct format for backward compatibility.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(from = "CapabilitiesFormat")]
+pub struct MachineKeyCapabilities {
+    /// List of capability strings
+    pub capabilities: Vec<String>,
     /// Expiry time (None = no expiry)
+    #[serde(default)]
     pub expires_at: Option<u64>,
+}
+
+/// Internal format for deserializing capabilities from either format.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CapabilitiesFormat {
+    /// New format: string array (wrapped in object with optional expires_at)
+    Modern(ModernCapabilities),
+    /// Legacy format: boolean struct
+    Legacy(LegacyCapabilities),
+    /// Direct string array (simplest case)
+    Direct(Vec<String>),
+}
+
+#[derive(Deserialize)]
+struct ModernCapabilities {
+    capabilities: Vec<String>,
+    #[serde(default)]
+    expires_at: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct LegacyCapabilities {
+    can_authenticate: bool,
+    can_encrypt: bool,
+    can_sign_messages: bool,
+    can_authorize_machines: bool,
+    can_revoke_machines: bool,
+    expires_at: Option<u64>,
+}
+
+impl From<CapabilitiesFormat> for MachineKeyCapabilities {
+    fn from(format: CapabilitiesFormat) -> Self {
+        match format {
+            CapabilitiesFormat::Modern(m) => MachineKeyCapabilities {
+                capabilities: m.capabilities,
+                expires_at: m.expires_at,
+            },
+            CapabilitiesFormat::Direct(caps) => MachineKeyCapabilities {
+                capabilities: caps,
+                expires_at: None,
+            },
+            CapabilitiesFormat::Legacy(legacy) => {
+                let mut caps = Vec::new();
+                if legacy.can_authenticate {
+                    caps.push(capability::AUTHENTICATE.into());
+                }
+                if legacy.can_encrypt {
+                    caps.push(capability::ENCRYPT.into());
+                }
+                if legacy.can_sign_messages {
+                    caps.push(capability::SIGN.into());
+                }
+                if legacy.can_authorize_machines {
+                    caps.push(capability::AUTHORIZE_MACHINES.into());
+                }
+                if legacy.can_revoke_machines {
+                    caps.push(capability::REVOKE_MACHINES.into());
+                }
+                MachineKeyCapabilities {
+                    capabilities: caps,
+                    expires_at: legacy.expires_at,
+                }
+            }
+        }
+    }
 }
 
 impl Default for MachineKeyCapabilities {
     fn default() -> Self {
         Self {
-            can_authenticate: true,
-            can_encrypt: true,
-            can_sign_messages: false,
-            can_authorize_machines: false,
-            can_revoke_machines: false,
+            capabilities: vec![
+                capability::AUTHENTICATE.into(),
+                capability::ENCRYPT.into(),
+            ],
             expires_at: None,
         }
     }
@@ -185,18 +372,60 @@ impl MachineKeyCapabilities {
     /// Create capabilities with all permissions.
     pub fn full() -> Self {
         Self {
-            can_authenticate: true,
-            can_encrypt: true,
-            can_sign_messages: true,
-            can_authorize_machines: true,
-            can_revoke_machines: true,
+            capabilities: vec![
+                capability::AUTHENTICATE.into(),
+                capability::SIGN.into(),
+                capability::ENCRYPT.into(),
+                capability::AUTHORIZE_MACHINES.into(),
+                capability::REVOKE_MACHINES.into(),
+            ],
             expires_at: None,
         }
+    }
+
+    /// Create capabilities from a list of capability strings.
+    pub fn from_strings(caps: Vec<String>) -> Self {
+        Self {
+            capabilities: caps,
+            expires_at: None,
+        }
+    }
+
+    /// Check if a capability is present.
+    pub fn has(&self, cap: &str) -> bool {
+        self.capabilities.iter().any(|c| c == cap)
     }
 
     /// Check if the capabilities are expired.
     pub fn is_expired(&self, now: u64) -> bool {
         self.expires_at.map_or(false, |exp| now >= exp)
+    }
+
+    // Legacy accessors for backward compatibility
+    
+    /// Can sign authentication challenges
+    pub fn can_authenticate(&self) -> bool {
+        self.has(capability::AUTHENTICATE)
+    }
+
+    /// Can encrypt/decrypt data
+    pub fn can_encrypt(&self) -> bool {
+        self.has(capability::ENCRYPT)
+    }
+
+    /// Can sign messages on behalf of user
+    pub fn can_sign_messages(&self) -> bool {
+        self.has(capability::SIGN)
+    }
+
+    /// Can authorize new machines
+    pub fn can_authorize_machines(&self) -> bool {
+        self.has(capability::AUTHORIZE_MACHINES)
+    }
+
+    /// Can revoke other machines
+    pub fn can_revoke_machines(&self) -> bool {
+        self.has(capability::REVOKE_MACHINES)
     }
 }
 
@@ -264,10 +493,10 @@ pub struct MachineKeyRecord {
     #[serde(with = "u128_hex_string")]
     pub machine_id: u128,
 
-    /// Machine-specific signing public key
+    /// Machine-specific signing public key (Ed25519, 32 bytes)
     pub signing_public_key: [u8; 32],
 
-    /// Machine-specific encryption public key
+    /// Machine-specific encryption public key (X25519, 32 bytes)
     pub encryption_public_key: [u8; 32],
 
     /// When this machine was authorized
@@ -289,6 +518,18 @@ pub struct MachineKeyRecord {
     /// Key epoch (increments on rotation)
     #[serde(default = "default_epoch")]
     pub epoch: u64,
+
+    /// Key scheme used (Classical or PqHybrid)
+    #[serde(default)]
+    pub key_scheme: KeyScheme,
+
+    /// ML-DSA-65 PQ signing public key (1952 bytes, only for PqHybrid)
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "option_bytes_hex")]
+    pub pq_signing_public_key: Option<Vec<u8>>,
+
+    /// ML-KEM-768 PQ encryption public key (1184 bytes, only for PqHybrid)
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "option_bytes_hex")]
+    pub pq_encryption_public_key: Option<Vec<u8>>,
 }
 
 /// Default epoch value for backward compatibility with existing records
@@ -403,14 +644,25 @@ mod tests {
     #[test]
     fn test_machine_capabilities() {
         let caps = MachineKeyCapabilities::default();
-        assert!(caps.can_authenticate);
-        assert!(caps.can_encrypt);
-        assert!(!caps.can_sign_messages);
+        assert!(caps.can_authenticate());
+        assert!(caps.can_encrypt());
+        assert!(!caps.can_sign_messages());
         assert!(!caps.is_expired(1000));
 
         let full = MachineKeyCapabilities::full();
-        assert!(full.can_authorize_machines);
-        assert!(full.can_revoke_machines);
+        assert!(full.can_authorize_machines());
+        assert!(full.can_revoke_machines());
+    }
+
+    #[test]
+    fn test_machine_capabilities_from_strings() {
+        let caps = MachineKeyCapabilities::from_strings(vec![
+            "AUTHENTICATE".into(),
+            "SIGN".into(),
+        ]);
+        assert!(caps.can_authenticate());
+        assert!(caps.can_sign_messages());
+        assert!(!caps.can_encrypt());
     }
 
     #[test]

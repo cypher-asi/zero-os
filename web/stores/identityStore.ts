@@ -1,6 +1,6 @@
 /**
  * Identity Store - Centralized state for user/session management.
- * 
+ *
  * Manages user authentication, sessions, and user list.
  * Persists user list to localStorage for development.
  */
@@ -49,14 +49,14 @@ interface IdentityStoreState {
   users: User[];
   isLoading: boolean;
   error: string | null;
-  
+
   // Actions
   setCurrentUser: (user: User | null) => void;
   setCurrentSession: (session: Session | null) => void;
   setUsers: (users: User[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
-  
+
   // Async actions (will call supervisor when integrated)
   login: (userId: UserId) => Promise<void>;
   logout: () => Promise<void>;
@@ -98,20 +98,20 @@ export const useIdentityStore = create<IdentityStoreState>()(
         users: [MOCK_USER],
         isLoading: false,
         error: null,
-        
+
         setCurrentUser: (currentUser) => set({ currentUser }),
         setCurrentSession: (currentSession) => set({ currentSession }),
         setUsers: (users) => set({ users }),
         setLoading: (isLoading) => set({ isLoading }),
         setError: (error) => set({ error }),
-        
+
         login: async (userId) => {
           set({ isLoading: true, error: null });
           try {
             // TODO: Call supervisor.identity_* methods when available
-            const user = get().users.find(u => u.id === userId);
+            const user = get().users.find((u) => u.id === userId);
             if (!user) throw new Error('User not found');
-            
+
             const session: Session = {
               id: crypto.randomUUID().replace(/-/g, ''),
               userId,
@@ -119,7 +119,7 @@ export const useIdentityStore = create<IdentityStoreState>()(
               expiresAt: Date.now() + 86400000, // 24 hours
               capabilities: ['endpoint.read', 'endpoint.write'],
             };
-            
+
             set({
               currentUser: { ...user, status: 'Active', lastActiveAt: Date.now() },
               currentSession: session,
@@ -133,16 +133,14 @@ export const useIdentityStore = create<IdentityStoreState>()(
             throw error;
           }
         },
-        
+
         logout: async () => {
           set({ isLoading: true, error: null });
           try {
             // TODO: Call supervisor to invalidate session
             const currentUser = get().currentUser;
             set({
-              currentUser: currentUser 
-                ? { ...currentUser, status: 'Offline' } 
-                : null,
+              currentUser: currentUser ? { ...currentUser, status: 'Offline' } : null,
               currentSession: null,
               isLoading: false,
             });
@@ -154,7 +152,7 @@ export const useIdentityStore = create<IdentityStoreState>()(
             throw error;
           }
         },
-        
+
         createUser: async (displayName) => {
           const newUser: User = {
             id: crypto.randomUUID().replace(/-/g, ''),
@@ -166,12 +164,12 @@ export const useIdentityStore = create<IdentityStoreState>()(
           set({ users: [...get().users, newUser] });
           return newUser;
         },
-        
+
         switchUser: async (userId) => {
           await get().logout();
           await get().login(userId);
         },
-        
+
         refreshSession: async () => {
           const session = get().currentSession;
           if (!session) {
@@ -218,12 +216,12 @@ export const selectIsLoading = (state: IdentityStoreState) => state.isLoading;
 export const selectError = (state: IdentityStoreState) => state.error;
 
 /** Select whether user is logged in */
-export const selectIsLoggedIn = (state: IdentityStoreState) => 
+export const selectIsLoggedIn = (state: IdentityStoreState) =>
   state.currentUser !== null && state.currentSession !== null;
 
 /** Select user by ID */
 export const selectUserById = (id: UserId) => (state: IdentityStoreState) =>
-  state.users.find(u => u.id === id);
+  state.users.find((u) => u.id === id);
 
 // =============================================================================
 // Utility Functions

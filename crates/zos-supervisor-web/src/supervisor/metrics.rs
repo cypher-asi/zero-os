@@ -14,7 +14,7 @@ impl Supervisor {
     /// Get system uptime in milliseconds
     #[wasm_bindgen]
     pub fn get_uptime_ms(&self) -> f64 {
-        self.kernel.uptime_nanos() as f64 / 1_000_000.0
+        self.system.uptime_nanos() as f64 / 1_000_000.0
     }
 
     /// Get wall-clock time in milliseconds since Unix epoch
@@ -23,44 +23,44 @@ impl Supervisor {
     /// Used by the DateTime component in the taskbar.
     #[wasm_bindgen]
     pub fn get_wallclock_ms(&self) -> f64 {
-        self.kernel.hal().wallclock_ms() as f64
+        self.system.hal().wallclock_ms() as f64
     }
 
     /// Get process count (including supervisor)
     #[wasm_bindgen]
     pub fn get_process_count(&self) -> usize {
-        self.kernel.list_processes().len()
+        self.system.list_processes().len()
     }
 
     /// Get total memory usage in bytes
     #[wasm_bindgen]
     pub fn get_total_memory(&self) -> usize {
-        self.kernel.total_memory()
+        self.system.total_memory()
     }
 
     /// Get endpoint count
     #[wasm_bindgen]
     pub fn get_endpoint_count(&self) -> usize {
-        self.kernel.list_endpoints().len()
+        self.system.list_endpoints().len()
     }
 
     /// Get total pending IPC messages
     #[wasm_bindgen]
     pub fn get_pending_messages(&self) -> usize {
-        self.kernel.total_pending_messages()
+        self.system.total_pending_messages()
     }
 
     /// Get total IPC message count since boot
     #[wasm_bindgen]
     pub fn get_total_ipc_messages(&self) -> f64 {
-        self.kernel.get_system_metrics().total_ipc_messages as f64
+        self.system.get_system_metrics().total_ipc_messages as f64
     }
 
     /// Get Axiom statistics for dashboard
     #[wasm_bindgen]
     pub fn get_axiom_stats_json(&self) -> String {
-        let commitlog = self.kernel.commitlog();
-        let syslog = self.kernel.syslog();
+        let commitlog = self.system.commitlog();
+        let syslog = self.system.syslog();
         let commits_in_memory = commitlog.len();
         let commit_seq = commitlog.current_seq();
         let events_in_memory = syslog.len();
@@ -81,7 +81,7 @@ impl Supervisor {
     /// Get recent CommitLog entries as JSON for display
     #[wasm_bindgen]
     pub fn get_commitlog_json(&self, count: usize) -> String {
-        let commitlog = self.kernel.commitlog();
+        let commitlog = self.system.commitlog();
         let commits = commitlog.get_recent(count);
 
         let mut json = String::from("[");
@@ -108,7 +108,7 @@ impl Supervisor {
     /// Get recent SysLog entries as JSON for display
     #[wasm_bindgen]
     pub fn get_syslog_json(&self, count: usize) -> String {
-        let syslog = self.kernel.syslog();
+        let syslog = self.system.syslog();
         let events = syslog.get_recent(count);
 
         let mut json = String::from("[");
@@ -146,7 +146,7 @@ impl Supervisor {
     #[wasm_bindgen]
     pub fn get_process_list_json(&self) -> String {
         let processes: Vec<_> = self
-            .kernel
+            .system
             .list_processes()
             .iter()
             .map(|(pid, proc)| {
@@ -155,7 +155,7 @@ impl Supervisor {
                     zos_kernel::ProcessState::Blocked => "Blocked",
                     zos_kernel::ProcessState::Zombie => "Zombie",
                 };
-                let worker_id = self.kernel.hal().get_worker_id(pid.0);
+                let worker_id = self.system.hal().get_worker_id(pid.0);
                 serde_json::json!({
                     "pid": pid.0,
                     "name": proc.name,
@@ -175,7 +175,7 @@ impl Supervisor {
     #[wasm_bindgen]
     pub fn get_process_capabilities_json(&self, pid: u64) -> String {
         let process_id = ProcessId(pid);
-        if let Some(cap_space) = self.kernel.get_cap_space(process_id) {
+        if let Some(cap_space) = self.system.get_cap_space(process_id) {
             let caps: Vec<_> = cap_space
                 .list()
                 .iter()
@@ -210,7 +210,7 @@ impl Supervisor {
     #[wasm_bindgen]
     pub fn get_processes_with_capabilities_json(&self) -> String {
         let processes: Vec<_> = self
-            .kernel
+            .system
             .list_processes()
             .iter()
             .map(|(pid, proc)| {
@@ -221,7 +221,7 @@ impl Supervisor {
                 };
 
                 let caps: Vec<serde_json::Value> =
-                    if let Some(cap_space) = self.kernel.get_cap_space(*pid) {
+                    if let Some(cap_space) = self.system.get_cap_space(*pid) {
                         cap_space
                             .list()
                             .iter()
@@ -264,11 +264,11 @@ impl Supervisor {
     #[wasm_bindgen]
     pub fn get_endpoint_list_json(&self) -> String {
         let endpoints: Vec<_> = self
-            .kernel
+            .system
             .list_endpoints()
             .iter()
             .map(|ep| {
-                let detail = self.kernel.get_endpoint_detail(ep.id);
+                let detail = self.system.get_endpoint_detail(ep.id);
                 serde_json::json!({
                     "id": ep.id.0,
                     "owner": ep.owner.0,
@@ -296,7 +296,7 @@ impl Supervisor {
     /// Get system metrics as JSON for dashboard
     #[wasm_bindgen]
     pub fn get_system_metrics_json(&self) -> String {
-        let m = self.kernel.get_system_metrics();
+        let m = self.system.get_system_metrics();
         serde_json::to_string(&serde_json::json!({
             "process_count": m.process_count,
             "total_memory": m.total_memory,

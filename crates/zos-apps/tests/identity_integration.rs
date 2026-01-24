@@ -30,8 +30,8 @@ fn test_app_permissions_checked_against_manifest() {
     // In a real implementation, this would check the manifest parser
     
     // For now, verify the basic permission checking in VFS
-    use zos_vfs::service::{check_read, check_write, PermissionContext, ProcessClass};
-    use zos_vfs::types::{FilePermissions, Inode};
+    use zos_vfs::service::{check_read, check_write, PermissionContext};
+    use zos_vfs::types::Inode;
 
     let user_id: u128 = 0x00000000000000000000000000000001;
     

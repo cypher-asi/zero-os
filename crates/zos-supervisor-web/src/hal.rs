@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use zos_hal::{HalError, StorageRequestId, HAL};
+use zos_hal::{HalError, NetworkRequestId, StorageRequestId, HAL};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, Worker};
@@ -52,6 +52,53 @@ extern "C" {
     /// Start async storage exists check
     #[wasm_bindgen(method, structural, js_namespace = ["ZosStorage"], js_name = "startExists")]
     fn zos_storage_start_exists(this: &Window, request_id: u32, key: &str);
+}
+
+/// Helper function to start a network fetch via ZosNetwork.startFetch
+fn start_network_fetch(request_id: u32, pid: u64, request_json: &str) {
+    let window = match web_sys::window() {
+        Some(w) => w,
+        None => {
+            log(&format!("[wasm-hal] start_network_fetch: no window for request_id={}", request_id));
+            return;
+        }
+    };
+    
+    let zos_network = match js_sys::Reflect::get(&window, &"ZosNetwork".into()) {
+        Ok(n) if !n.is_undefined() => n,
+        _ => {
+            log(&format!("[wasm-hal] start_network_fetch: ZosNetwork not found for request_id={}", request_id));
+            return;
+        }
+    };
+    
+    let request_obj = match js_sys::JSON::parse(request_json) {
+        Ok(obj) => obj,
+        Err(e) => {
+            log(&format!("[wasm-hal] start_network_fetch: JSON parse error for request_id={}: {:?}", request_id, e));
+            log(&format!("[wasm-hal] request_json: {}", request_json));
+            return;
+        }
+    };
+    
+    let start_fetch_fn = match js_sys::Reflect::get(&zos_network, &"startFetch".into()) {
+        Ok(f) => match f.dyn_into::<js_sys::Function>() {
+            Ok(func) => func,
+            Err(_) => {
+                log(&format!("[wasm-hal] start_network_fetch: startFetch is not a function for request_id={}", request_id));
+                return;
+            }
+        },
+        Err(_) => {
+            log(&format!("[wasm-hal] start_network_fetch: startFetch not found for request_id={}", request_id));
+            return;
+        }
+    };
+    
+    let args = js_sys::Array::of3(&request_id.into(), &(pid as f64).into(), &request_obj);
+    if let Err(e) = js_sys::Reflect::apply(&start_fetch_fn, &zos_network, &args) {
+        log(&format!("[wasm-hal] start_network_fetch: apply error for request_id={}: {:?}", request_id, e));
+    }
 }
 
 /// Helper functions to call ZosStorage methods
@@ -172,6 +219,10 @@ pub struct WasmHal {
     next_storage_request_id: AtomicU32,
     /// Pending storage requests: request_id -> requesting PID
     pending_storage_requests: Arc<Mutex<HashMap<u32, u64>>>,
+    /// Next network request ID (monotonically increasing)
+    next_network_request_id: AtomicU32,
+    /// Pending network requests: request_id -> requesting PID
+    pending_network_requests: Arc<Mutex<HashMap<u32, u64>>>,
 }
 
 impl WasmHal {
@@ -183,6 +234,8 @@ impl WasmHal {
             incoming_messages: Arc::new(Mutex::new(Vec::new())),
             next_storage_request_id: AtomicU32::new(1),
             pending_storage_requests: Arc::new(Mutex::new(HashMap::new())),
+            next_network_request_id: AtomicU32::new(1),
+            pending_network_requests: Arc::new(Mutex::new(HashMap::new())),
         }
     }
     
@@ -191,9 +244,21 @@ impl WasmHal {
         self.next_storage_request_id.fetch_add(1, Ordering::SeqCst)
     }
     
+    /// Generate a new unique network request ID
+    fn next_network_request_id(&self) -> u32 {
+        self.next_network_request_id.fetch_add(1, Ordering::SeqCst)
+    }
+    
     /// Record a pending storage request
     fn record_pending_request(&self, request_id: StorageRequestId, pid: u64) {
         if let Ok(mut pending) = self.pending_storage_requests.lock() {
+            pending.insert(request_id, pid);
+        }
+    }
+    
+    /// Record a pending network request
+    fn record_pending_network_request(&self, request_id: u32, pid: u64) {
+        if let Ok(mut pending) = self.pending_network_requests.lock() {
             pending.insert(request_id, pid);
         }
     }
@@ -323,7 +388,8 @@ impl WasmHal {
         worker.set_onerror(Some(onerror_closure.as_ref().unchecked_ref()));
 
         // Create a placeholder SharedArrayBuffer (will be replaced when worker sends real one)
-        let syscall_buffer = js_sys::SharedArrayBuffer::new(4096);
+        // Size: 16KB to support large IPC responses (e.g., PQ hybrid keys ~6KB)
+        let syscall_buffer = js_sys::SharedArrayBuffer::new(16384);
         let mailbox_view = js_sys::Int32Array::new(&syscall_buffer);
 
         // Send init message with WASM binary and PID
@@ -499,7 +565,7 @@ impl WasmHal {
                 let data_len = js_sys::Atomics::load(&proc.mailbox_view, worker::MAILBOX_DATA_LEN)
                     .unwrap_or(0) as usize;
 
-                if data_len > 0 && data_len <= 4068 {
+                if data_len > 0 && data_len <= 16356 {
                     // Create a Uint8Array view starting at byte offset 28
                     let data_view = js_sys::Uint8Array::new_with_byte_offset_and_length(
                         &proc.syscall_buffer,
@@ -523,7 +589,7 @@ impl WasmHal {
                     return;
                 }
 
-                let len = data.len().min(4068);
+                let len = data.len().min(16356);
 
                 // Create a Uint8Array view starting at byte offset 28
                 let data_view = js_sys::Uint8Array::new_with_byte_offset_and_length(
@@ -903,5 +969,45 @@ impl HAL for WasmHal {
             }
         }
         Err(HalError::NotSupported)
+    }
+
+    // === Async Network Operations ===
+
+    fn network_fetch_async(&self, pid: u64, request: &[u8]) -> Result<NetworkRequestId, HalError> {
+        let request_id = self.next_network_request_id();
+        self.record_pending_network_request(request_id, pid);
+        
+        // Convert request bytes to JSON string
+        let request_json = match std::str::from_utf8(request) {
+            Ok(s) => s,
+            Err(_) => {
+                log(&format!("[wasm-hal] network_fetch_async: invalid UTF-8 in request"));
+                return Err(HalError::InvalidArgument);
+            }
+        };
+        
+        log(&format!(
+            "[wasm-hal] network_fetch_async: request_id={}, pid={}",
+            request_id, pid
+        ));
+        
+        // Call JavaScript to start fetch operation
+        start_network_fetch(request_id, pid, request_json);
+        
+        Ok(request_id)
+    }
+
+    fn get_network_request_pid(&self, request_id: NetworkRequestId) -> Option<u64> {
+        self.pending_network_requests
+            .lock()
+            .ok()
+            .and_then(|pending| pending.get(&request_id).copied())
+    }
+
+    fn take_network_request_pid(&self, request_id: NetworkRequestId) -> Option<u64> {
+        self.pending_network_requests
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.remove(&request_id))
     }
 }

@@ -9,6 +9,7 @@ members = [
     "crates/zos-init",
     "crates/zos-ipc",
     "crates/zos-kernel",
+    "crates/zos-network",
     "crates/zos-process",
     "crates/zos-system-procs",
     "crates/zos-supervisor-web",
@@ -32,6 +33,7 @@ zos-identity = { path = "crates/zos-identity" }
 zos-init = { path = "crates/zos-init" }
 zos-ipc = { path = "crates/zos-ipc" }
 zos-kernel = { path = "crates/zos-kernel" }
+zos-network = { path = "crates/zos-network" }
 zos-process = { path = "crates/zos-process" }
 zos-system-procs = { path = "crates/zos-system-procs" }
 zos-vfs = { path = "crates/zos-vfs" }

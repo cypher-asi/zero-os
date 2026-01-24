@@ -1,6 +1,6 @@
 /**
  * Machine Keys Store - Centralized state for machine key management.
- * 
+ *
  * Manages machine keys list, current machine ID, loading state.
  * Shared across all components that need machine keys state.
  */
@@ -12,21 +12,27 @@ import { subscribeWithSelector } from 'zustand/middleware';
 // Machine Key Types (mirrors zos-identity/src/keystore.rs and ipc.rs)
 // =============================================================================
 
+/** Key scheme for machine keys */
+export type KeyScheme = 'classical' | 'pq_hybrid';
+
+/** Machine key capability strings */
+export type MachineKeyCapability =
+  | 'AUTHENTICATE'
+  | 'SIGN'
+  | 'ENCRYPT'
+  | 'SVK_UNWRAP'
+  | 'MLS_MESSAGING'
+  | 'VAULT_OPERATIONS'
+  | 'AUTHORIZE_MACHINES'
+  | 'REVOKE_MACHINES';
+
 /**
  * Capabilities of machine-level keys.
- * Corresponds to `MachineKeyCapabilities` in zos-identity/src/keystore.rs
+ * Modern format using string array.
  */
 export interface MachineKeyCapabilities {
-  /** Can sign authentication challenges */
-  canAuthenticate: boolean;
-  /** Can encrypt/decrypt local data */
-  canEncrypt: boolean;
-  /** Can sign messages on behalf of user */
-  canSignMessages: boolean;
-  /** Can authorize new machines */
-  canAuthorizeMachines: boolean;
-  /** Can revoke other machines */
-  canRevokeMachines: boolean;
+  /** List of capability strings */
+  capabilities: MachineKeyCapability[];
   /** Expiry time (null = no expiry) */
   expiresAt: number | null;
 }
@@ -56,6 +62,12 @@ export interface MachineKeyRecord {
   isCurrentDevice: boolean;
   /** Key epoch (increments on rotation) */
   epoch: number;
+  /** Key scheme used (defaults to 'classical') */
+  keyScheme: KeyScheme;
+  /** PQ signing public key (hex, only for pq_hybrid) */
+  pqSigningPublicKey?: string;
+  /** PQ encryption public key (hex, only for pq_hybrid) */
+  pqEncryptionPublicKey?: string;
 }
 
 /**
@@ -112,32 +124,33 @@ export const useMachineKeysStore = create<MachineKeysStoreState>()(
     ...INITIAL_STATE,
 
     setMachines: (machines) => set({ machines, isLoading: false, isInitializing: false }),
-    
-    addMachine: (machine) => set((state) => ({
-      machines: [...state.machines, machine],
-      isLoading: false,
-    })),
-    
-    removeMachine: (machineId) => set((state) => ({
-      machines: state.machines.filter((m) => m.machineId !== machineId),
-      isLoading: false,
-    })),
-    
-    updateMachine: (machineId, updates) => set((state) => ({
-      machines: state.machines.map((m) =>
-        m.machineId === machineId ? { ...m, ...updates } : m
-      ),
-      isLoading: false,
-    })),
-    
+
+    addMachine: (machine) =>
+      set((state) => ({
+        machines: [...state.machines, machine],
+        isLoading: false,
+      })),
+
+    removeMachine: (machineId) =>
+      set((state) => ({
+        machines: state.machines.filter((m) => m.machineId !== machineId),
+        isLoading: false,
+      })),
+
+    updateMachine: (machineId, updates) =>
+      set((state) => ({
+        machines: state.machines.map((m) => (m.machineId === machineId ? { ...m, ...updates } : m)),
+        isLoading: false,
+      })),
+
     setCurrentMachineId: (currentMachineId) => set({ currentMachineId }),
-    
+
     setLoading: (isLoading) => set({ isLoading }),
-    
+
     setInitializing: (isInitializing) => set({ isInitializing }),
-    
+
     setError: (error) => set({ error, isLoading: false, isInitializing: false }),
-    
+
     reset: () => set(INITIAL_STATE),
   }))
 );
@@ -159,7 +172,8 @@ export const selectCurrentMachineId = (state: MachineKeysStoreState) => state.cu
 export const selectMachineKeysIsLoading = (state: MachineKeysStoreState) => state.isLoading;
 
 /** Select initializing state */
-export const selectMachineKeysIsInitializing = (state: MachineKeysStoreState) => state.isInitializing;
+export const selectMachineKeysIsInitializing = (state: MachineKeysStoreState) =>
+  state.isInitializing;
 
 /** Select error state */
 export const selectMachineKeysError = (state: MachineKeysStoreState) => state.error;

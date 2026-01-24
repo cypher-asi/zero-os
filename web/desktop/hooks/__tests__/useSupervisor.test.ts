@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { createElement } from 'react';
 import {
@@ -81,7 +81,15 @@ describe('useDesktopController', () => {
 
     // Call create_window
     result.current?.create_window('Test', 100, 100, 800, 600, 'test-app', false);
-    expect(mockDesktop.create_window).toHaveBeenCalledWith('Test', 100, 100, 800, 600, 'test-app', false);
+    expect(mockDesktop.create_window).toHaveBeenCalledWith(
+      'Test',
+      100,
+      100,
+      800,
+      600,
+      'test-app',
+      false
+    );
   });
 });
 

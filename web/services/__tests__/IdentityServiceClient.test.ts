@@ -4,8 +4,6 @@ import {
   MSG,
   type Supervisor,
   type NeuralKeyGenerated,
-  type MachineKeyRecord,
-  type LocalKeyStore,
   type MachineKeyCapabilities,
   // Typed errors
   IdentityServiceError,
@@ -20,10 +18,6 @@ import {
 // =============================================================================
 // Test Helpers
 // =============================================================================
-
-interface MockPendingRequest {
-  callback: (requestId: string, data: string) => void;
-}
 
 function createMockSupervisor(): Supervisor & {
   _ipcCallback: ((requestId: string, data: string) => void) | null;
@@ -47,7 +41,7 @@ function createMockSupervisor(): Supervisor & {
     set_ipc_response_callback: vi.fn((callback: (requestId: string, data: string) => void) => {
       ipcCallback = callback;
     }),
-    send_service_ipc: vi.fn((serviceName: string, tag: number, data: string) => {
+    send_service_ipc: vi.fn((_serviceName: string, tag: number, _data: string) => {
       const responseTag = tag + 1;
       return responseTag.toString(16).padStart(8, '0');
     }),
@@ -56,7 +50,7 @@ function createMockSupervisor(): Supervisor & {
 }
 
 // Reset module state between tests (callback registration tracking)
-function resetClientState() {
+function _resetClientState() {
   // The client module tracks `callbackRegistered` as module-level state
   // We need to re-import or reset it between tests
   vi.resetModules();
@@ -89,8 +83,8 @@ describe('IdentityServiceClient', () => {
 
     it('should only register callback once for multiple clients', () => {
       // Create a second client with the same supervisor
-      const client2 = new IdentityServiceClient(supervisor);
-      
+      const _client2 = new IdentityServiceClient(supervisor);
+
       // Callback should still only be registered once (tracked by module state)
       // Note: In practice, the module-level state prevents re-registration
       // This test verifies the behavior with same supervisor instance
@@ -130,7 +124,7 @@ describe('IdentityServiceClient', () => {
       expect(supervisor.send_service_ipc).toHaveBeenCalledWith(
         'identity',
         MSG.GENERATE_NEURAL_KEY,
-        JSON.stringify({ user_id: Number(userId) })
+        JSON.stringify({ user_id: '0x00000000000000000000000000003039' })
       );
 
       // Simulate response
@@ -196,7 +190,7 @@ describe('IdentityServiceClient', () => {
       expect(supervisor.send_service_ipc).toHaveBeenCalledWith(
         'identity',
         MSG.RECOVER_NEURAL_KEY,
-        JSON.stringify({ user_id: Number(userId), shards })
+        JSON.stringify({ user_id: '0x00000000000000000000000000003039', shards })
       );
 
       // Simulate success response
@@ -251,7 +245,7 @@ describe('IdentityServiceClient', () => {
 
       const result = await promise;
       expect(result).not.toBeNull();
-      expect(result!.user_id).toBe(12345);
+      expect(result?.user_id).toBe(12345);
     });
 
     it('should return null when key not found', async () => {
@@ -298,7 +292,7 @@ describe('IdentityServiceClient', () => {
       // Verify the request data
       const callArgs = (supervisor.send_service_ipc as ReturnType<typeof vi.fn>).mock.calls[0];
       const requestData = JSON.parse(callArgs[2]);
-      expect(requestData.user_id).toBe(Number(userId));
+      expect(requestData.user_id).toBe('0x00000000000000000000000000003039');
       expect(requestData.machine_name).toBe(machineName);
       expect(requestData.capabilities).toEqual(capabilities);
 
@@ -410,7 +404,7 @@ describe('IdentityServiceClient', () => {
       expect(supervisor.send_service_ipc).toHaveBeenCalledWith(
         'identity',
         MSG.REVOKE_MACHINE_KEY,
-        JSON.stringify({ user_id: Number(userId), machine_id: Number(machineId) })
+        JSON.stringify({ user_id: '0x00000000000000000000000000003039', machine_id: '0x000000000000000000000000000181cd' })
       );
 
       const response = {
@@ -636,7 +630,15 @@ describe('IdentityServiceClient', () => {
       // Respond to get request
       const getRequestId = (MSG.GET_IDENTITY_KEY + 1).toString(16).padStart(8, '0');
       supervisor._simulateResponse(getRequestId, {
-        result: { Ok: { user_id: 12345, identity_signing_public_key: [], machine_signing_public_key: [], machine_encryption_public_key: [], epoch: 1 } },
+        result: {
+          Ok: {
+            user_id: 12345,
+            identity_signing_public_key: [],
+            machine_signing_public_key: [],
+            machine_encryption_public_key: [],
+            epoch: 1,
+          },
+        },
       });
 
       await vi.advanceTimersByTimeAsync(20);
@@ -646,7 +648,7 @@ describe('IdentityServiceClient', () => {
       expect(genResult.public_identifiers.identity_signing_pub_key).toBe('0xgen1');
 
       const getResult = await getPromise;
-      expect(getResult!.user_id).toBe(12345);
+      expect(getResult?.user_id).toBe(12345);
     });
 
     it('handles concurrent requests of the same type with FIFO queue', async () => {
@@ -668,27 +670,51 @@ describe('IdentityServiceClient', () => {
 
       // Respond to first request - should resolve promise1 (FIFO)
       supervisor._simulateResponse(requestId, {
-        result: { Ok: { user_id: 11111, identity_signing_public_key: [], machine_signing_public_key: [], machine_encryption_public_key: [], epoch: 1 } },
+        result: {
+          Ok: {
+            user_id: 11111,
+            identity_signing_public_key: [],
+            machine_signing_public_key: [],
+            machine_encryption_public_key: [],
+            epoch: 1,
+          },
+        },
       });
       await vi.advanceTimersByTimeAsync(50);
       const result1 = await promise1;
-      expect(result1!.user_id).toBe(11111);
+      expect(result1?.user_id).toBe(11111);
 
       // Respond to second request - should resolve promise2 (FIFO)
       supervisor._simulateResponse(requestId, {
-        result: { Ok: { user_id: 22222, identity_signing_public_key: [], machine_signing_public_key: [], machine_encryption_public_key: [], epoch: 1 } },
+        result: {
+          Ok: {
+            user_id: 22222,
+            identity_signing_public_key: [],
+            machine_signing_public_key: [],
+            machine_encryption_public_key: [],
+            epoch: 1,
+          },
+        },
       });
       await vi.advanceTimersByTimeAsync(50);
       const result2 = await promise2;
-      expect(result2!.user_id).toBe(22222);
+      expect(result2?.user_id).toBe(22222);
 
       // Respond to third request - should resolve promise3 (FIFO)
       supervisor._simulateResponse(requestId, {
-        result: { Ok: { user_id: 33333, identity_signing_public_key: [], machine_signing_public_key: [], machine_encryption_public_key: [], epoch: 1 } },
+        result: {
+          Ok: {
+            user_id: 33333,
+            identity_signing_public_key: [],
+            machine_signing_public_key: [],
+            machine_encryption_public_key: [],
+            epoch: 1,
+          },
+        },
       });
       await vi.advanceTimersByTimeAsync(50);
       const result3 = await promise3;
-      expect(result3!.user_id).toBe(33333);
+      expect(result3?.user_id).toBe(33333);
     });
 
     it('generates unique request IDs for timeout tracking', () => {
@@ -696,11 +722,11 @@ describe('IdentityServiceClient', () => {
       // we use unique IDs for timeout tracking
       const requestId1 = supervisor.send_service_ipc('identity', MSG.GET_IDENTITY_KEY, '{}');
       const requestId2 = supervisor.send_service_ipc('identity', MSG.GET_IDENTITY_KEY, '{}');
-      
+
       // Supervisor returns the same response tag hex
       expect(requestId1).toBe(requestId2);
       expect(requestId1).toBe((MSG.GET_IDENTITY_KEY + 1).toString(16).padStart(8, '0'));
-      
+
       // But internally, requests get unique IDs (tested via the FIFO behavior above)
     });
   });

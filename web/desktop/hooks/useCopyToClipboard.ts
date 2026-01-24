@@ -25,21 +25,21 @@ export interface UseCopyToClipboardReturn {
 
 /**
  * Hook for copying text to clipboard with feedback state.
- * 
+ *
  * Provides a consistent UX pattern for copy buttons:
  * - Shows "Copied" feedback for a configurable duration
  * - Supports multiple independent copy actions via keys
  * - Handles errors gracefully
- * 
+ *
  * @param timeout - Duration in ms to show "copied" feedback (default: 2000)
- * 
+ *
  * @example
  * // Simple usage with single copy button
  * const { copy, isCopied } = useCopyToClipboard();
  * <Button onClick={() => copy(text)}>
  *   {isCopied() ? 'Copied!' : 'Copy'}
  * </Button>
- * 
+ *
  * @example
  * // Multiple copy buttons with keys
  * const { copy, isCopied } = useCopyToClipboard();
@@ -62,31 +62,37 @@ export function useCopyToClipboard(timeout = 2000): UseCopyToClipboardReturn {
     };
   }, []);
 
-  const copy = useCallback(async (text: string, key = 'default'): Promise<boolean> => {
-    try {
-      await navigator.clipboard.writeText(text);
-      
-      // Clear any existing timeout
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-      
-      setCopiedKey(key);
-      timeoutRef.current = setTimeout(() => {
-        setCopiedKey(null);
-        timeoutRef.current = null;
-      }, timeout);
-      
-      return true;
-    } catch (err) {
-      console.error('Failed to copy to clipboard:', err);
-      return false;
-    }
-  }, [timeout]);
+  const copy = useCallback(
+    async (text: string, key = 'default'): Promise<boolean> => {
+      try {
+        await navigator.clipboard.writeText(text);
 
-  const isCopied = useCallback((key = 'default'): boolean => {
-    return copiedKey === key;
-  }, [copiedKey]);
+        // Clear any existing timeout
+        if (timeoutRef.current) {
+          clearTimeout(timeoutRef.current);
+        }
+
+        setCopiedKey(key);
+        timeoutRef.current = setTimeout(() => {
+          setCopiedKey(null);
+          timeoutRef.current = null;
+        }, timeout);
+
+        return true;
+      } catch (err) {
+        console.error('Failed to copy to clipboard:', err);
+        return false;
+      }
+    },
+    [timeout]
+  );
+
+  const isCopied = useCallback(
+    (key = 'default'): boolean => {
+      return copiedKey === key;
+    },
+    [copiedKey]
+  );
 
   return { copy, isCopied, copiedKey };
 }

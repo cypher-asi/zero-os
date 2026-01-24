@@ -1,61 +1,23 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Panel, Button, Text, Label } from '@cypher-asi/zui';
+import type {
+  ObjectType,
+  Permissions,
+  CapabilityRequest,
+  AppManifest,
+} from '../../types/permissions';
 import styles from './PermissionDialog.module.css';
 
-// =============================================================================
-// Types (matching 03-security.md spec)
-// =============================================================================
+// Re-export types for consumers
+export type { ObjectType, Permissions, CapabilityRequest, AppManifest };
 
 /**
- * Types of kernel objects that can be accessed via capabilities
+ * App manifest with required fields for permission dialog
+ * The dialog requires description and capabilities to be present
  */
-export type ObjectType =
-  | 'Endpoint'
-  | 'Console'
-  | 'Storage'
-  | 'Network'
-  | 'Process'
-  | 'Memory';
-
-/**
- * Permission bits for capabilities
- */
-export interface Permissions {
-  read: boolean;
-  write: boolean;
-  grant: boolean;
-}
-
-/**
- * Capability request from an app's manifest
- */
-export interface CapabilityRequest {
-  /** Type of kernel object being requested */
-  objectType: ObjectType;
-  /** Permissions needed on this object */
-  permissions: Permissions;
-  /** Human-readable reason (shown to user in permission dialog) */
-  reason: string;
-  /** Whether this permission is required for the app to function */
-  required: boolean;
-}
-
-/**
- * App manifest information
- */
-export interface AppManifest {
-  /** Unique app identifier (e.g., "com.example.myapp") */
-  id: string;
-  /** Display name */
-  name: string;
-  /** Version string */
-  version: string;
-  /** Description */
+export interface PermissionDialogApp extends AppManifest {
   description: string;
-  /** Requested capabilities */
   capabilities: CapabilityRequest[];
-  /** Whether this is a factory (trusted) app */
-  isFactory?: boolean;
 }
 
 // =============================================================================
@@ -64,7 +26,7 @@ export interface AppManifest {
 
 export interface PermissionDialogProps {
   /** App requesting capabilities */
-  app: AppManifest;
+  app: PermissionDialogApp;
   /** Called when user approves (with list of approved capabilities) */
   onApprove: (approved: CapabilityRequest[]) => void;
   /** Called when user denies all capabilities */
@@ -127,16 +89,14 @@ function getObjectTypeIcon(type: ObjectType): string {
 
 /**
  * Capability request dialog for third-party apps.
- * 
+ *
  * Shows requested capabilities from the app manifest and allows users to
  * selectively approve or deny capabilities. Required capabilities are
  * automatically selected and cannot be deselected.
  */
-export function PermissionDialog({
-  app,
-  onApprove,
-  onDeny,
-}: PermissionDialogProps) {
+export function PermissionDialog({ app, onApprove, onDeny }: PermissionDialogProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+
   // Initialize selected state: required capabilities are always selected
   const initialSelected = useMemo(() => {
     const set = new Set<number>();
@@ -149,6 +109,59 @@ export function PermissionDialog({
   }, [app.capabilities]);
 
   const [selected, setSelected] = useState<Set<number>>(initialSelected);
+
+  // Focus trap and keyboard handling for modal dialog
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    // Focus the dialog when it opens
+    dialog.focus();
+
+    // Get all focusable elements within the dialog
+    const getFocusableElements = (): HTMLElement[] => {
+      return Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      );
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Close on Escape
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onDeny();
+        return;
+      }
+
+      // Focus trap on Tab
+      if (e.key === 'Tab') {
+        const focusable = getFocusableElements();
+        if (focusable.length === 0) return;
+
+        const firstElement = focusable[0];
+        const lastElement = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          // Shift+Tab: if on first element, go to last
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          // Tab: if on last element, go to first
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      }
+    };
+
+    dialog.addEventListener('keydown', handleKeyDown);
+    return () => dialog.removeEventListener('keydown', handleKeyDown);
+  }, [onDeny]);
 
   // Toggle a capability selection
   const toggleCapability = useCallback(
@@ -190,24 +203,32 @@ export function PermissionDialog({
   );
 
   return (
-    <div className={styles.overlay} onClick={onDeny}>
+    <div className={styles.overlay} onClick={onDeny} role="presentation" aria-hidden="true">
       <Panel
+        ref={dialogRef}
         variant="glass"
         className={styles.dialog}
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="permission-dialog-title"
+        aria-describedby="permission-dialog-description"
+        tabIndex={-1}
       >
         {/* Header */}
         <div className={styles.header}>
           <div className={styles.title}>
-            <div className={styles.icon}>🔐</div>
-            <Text as="span" size="sm" className={styles.appName}>
-              {app.name}
+            <div className={styles.icon} aria-hidden="true">
+              🔐
+            </div>
+            <Text as="span" size="sm" className={styles.appName} id="permission-dialog-title">
+              {app.name} Permission Request
             </Text>
             <Label size="xs" variant="default">
               v{app.version}
             </Label>
           </div>
-          <Text as="div" size="sm" className={styles.subtitle}>
+          <Text as="div" size="sm" className={styles.subtitle} id="permission-dialog-description">
             This app is requesting the following capabilities:
           </Text>
         </div>
@@ -219,8 +240,7 @@ export function PermissionDialog({
             <div className={styles.warning}>
               <span className={styles.warningIcon}>⚠</span>
               <Text as="span" size="xs" className={styles.warningText}>
-                This app requests sensitive capabilities. Only approve if you
-                trust the source.
+                This app requests sensitive capabilities. Only approve if you trust the source.
               </Text>
             </div>
           )}
@@ -246,27 +266,19 @@ export function PermissionDialog({
                     checked={selected.has(index)}
                     disabled={cap.required}
                     onChange={() => toggleCapability(index)}
-                    aria-label={`${formatObjectType(cap.objectType)} permission`}
+                    aria-label={`${cap.required ? 'Required: ' : ''}${formatObjectType(cap.objectType)} - ${formatPermissions(cap.permissions)} access`}
                   />
                   <div className={styles.permissionInfo}>
                     <div className={styles.permissionHeader}>
                       <span className={styles.permissionType}>
-                        {getObjectTypeIcon(cap.objectType)}{' '}
-                        {formatObjectType(cap.objectType)}
+                        {getObjectTypeIcon(cap.objectType)} {formatObjectType(cap.objectType)}
                       </span>
                       <span className={styles.permissionPerms}>
                         {formatPermissions(cap.permissions)}
                       </span>
-                      {cap.required && (
-                        <span className={styles.requiredBadge}>Required</span>
-                      )}
+                      {cap.required && <span className={styles.requiredBadge}>Required</span>}
                     </div>
-                    <Text
-                      as="p"
-                      size="xs"
-                      variant="muted"
-                      className={styles.permissionReason}
-                    >
+                    <Text as="p" size="xs" variant="muted" className={styles.permissionReason}>
                       {cap.reason}
                     </Text>
                   </div>
@@ -287,13 +299,10 @@ export function PermissionDialog({
             onClick={handleApprove}
             disabled={!hasRequiredCapabilities}
           >
-            {selected.size === 0
-              ? 'Allow'
-              : `Allow Selected (${selected.size})`}
+            {selected.size === 0 ? 'Allow' : `Allow Selected (${selected.size})`}
           </Button>
         </div>
       </Panel>
     </div>
   );
 }
-

@@ -326,3 +326,25 @@ pub static TIME_SERVICE_MANIFEST: AppManifest = AppManifest {
         },
     ],
 };
+
+/// Network Service manifest (PID 6)
+pub static NETWORK_SERVICE_MANIFEST: AppManifest = AppManifest {
+    id: "com.zero.network_service",
+    name: "Network Service",
+    version: "1.0.0",
+    description: "HTTP request mediation service for Zero OS",
+    capabilities: &[
+        CapabilityRequest {
+            object_type: ObjectType::Endpoint,
+            permissions: Permissions::full(),
+            reason: "Receive network requests and send responses",
+            required: true,
+        },
+        CapabilityRequest {
+            object_type: ObjectType::Network,
+            permissions: Permissions::full(),
+            reason: "Perform HTTP requests on behalf of other processes",
+            required: true,
+        },
+    ],
+};

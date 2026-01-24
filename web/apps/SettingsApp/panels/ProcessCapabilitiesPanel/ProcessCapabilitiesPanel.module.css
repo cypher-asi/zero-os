@@ -1,0 +1,71 @@
+/* ProcessCapabilitiesPanel specific styles */
+
+.panelContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Collapsible Section - full bleed */
+.collapsibleSection {
+  border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.collapsibleSection:last-child {
+  border-bottom: none;
+}
+
+/* Menu content wrapper with bottom padding only */
+.menuContent {
+  padding: 0 0 12px 0;
+  overflow: visible;
+}
+
+/* Remove left/right padding from direct children of collapsible (GroupCollapsible content area) */
+.collapsibleSection > :global(div) > :global(div) {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Menu status with label and caps count */
+.menuStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 100;
+}
+
+/* Empty state for panels */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  gap: 12px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+  text-align: center;
+}
+
+.emptyState svg {
+  opacity: 0.5;
+}
+
+/* Danger Zone Section */
+.dangerZoneSection {
+  padding: 16px;
+}
+
+.dangerCard {
+  background: var(--color-danger-muted, rgba(239, 68, 68, 0.08));
+  border: 1px solid var(--color-danger, rgba(239, 68, 68, 0.25));
+}
+
+.dangerCardItem {
+  color: var(--color-danger, #ef4444);
+}
+
+.dangerCardItem svg {
+  color: var(--color-danger, #ef4444);
+}

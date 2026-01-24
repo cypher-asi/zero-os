@@ -50,7 +50,10 @@ const defaultState: MockDesktopControllerState = {
 
 export function createMockDesktopController(
   initialState: Partial<MockDesktopControllerState> = {}
-): DesktopController & { _state: MockDesktopControllerState; _updateState: (updates: Partial<MockDesktopControllerState>) => void } {
+): DesktopController & {
+  _state: MockDesktopControllerState;
+  _updateState: (updates: Partial<MockDesktopControllerState>) => void;
+} {
   const state: MockDesktopControllerState = { ...defaultState, ...initialState };
 
   const updateState = (updates: Partial<MockDesktopControllerState>) => {
@@ -65,7 +68,7 @@ export function createMockDesktopController(
     init: vi.fn((width: number, height: number) => {
       state.viewport = { center: { x: width / 2, y: height / 2 }, zoom: 1.0 };
     }),
-    resize: vi.fn((width: number, height: number) => {
+    resize: vi.fn((_width: number, _height: number) => {
       // Resize logic
     }),
 
@@ -74,97 +77,112 @@ export function createMockDesktopController(
       state.viewport.center.x += dx;
       state.viewport.center.y += dy;
     }),
-    zoom_at: vi.fn((factor: number, anchor_x: number, anchor_y: number) => {
+    zoom_at: vi.fn((factor: number, _anchor_x: number, _anchor_y: number) => {
       state.viewport.zoom *= factor;
     }),
     get_viewport_json: vi.fn(() => JSON.stringify(state.viewport)),
 
     // Windows
-    create_window: vi.fn((title: string, x: number, y: number, w: number, h: number, app_id: string, content_interactive: boolean) => {
-      const id = state.windows.length + 1;
-      const window: MockWindowData = {
-        id,
-        title,
-        appId: app_id,
-        position: { x, y },
-        size: { width: w, height: h },
-        state: 'normal',
-        windowType: 'standard',
-        zOrder: state.windows.length,
-        focused: true,
-      };
-      state.windows.push(window);
-      state.focusedWindow = id;
-      return BigInt(id);
-    }),
+    create_window: vi.fn(
+      (
+        title: string,
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        app_id: string,
+        _content_interactive: boolean
+      ) => {
+        const id = state.windows.length + 1;
+        const window: MockWindowData = {
+          id,
+          title,
+          appId: app_id,
+          position: { x, y },
+          size: { width: w, height: h },
+          state: 'normal',
+          windowType: 'standard',
+          zOrder: state.windows.length,
+          focused: true,
+        };
+        state.windows.push(window);
+        state.focusedWindow = id;
+        return BigInt(id);
+      }
+    ),
     close_window: vi.fn((id: bigint) => {
       const idNum = Number(id);
-      state.windows = state.windows.filter(w => w.id !== idNum);
+      state.windows = state.windows.filter((w) => w.id !== idNum);
       if (state.focusedWindow === idNum) {
-        state.focusedWindow = state.windows.length > 0 ? state.windows[state.windows.length - 1].id : null;
+        state.focusedWindow =
+          state.windows.length > 0 ? state.windows[state.windows.length - 1].id : null;
       }
     }),
-    get_window_process_id: vi.fn((id: bigint) => undefined),
+    get_window_process_id: vi.fn((_id: bigint) => undefined),
     focus_window: vi.fn((id: bigint) => {
       const idNum = Number(id);
       state.focusedWindow = idNum;
-      state.windows.forEach(w => w.focused = w.id === idNum);
+      state.windows.forEach((w) => (w.focused = w.id === idNum));
     }),
     move_window: vi.fn((id: bigint, x: number, y: number) => {
-      const window = state.windows.find(w => w.id === Number(id));
+      const window = state.windows.find((w) => w.id === Number(id));
       if (window) {
         window.position = { x, y };
       }
     }),
     resize_window: vi.fn((id: bigint, w: number, h: number) => {
-      const window = state.windows.find(win => win.id === Number(id));
+      const window = state.windows.find((win) => win.id === Number(id));
       if (window) {
         window.size = { width: w, height: h };
       }
     }),
     minimize_window: vi.fn((id: bigint) => {
-      const window = state.windows.find(w => w.id === Number(id));
+      const window = state.windows.find((w) => w.id === Number(id));
       if (window) {
         window.state = 'minimized';
       }
     }),
     maximize_window: vi.fn((id: bigint) => {
-      const window = state.windows.find(w => w.id === Number(id));
+      const window = state.windows.find((w) => w.id === Number(id));
       if (window) {
         window.state = window.state === 'maximized' ? 'normal' : 'maximized';
       }
     }),
     restore_window: vi.fn((id: bigint) => {
-      const window = state.windows.find(w => w.id === Number(id));
+      const window = state.windows.find((w) => w.id === Number(id));
       if (window) {
         window.state = 'normal';
       }
     }),
-    get_focused_window: vi.fn(() => state.focusedWindow !== null ? BigInt(state.focusedWindow) : undefined),
+    get_focused_window: vi.fn(() =>
+      state.focusedWindow !== null ? BigInt(state.focusedWindow) : undefined
+    ),
     pan_to_window: vi.fn((id: bigint) => {
-      const window = state.windows.find(w => w.id === Number(id));
+      const window = state.windows.find((w) => w.id === Number(id));
       if (window) {
         state.viewport.center = { ...window.position };
       }
     }),
     get_windows_json: vi.fn(() => JSON.stringify(state.windows)),
-    get_window_screen_rects_json: vi.fn(() => JSON.stringify(
-      state.windows.map((w, i) => ({
-        id: w.id,
-        title: w.title,
-        appId: w.appId,
-        state: w.state,
-        focused: w.focused,
-        zOrder: i,
-        opacity: 1.0,
-        screenRect: {
-          x: w.position.x,
-          y: w.position.y,
-          width: w.size.width,
-          height: w.size.height,
-        },
-      }))
-    )),
+    get_window_screen_rects_json: vi.fn(() =>
+      JSON.stringify(
+        state.windows.map((w, i) => ({
+          id: w.id,
+          title: w.title,
+          appId: w.appId,
+          state: w.state,
+          focused: w.focused,
+          zOrder: i,
+          opacity: 1.0,
+          screenRect: {
+            x: w.position.x,
+            y: w.position.y,
+            width: w.size.width,
+            height: w.size.height,
+          },
+        }))
+      )
+    ),
     launch_app: vi.fn((app_id: string) => {
       const id = state.windows.length + 1;
       const window: MockWindowData = {
@@ -190,18 +208,20 @@ export function createMockDesktopController(
     }),
     switch_desktop: vi.fn((index: number) => {
       if (index >= 0 && index < state.desktops.length) {
-        state.desktops.forEach((d, i) => d.active = i === index);
+        state.desktops.forEach((d, i) => (d.active = i === index));
         state.activeDesktop = index;
       }
     }),
     get_active_desktop: vi.fn(() => state.activeDesktop),
     get_visual_active_desktop: vi.fn(() => state.activeDesktop),
     get_desktops_json: vi.fn(() => JSON.stringify(state.desktops)),
-    get_desktop_dimensions_json: vi.fn(() => JSON.stringify({
-      width: 1920,
-      height: 1080,
-      gap: 100,
-    })),
+    get_desktop_dimensions_json: vi.fn(() =>
+      JSON.stringify({
+        width: 1920,
+        height: 1080,
+        gap: 100,
+      })
+    ),
 
     // Void mode
     get_view_mode: vi.fn(() => state.viewMode),
@@ -213,7 +233,7 @@ export function createMockDesktopController(
       state.viewMode = 'desktop';
       if (desktop_index >= 0 && desktop_index < state.desktops.length) {
         state.activeDesktop = desktop_index;
-        state.desktops.forEach((d, i) => d.active = i === desktop_index);
+        state.desktops.forEach((d, i) => (d.active = i === desktop_index));
       }
     }),
 
@@ -224,56 +244,57 @@ export function createMockDesktopController(
     tick_transition: vi.fn(() => state.isTransitioning),
 
     // Input handling
-    pointer_down: vi.fn((x: number, y: number, button: number, ctrl: boolean, shift: boolean) => 
+    pointer_down: vi.fn(
+      (_x: number, _y: number, _button: number, _ctrl: boolean, _shift: boolean) =>
+        JSON.stringify({ type: 'unhandled' })
+    ),
+    pointer_move: vi.fn((_x: number, _y: number) => JSON.stringify({ type: 'unhandled' })),
+    pointer_up: vi.fn(() => JSON.stringify({ type: 'unhandled' })),
+    wheel: vi.fn((_dx: number, _dy: number, _x: number, _y: number, _ctrl: boolean) =>
       JSON.stringify({ type: 'unhandled' })
     ),
-    pointer_move: vi.fn((x: number, y: number) => 
-      JSON.stringify({ type: 'unhandled' })
+    start_window_resize: vi.fn(
+      (_window_id: bigint, _direction: string, _x: number, _y: number) => {}
     ),
-    pointer_up: vi.fn(() => 
-      JSON.stringify({ type: 'unhandled' })
-    ),
-    wheel: vi.fn((dx: number, dy: number, x: number, y: number, ctrl: boolean) => 
-      JSON.stringify({ type: 'unhandled' })
-    ),
-    start_window_resize: vi.fn((window_id: bigint, direction: string, x: number, y: number) => {}),
-    start_window_drag: vi.fn((window_id: bigint, x: number, y: number) => {}),
+    start_window_drag: vi.fn((_window_id: bigint, _x: number, _y: number) => {}),
 
     // Unified frame tick
-    tick_frame: vi.fn(() => JSON.stringify({
-      viewport: state.viewport,
-      windows: state.windows.map((w, i) => ({
-        id: w.id,
-        title: w.title,
-        appId: w.appId,
-        state: w.state,
-        focused: w.focused,
-        zOrder: i,
-        opacity: 1.0,
-        contentInteractive: false,
-        screenRect: {
-          x: w.position.x,
-          y: w.position.y,
-          width: w.size.width,
-          height: w.size.height,
+    tick_frame: vi.fn(() =>
+      JSON.stringify({
+        viewport: state.viewport,
+        windows: state.windows.map((w, i) => ({
+          id: w.id,
+          title: w.title,
+          appId: w.appId,
+          state: w.state,
+          focused: w.focused,
+          zOrder: i,
+          opacity: 1.0,
+          contentInteractive: false,
+          screenRect: {
+            x: w.position.x,
+            y: w.position.y,
+            width: w.size.width,
+            height: w.size.height,
+          },
+        })),
+        animating: state.isAnimating,
+        transitioning: state.isTransitioning,
+        showVoid: state.viewMode === 'void',
+        viewMode: state.viewMode,
+        workspaceInfo: {
+          count: state.desktops.length,
+          active: state.activeDesktop,
+          actualActive: state.activeDesktop,
+          backgrounds: state.desktops.map(() => 'grain'),
         },
-      })),
-      animating: state.isAnimating,
-      transitioning: state.isTransitioning,
-      showVoid: state.viewMode === 'void',
-      viewMode: state.viewMode,
-      workspaceInfo: {
-        count: state.desktops.length,
-        active: state.activeDesktop,
-        actualActive: state.activeDesktop,
-        backgrounds: state.desktops.map(() => 'grain'),
-      },
-      workspaceDimensions: {
-        width: 1920,
-        height: 1080,
-        gap: 100,
-      },
-    })),
+        workspaceDimensions: {
+          width: 1920,
+          height: 1080,
+          gap: 100,
+        },
+      })
+    ),
   };
 }
 
@@ -289,7 +310,7 @@ export function createMockDesktopControllerWithWindows(
     size: w.size ?? { width: 800, height: 600 },
     state: w.state ?? 'normal',
     zOrder: w.zOrder ?? i,
-    focused: w.focused ?? (i === windows.length - 1),
+    focused: w.focused ?? i === windows.length - 1,
   })) as MockWindowData[];
 
   return createMockDesktopController({

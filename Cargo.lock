@@ -1728,6 +1728,7 @@ dependencies = [
  "serde",
  "serde_json",
  "zos-identity",
+ "zos-network",
  "zos-process",
  "zos-vfs",
 ]
@@ -1787,6 +1788,13 @@ dependencies = [
  "zos-hal",
  "zos-ipc",
  "zos-vfs",
+]
+
+[[package]]
+name = "zos-network"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

@@ -1,5 +1,12 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useIdentityStore, selectCurrentUser } from '../../stores';
+import { useIdentityServiceClient } from './useIdentityServiceClient';
+import {
+  type LinkedCredential as ServiceLinkedCredential,
+  type CredentialType as ServiceCredentialType,
+  VfsStorageClient,
+  getCredentialsPath,
+} from '../../services';
 
 // =============================================================================
 // Linked Accounts Types (mirrors zos-identity/src/keystore.rs)
@@ -36,10 +43,6 @@ export interface LinkedCredential {
 export interface LinkedAccountsState {
   /** Linked credentials */
   credentials: LinkedCredential[];
-  /** Email pending verification (if any) */
-  pendingEmail: string | null;
-  /** Verification error message */
-  verificationError: string | null;
   /** Loading state */
   isLoading: boolean;
   /** Error message */
@@ -52,12 +55,20 @@ export interface LinkedAccountsState {
 export interface UseLinkedAccountsReturn {
   /** Current state */
   state: LinkedAccountsState;
-  /** Attach an email (initiates verification) */
-  attachEmail: (email: string) => Promise<{ verificationRequired: boolean }>;
-  /** Verify email with code */
-  verifyEmail: (email: string, code: string) => Promise<void>;
-  /** Cancel pending email verification */
-  cancelEmailVerification: () => void;
+  /**
+   * Attach an email credential via ZID API.
+   * Requires active ZID session (access token from loginWithMachineKey).
+   * @param email - Email address to attach
+   * @param password - Password for ZID account (12+ characters)
+   * @param accessToken - JWT access token from ZID login
+   * @param zidEndpoint - ZID API endpoint
+   */
+  attachEmail: (
+    email: string,
+    password: string,
+    accessToken: string,
+    zidEndpoint: string
+  ) => Promise<void>;
   /** Unlink an account */
   unlinkAccount: (type: CredentialType) => Promise<void>;
   /** Refresh state */
@@ -70,167 +81,203 @@ export interface UseLinkedAccountsReturn {
 
 const INITIAL_STATE: LinkedAccountsState = {
   credentials: [],
-  pendingEmail: null,
-  verificationError: null,
   isLoading: false,
   error: null,
 };
 
 // =============================================================================
+// Conversion helpers
+// =============================================================================
+
+/**
+ * Convert service credential type to local type
+ */
+function convertCredentialType(type: ServiceCredentialType): CredentialType {
+  switch (type) {
+    case 'Email':
+      return 'email';
+    case 'Phone':
+      return 'phone';
+    case 'OAuth':
+      return 'oauth';
+    case 'WebAuthn':
+      return 'webauthn';
+    default:
+      return 'email';
+  }
+}
+
+/**
+ * Convert local credential type to service type
+ */
+function convertCredentialTypeForService(type: CredentialType): ServiceCredentialType {
+  switch (type) {
+    case 'email':
+      return 'Email';
+    case 'phone':
+      return 'Phone';
+    case 'oauth':
+      return 'OAuth';
+    case 'webauthn':
+      return 'WebAuthn';
+    default:
+      return 'Email';
+  }
+}
+
+/**
+ * Convert service credential to local format
+ */
+function convertCredential(cred: ServiceLinkedCredential): LinkedCredential {
+  return {
+    type: convertCredentialType(cred.credential_type),
+    identifier: cred.value,
+    verified: cred.verified,
+    linkedAt: cred.linked_at,
+    verifiedAt: cred.verified_at,
+    isPrimary: cred.is_primary,
+  };
+}
+
+/**
+ * Credential store format from VFS
+ */
+interface CredentialStoreJson {
+  user_id: number;
+  credentials: ServiceLinkedCredential[];
+}
+
+// =============================================================================
 // Hook Implementation
-// 
-// NOTE: This is currently a frontend-only implementation.
-// In production, this would integrate with a credential verification service
-// via the supervisor API. The backend types are defined in zos-identity but
-// the IPC handlers are not yet implemented.
 // =============================================================================
 
 export function useLinkedAccounts(): UseLinkedAccountsReturn {
   const currentUser = useIdentityStore(selectCurrentUser);
+  const { userId, getClientOrThrow, getUserIdOrThrow } = useIdentityServiceClient();
   const [state, setState] = useState<LinkedAccountsState>(INITIAL_STATE);
 
-  const attachEmail = useCallback(async (email: string): Promise<{ verificationRequired: boolean }> => {
-    if (!currentUser?.id) {
-      throw new Error('No user logged in');
-    }
+  /**
+   * Refresh credentials directly from VFS cache (synchronous read)
+   * Defined early since verifyEmail and unlinkAccount depend on it
+   */
+  const refreshFromVfs = useCallback(async (userIdParam: bigint): Promise<void> => {
+    const credPath = getCredentialsPath(userIdParam);
+    console.log(`[useLinkedAccounts] Reading credentials from VFS cache: ${credPath}`);
 
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    if (!VfsStorageClient.isAvailable()) {
+      console.warn('[useLinkedAccounts] VfsStorage not available yet');
+      setState((prev) => ({ ...prev, credentials: [], isLoading: false }));
+      return;
+    }
 
     try {
-      // TODO: Call supervisor API to initiate email verification
-      // This would typically:
-      // 1. Generate a verification code
-      // 2. Send it to the email address
-      // 3. Store the pending verification state
-      
-      // For now, just set the pending email state
-      setState(prev => ({
-        ...prev,
-        pendingEmail: email,
-        verificationError: null,
-        isLoading: false,
-      }));
+      const store = VfsStorageClient.readJsonSync<CredentialStoreJson>(credPath);
 
-      return { verificationRequired: true };
+      if (store && store.credentials) {
+        const credentials = store.credentials.map(convertCredential);
+        console.log(`[useLinkedAccounts] Found ${credentials.length} credentials in VFS cache`);
+        setState((prev) => ({
+          ...prev,
+          credentials,
+          isLoading: false,
+          error: null,
+        }));
+      } else {
+        console.log('[useLinkedAccounts] No credentials found in VFS cache');
+        setState((prev) => ({ ...prev, credentials: [], isLoading: false }));
+      }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to initiate email verification';
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: errorMsg,
-      }));
-      throw err;
+      console.warn('[useLinkedAccounts] Failed to read credentials from VFS:', err);
+      setState((prev) => ({ ...prev, credentials: [], isLoading: false }));
     }
-  }, [currentUser?.id]);
-
-  const verifyEmail = useCallback(async (email: string, code: string): Promise<void> => {
-    if (!currentUser?.id) {
-      throw new Error('No user logged in');
-    }
-
-    if (!state.pendingEmail || state.pendingEmail !== email) {
-      throw new Error('No pending verification for this email');
-    }
-
-    // Validate code format
-    if (!/^\d{6}$/.test(code)) {
-      setState(prev => ({
-        ...prev,
-        verificationError: 'Invalid code format. Please enter 6 digits.',
-      }));
-      throw new Error('Invalid code format');
-    }
-
-    setState(prev => ({ ...prev, isLoading: true, verificationError: null }));
-
-    try {
-      // TODO: Call supervisor API to verify the code
-      // This would typically:
-      // 1. Check the code against the stored verification code
-      // 2. Mark the credential as verified
-      // 3. Store the credential in the user's credential store
-      
-      // For now, accept any valid 6-digit code
-      const now = Date.now();
-      const newCredential: LinkedCredential = {
-        type: 'email',
-        identifier: email,
-        verified: true,
-        linkedAt: now,
-        verifiedAt: now,
-        isPrimary: true,
-      };
-
-      setState(prev => ({
-        ...prev,
-        credentials: [...prev.credentials.filter(c => c.type !== 'email'), newCredential],
-        pendingEmail: null,
-        verificationError: null,
-        isLoading: false,
-      }));
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Verification failed';
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        verificationError: errorMsg,
-      }));
-      throw err;
-    }
-  }, [currentUser?.id, state.pendingEmail]);
-
-  const cancelEmailVerification = useCallback(() => {
-    setState(prev => ({
-      ...prev,
-      pendingEmail: null,
-      verificationError: null,
-    }));
   }, []);
 
-  const unlinkAccount = useCallback(async (type: CredentialType): Promise<void> => {
-    if (!currentUser?.id) {
-      throw new Error('No user logged in');
-    }
+  const attachEmail = useCallback(
+    async (
+      email: string,
+      password: string,
+      accessToken: string,
+      zidEndpoint: string
+    ): Promise<void> => {
+      const userIdVal = getUserIdOrThrow();
+      const client = getClientOrThrow();
 
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-    try {
-      // TODO: Call supervisor API to unlink the credential
-      // This would remove it from the user's credential store in VFS
-      
-      setState(prev => ({
-        ...prev,
-        credentials: prev.credentials.filter(c => c.type !== type),
-        isLoading: false,
-      }));
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to unlink account';
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: errorMsg,
-      }));
-      throw err;
-    }
-  }, [currentUser?.id]);
+      try {
+        console.log(`[useLinkedAccounts] Attaching email ${email} for user ${userIdVal} via ZID`);
+        await client.attachEmail(userIdVal, email, password, accessToken, zidEndpoint);
+
+        // Refresh credentials from VFS cache after successful attachment
+        await refreshFromVfs(userIdVal);
+
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: null,
+        }));
+      } catch (err) {
+        const errorMsg =
+          err instanceof Error ? err.message : 'Failed to attach email';
+        console.error('[useLinkedAccounts] attachEmail error:', errorMsg);
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: errorMsg,
+        }));
+        throw err;
+      }
+    },
+    [getClientOrThrow, getUserIdOrThrow, refreshFromVfs]
+  );
+
+  const unlinkAccount = useCallback(
+    async (type: CredentialType): Promise<void> => {
+      const userIdVal = getUserIdOrThrow();
+      const client = getClientOrThrow();
+
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+      try {
+        console.log(`[useLinkedAccounts] Unlinking ${type} for user ${userIdVal}`);
+        await client.unlinkCredential(userIdVal, convertCredentialTypeForService(type));
+
+        // Refresh credentials from VFS cache
+        await refreshFromVfs(userIdVal);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to unlink account';
+        console.error('[useLinkedAccounts] unlinkAccount error:', errorMsg);
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: errorMsg,
+        }));
+        throw err;
+      }
+    },
+    [getClientOrThrow, getUserIdOrThrow, refreshFromVfs]
+  );
 
   const refresh = useCallback(async (): Promise<void> => {
-    if (!currentUser?.id) {
+    if (!userId) {
       setState(INITIAL_STATE);
       return;
     }
 
-    // TODO: Call supervisor API to fetch credentials from VFS
-    // Path: /home/{user_id}/.zos/credentials/credentials.json
-    
-    // For now, keep current state
-  }, [currentUser?.id]);
+    // Reads directly from VfsStorage cache
+    await refreshFromVfs(userId);
+  }, [userId, refreshFromVfs]);
+
+  // Auto-refresh on mount and when user changes
+  useEffect(() => {
+    if (currentUser?.id) {
+      refresh();
+    }
+  }, [currentUser?.id, refresh]);
 
   return {
     state,
     attachEmail,
-    verifyEmail,
-    cancelEmailVerification,
     unlinkAccount,
     refresh,
   };

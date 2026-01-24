@@ -73,8 +73,46 @@ pub enum CredentialError {
     InvalidFormat,
     /// Verification failed
     VerificationFailed,
+    /// Verification code expired
+    CodeExpired,
+    /// No pending verification for this email
+    NoPendingVerification,
+    /// Credential not found
+    NotFound,
     /// Storage error
     StorageError(String),
+}
+
+/// Errors from ZID API operations.
+///
+/// These errors occur during machine key login and credential
+/// attachment flows with the ZERO-ID remote server.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ZidError {
+    /// Network error during API call
+    NetworkError(String),
+    /// Authentication failed (invalid signature, unknown machine)
+    AuthenticationFailed,
+    /// Challenge expired or invalid
+    InvalidChallenge,
+    /// Machine key not found locally
+    MachineKeyNotFound,
+    /// Machine not registered with ZID server (needs enrollment)
+    MachineNotRegistered(String),
+    /// Machine enrollment failed
+    EnrollmentFailed(String),
+    /// ZID server error (5xx response)
+    ServerError(String),
+    /// Email already registered to another account
+    EmailAlreadyRegistered,
+    /// Invalid email format
+    InvalidEmailFormat,
+    /// Password too weak (must meet complexity requirements)
+    PasswordTooWeak,
+    /// Session expired
+    SessionExpired,
+    /// Invalid or expired refresh token
+    InvalidRefreshToken,
 }
 
 /// General identity layer error.

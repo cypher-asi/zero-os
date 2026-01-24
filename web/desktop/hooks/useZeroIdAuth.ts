@@ -1,7 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { IdentityServiceClient, ZidTokens, ZidSession } from '../../services/IdentityServiceClient';
+import { VfsStorageClient, formatUserId } from '../../services/VfsStorageClient';
+import { useSupervisor } from './useSupervisor';
+import { useIdentityStore, selectCurrentUser } from '../../stores';
 
 // =============================================================================
-// ZERO ID Auth Types (mirrors zos-identity/src/session.rs)
+// ZERO ID Auth Types (mirrors zos-identity/src/ipc.rs)
 // =============================================================================
 
 /** Remote authentication state */
@@ -16,8 +20,8 @@ export interface RemoteAuthState {
   refreshToken: string | null;
   /** Granted OAuth scopes */
   scopes: string[];
-  /** User's ZERO ID key (truncated for display) */
-  userKey: string;
+  /** Session ID from ZID server */
+  sessionId: string;
 }
 
 /** Hook return type */
@@ -26,12 +30,16 @@ export interface UseZeroIdAuthReturn {
   remoteAuthState: RemoteAuthState | null;
   /** Whether authentication is in progress */
   isAuthenticating: boolean;
+  /** Whether we're loading session from VFS */
+  isLoadingSession: boolean;
   /** Error message if any */
   error: string | null;
   /** Login with email and password */
   loginWithEmail: (email: string, password: string) => Promise<void>;
   /** Login with machine key challenge-response */
-  loginWithMachineKey: () => Promise<void>;
+  loginWithMachineKey: (zidEndpoint?: string) => Promise<void>;
+  /** Enroll/register machine with ZID server */
+  enrollMachine: (zidEndpoint?: string) => Promise<void>;
   /** Logout from ZERO ID */
   logout: () => Promise<void>;
   /** Refresh the access token */
@@ -43,33 +51,20 @@ export interface UseZeroIdAuthReturn {
 }
 
 // =============================================================================
-// IPC Message Types (from zos-identity/src/ipc.rs)
+// Constants
 // =============================================================================
 
-// MSG_REMOTE_AUTH = 0x7020
-// MSG_REMOTE_AUTH_RESPONSE = 0x7021
+const DEFAULT_ZID_ENDPOINT = 'http://127.0.0.1:9999';
 
 // =============================================================================
 // Helpers
 // =============================================================================
 
-function generateMockToken(): string {
-  const header = btoa(JSON.stringify({ alg: 'EdDSA', typ: 'JWT' }));
-  const payload = btoa(JSON.stringify({
-    sub: '1234567890',
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 86400,
-  }));
-  const signature = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-  return `${header}.${payload}.${signature}`;
-}
-
-function generateMockUserKey(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+/**
+ * Get the canonical path for a user's ZID session.
+ */
+function getZidSessionPath(userId: bigint | string | number): string {
+  return `/home/${formatUserId(userId)}/.zos/identity/zid_session.json`;
 }
 
 function formatTimeRemaining(expiresAt: number): string {
@@ -77,10 +72,10 @@ function formatTimeRemaining(expiresAt: number): string {
   if (remaining <= 0) {
     return 'Expired';
   }
-  
+
   const hours = Math.floor(remaining / (60 * 60 * 1000));
   const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000));
-  
+
   if (hours > 0) {
     return `${hours}h ${minutes}m`;
   }
@@ -94,7 +89,58 @@ function formatTimeRemaining(expiresAt: number): string {
 export function useZeroIdAuth(): UseZeroIdAuthReturn {
   const [remoteAuthState, setRemoteAuthState] = useState<RemoteAuthState | null>(null);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const supervisor = useSupervisor();
+  const currentUser = useIdentityStore(selectCurrentUser);
+  const currentUserId = currentUser?.id ?? null;
+
+  // Track if we've initialized to avoid double-loading
+  const initializedRef = useRef(false);
+
+  // Create client instance when supervisor is available
+  const clientRef = useRef<IdentityServiceClient | null>(null);
+  if (supervisor && !clientRef.current) {
+    clientRef.current = new IdentityServiceClient(supervisor);
+  }
+
+  // Load session from VFS cache on mount (or when user changes)
+  useEffect(() => {
+    if (!currentUserId || initializedRef.current) {
+      setIsLoadingSession(false);
+      return;
+    }
+
+    const loadSession = () => {
+      try {
+        const sessionPath = getZidSessionPath(currentUserId);
+        const session = VfsStorageClient.readJsonSync<ZidSession>(sessionPath);
+
+        if (session && session.expires_at > Date.now()) {
+          // Valid session found, restore state
+          setRemoteAuthState({
+            serverEndpoint: session.zid_endpoint,
+            accessToken: session.access_token,
+            tokenExpiresAt: session.expires_at,
+            refreshToken: session.refresh_token,
+            scopes: ['read', 'write', 'sync'], // Default scopes
+            sessionId: session.session_id,
+          });
+          console.log('[useZeroIdAuth] Restored session from VFS cache');
+        } else if (session) {
+          console.log('[useZeroIdAuth] Found expired session in VFS cache');
+        }
+      } catch (err) {
+        console.warn('[useZeroIdAuth] Failed to load session from VFS:', err);
+      } finally {
+        setIsLoadingSession(false);
+        initializedRef.current = true;
+      }
+    };
+
+    loadSession();
+  }, [currentUserId]);
 
   const loginWithEmail = useCallback(async (email: string, password: string) => {
     setIsAuthenticating(true);
@@ -111,21 +157,9 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         throw new Error('Invalid email format');
       }
 
-      // TODO: Call supervisor IPC with MSG_REMOTE_AUTH (0x7020)
-      // This would send credentials to a ZERO ID server
-      await new Promise(resolve => setTimeout(resolve, 500));
-
-      // Mock successful login
-      const authState: RemoteAuthState = {
-        serverEndpoint: 'https://auth.zero-id.io',
-        accessToken: generateMockToken(),
-        tokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
-        refreshToken: generateMockToken(),
-        scopes: ['read', 'write', 'sync'],
-        userKey: `UID-${generateMockUserKey().slice(0, 4)}-${generateMockUserKey().slice(0, 4)}-${generateMockUserKey().slice(0, 4)}`,
-      };
-
-      setRemoteAuthState(authState);
+      // TODO: Implement email/password login via IPC
+      // This would be Phase 2 when we add email credential support
+      throw new Error('Email login not yet implemented - use machine key login');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Authentication failed';
       setError(errorMsg);
@@ -135,46 +169,96 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
     }
   }, []);
 
-  const loginWithMachineKey = useCallback(async () => {
-    setIsAuthenticating(true);
-    setError(null);
+  const loginWithMachineKey = useCallback(
+    async (zidEndpoint: string = DEFAULT_ZID_ENDPOINT) => {
+      setIsAuthenticating(true);
+      setError(null);
 
-    try {
-      // TODO: Implement challenge-response authentication
-      // 1. Request challenge from ZERO ID server
-      // 2. Sign challenge with machine key
-      // 3. Submit signed challenge for verification
-      
-      await new Promise(resolve => setTimeout(resolve, 500));
+      try {
+        if (!clientRef.current) {
+          throw new Error('Supervisor not available - please wait for system to initialize');
+        }
+        if (!currentUserId) {
+          throw new Error('You must be logged in locally before using Machine Key login');
+        }
 
-      const authState: RemoteAuthState = {
-        serverEndpoint: 'https://auth.zero-id.io',
-        accessToken: generateMockToken(),
-        tokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
-        refreshToken: generateMockToken(),
-        scopes: ['read', 'write', 'sync'],
-        userKey: `UID-${generateMockUserKey().slice(0, 4)}-${generateMockUserKey().slice(0, 4)}-${generateMockUserKey().slice(0, 4)}`,
-      };
+        // Call identity service to perform machine key login
+        const tokens: ZidTokens = await clientRef.current.loginWithMachineKey(
+          currentUserId,
+          zidEndpoint
+        );
 
-      setRemoteAuthState(authState);
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Machine key authentication failed';
-      setError(errorMsg);
-      throw err;
-    } finally {
-      setIsAuthenticating(false);
-    }
-  }, []);
+        // Convert tokens to RemoteAuthState
+        const authState: RemoteAuthState = {
+          serverEndpoint: zidEndpoint,
+          accessToken: tokens.access_token,
+          tokenExpiresAt: Date.now() + tokens.expires_in * 1000, // expires_in is in seconds
+          refreshToken: tokens.refresh_token,
+          scopes: ['read', 'write', 'sync'],
+          sessionId: tokens.session_id,
+        };
+
+        setRemoteAuthState(authState);
+        console.log('[useZeroIdAuth] Machine key login successful');
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Machine key authentication failed';
+        setError(errorMsg);
+        throw err;
+      } finally {
+        setIsAuthenticating(false);
+      }
+    },
+    [currentUserId]
+  );
+
+  const enrollMachine = useCallback(
+    async (zidEndpoint: string = DEFAULT_ZID_ENDPOINT) => {
+      setIsAuthenticating(true);
+      setError(null);
+
+      try {
+        if (!clientRef.current) {
+          throw new Error('Supervisor not available - please wait for system to initialize');
+        }
+        if (!currentUserId) {
+          throw new Error('You must be logged in locally before enrolling machine');
+        }
+
+        // Call identity service to enroll machine with ZID server
+        const tokens: ZidTokens = await clientRef.current.enrollMachine(currentUserId, zidEndpoint);
+
+        // Convert tokens to RemoteAuthState (enrollment also logs you in)
+        const authState: RemoteAuthState = {
+          serverEndpoint: zidEndpoint,
+          accessToken: tokens.access_token,
+          tokenExpiresAt: Date.now() + tokens.expires_in * 1000,
+          refreshToken: tokens.refresh_token,
+          scopes: ['read', 'write', 'sync'],
+          sessionId: tokens.session_id,
+        };
+
+        setRemoteAuthState(authState);
+        console.log('[useZeroIdAuth] Machine enrollment successful');
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Machine enrollment failed';
+        setError(errorMsg);
+        throw err;
+      } finally {
+        setIsAuthenticating(false);
+      }
+    },
+    [currentUserId]
+  );
 
   const logout = useCallback(async () => {
     setIsAuthenticating(true);
     setError(null);
 
     try {
-      // TODO: Call supervisor IPC to invalidate remote session
-      await new Promise(resolve => setTimeout(resolve, 200));
-
+      // TODO: Implement logout via IPC to invalidate session server-side
+      // For now, just clear local state
       setRemoteAuthState(null);
+      console.log('[useZeroIdAuth] Logged out');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Logout failed';
       setError(errorMsg);
@@ -184,7 +268,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
     }
   }, []);
 
-  const refreshToken = useCallback(async () => {
+  const refreshTokenFn = useCallback(async () => {
     if (!remoteAuthState?.refreshToken) {
       throw new Error('No refresh token available');
     }
@@ -193,15 +277,8 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
     setError(null);
 
     try {
-      // TODO: Call supervisor IPC to refresh token
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      setRemoteAuthState(prev => prev ? {
-        ...prev,
-        accessToken: generateMockToken(),
-        tokenExpiresAt: Date.now() + 24 * 60 * 60 * 1000,
-        refreshToken: generateMockToken(),
-      } : null);
+      // TODO: Implement token refresh via IPC when MSG_ZID_REFRESH is implemented
+      throw new Error('Token refresh not yet implemented');
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Token refresh failed';
       setError(errorMsg);
@@ -228,11 +305,13 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
   return {
     remoteAuthState,
     isAuthenticating,
+    isLoadingSession,
     error,
     loginWithEmail,
     loginWithMachineKey,
+    enrollMachine,
     logout,
-    refreshToken,
+    refreshToken: refreshTokenFn,
     getTimeRemaining,
     isTokenExpired,
   };

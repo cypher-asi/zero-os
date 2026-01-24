@@ -1,11 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useIdentityStore, selectCurrentUser } from '../../stores';
-import { useSupervisor } from './useSupervisor';
+import { useIdentityServiceClient } from './useIdentityServiceClient';
 import {
-  IdentityServiceClient,
   type NeuralShard as ServiceNeuralShard,
   type NeuralKeyGenerated as ServiceNeuralKeyGenerated,
-  type Supervisor,
   type LocalKeyStore as ServiceLocalKeyStore,
   VfsStorageClient,
   getIdentityKeyStorePath,
@@ -93,7 +91,7 @@ export interface UseNeuralKeyReturn {
 // =============================================================================
 
 function bytesToHex(bytes: number[]): string {
-  return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+  return bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -106,7 +104,7 @@ function convertServiceResponse(service: ServiceNeuralKeyGenerated): NeuralKeyGe
       machineSigningPubKey: service.public_identifiers.machine_signing_pub_key,
       machineEncryptionPubKey: service.public_identifiers.machine_encryption_pub_key,
     },
-    shards: service.shards.map(s => ({ index: s.index, hex: s.hex })),
+    shards: service.shards.map((s) => ({ index: s.index, hex: s.hex })),
     createdAt: service.created_at,
   };
 }
@@ -115,7 +113,7 @@ function convertServiceResponse(service: ServiceNeuralKeyGenerated): NeuralKeyGe
  * Convert public shard format to service format
  */
 function convertShardsForService(shards: NeuralShard[]): ServiceNeuralShard[] {
-  return shards.map(s => ({ index: s.index, hex: s.hex }));
+  return shards.map((s) => ({ index: s.index, hex: s.hex }));
 }
 
 // =============================================================================
@@ -142,60 +140,24 @@ const INITIAL_LOAD_SETTLE_DELAY = 500;
 
 export function useNeuralKey(): UseNeuralKeyReturn {
   const currentUser = useIdentityStore(selectCurrentUser);
-  const supervisor = useSupervisor();
+  const { userId, getClientOrThrow, getUserIdOrThrow } = useIdentityServiceClient();
   const [state, setState] = useState<NeuralKeyState>(INITIAL_STATE);
-
-  // Create a stable reference to the IdentityServiceClient
-  const clientRef = useRef<IdentityServiceClient | null>(null);
 
   // Track if we've completed the initial load (to avoid premature "no key" flash)
   const hasCompletedInitialLoadRef = useRef(false);
 
-  // Initialize client when supervisor becomes available
-  useEffect(() => {
-    if (supervisor && !clientRef.current) {
-      // Cast supervisor to the Supervisor interface
-      clientRef.current = new IdentityServiceClient(supervisor as unknown as Supervisor);
-      console.log('[useNeuralKey] IdentityServiceClient initialized');
-    }
-  }, [supervisor]);
-
-  // Get user ID as BigInt for client API
-  const getUserIdBigInt = useCallback((): bigint | null => {
-    const userId = currentUser?.id;
-    if (!userId) return null;
-    if (typeof userId === 'string') {
-      if (userId.startsWith('0x')) {
-        return BigInt(userId);
-      }
-      try {
-        return BigInt(userId);
-      } catch {
-        return null;
-      }
-    }
-    return BigInt(userId);
-  }, [currentUser?.id]);
-
   const generateNeuralKey = useCallback(async (): Promise<NeuralKeyGenerated> => {
-    const userId = getUserIdBigInt();
-    if (!userId) {
-      throw new Error('No user logged in');
-    }
+    const userIdVal = getUserIdOrThrow();
+    const client = getClientOrThrow();
 
-    const client = clientRef.current;
-    if (!client) {
-      throw new Error('Identity service client not available');
-    }
-
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     try {
-      console.log(`[useNeuralKey] Generating Neural Key for user ${userId}`);
-      const serviceResult = await client.generateNeuralKey(userId);
+      console.log(`[useNeuralKey] Generating Neural Key for user ${userIdVal}`);
+      const serviceResult = await client.generateNeuralKey(userIdVal);
       const result = convertServiceResponse(serviceResult);
 
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         hasNeuralKey: true,
         publicIdentifiers: result.publicIdentifiers,
@@ -208,69 +170,64 @@ export function useNeuralKey(): UseNeuralKeyReturn {
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to generate Neural Key';
       console.error('[useNeuralKey] generateNeuralKey error:', errorMsg);
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         isLoading: false,
         error: errorMsg,
       }));
       throw err;
     }
-  }, [getUserIdBigInt]);
+  }, [getClientOrThrow, getUserIdOrThrow]);
 
-  const recoverNeuralKey = useCallback(async (shards: NeuralShard[]): Promise<NeuralKeyGenerated> => {
-    const userId = getUserIdBigInt();
-    if (!userId) {
-      throw new Error('No user logged in');
-    }
+  const recoverNeuralKey = useCallback(
+    async (shards: NeuralShard[]): Promise<NeuralKeyGenerated> => {
+      const userIdVal = getUserIdOrThrow();
+      const client = getClientOrThrow();
 
-    const client = clientRef.current;
-    if (!client) {
-      throw new Error('Identity service client not available');
-    }
+      if (shards.length < 3) {
+        throw new Error('At least 3 shards are required for recovery');
+      }
 
-    if (shards.length < 3) {
-      throw new Error('At least 3 shards are required for recovery');
-    }
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+      try {
+        console.log(`[useNeuralKey] Recovering Neural Key for user ${userIdVal}`);
+        const serviceShards = convertShardsForService(shards);
+        const serviceResult = await client.recoverNeuralKey(userIdVal, serviceShards);
+        const result = convertServiceResponse(serviceResult);
 
-    try {
-      console.log(`[useNeuralKey] Recovering Neural Key for user ${userId}`);
-      const serviceShards = convertShardsForService(shards);
-      const serviceResult = await client.recoverNeuralKey(userId, serviceShards);
-      const result = convertServiceResponse(serviceResult);
+        setState((prev) => ({
+          ...prev,
+          hasNeuralKey: true,
+          publicIdentifiers: result.publicIdentifiers,
+          createdAt: result.createdAt,
+          pendingShards: result.shards,
+          isLoading: false,
+        }));
 
-      setState(prev => ({
-        ...prev,
-        hasNeuralKey: true,
-        publicIdentifiers: result.publicIdentifiers,
-        createdAt: result.createdAt,
-        pendingShards: result.shards,
-        isLoading: false,
-      }));
-
-      return result;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to recover Neural Key';
-      console.error('[useNeuralKey] recoverNeuralKey error:', errorMsg);
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: errorMsg,
-      }));
-      throw err;
-    }
-  }, [getUserIdBigInt]);
+        return result;
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : 'Failed to recover Neural Key';
+        console.error('[useNeuralKey] recoverNeuralKey error:', errorMsg);
+        setState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: errorMsg,
+        }));
+        throw err;
+      }
+    },
+    [getClientOrThrow, getUserIdOrThrow]
+  );
 
   const confirmShardsSaved = useCallback(() => {
-    setState(prev => ({
+    setState((prev) => ({
       ...prev,
       pendingShards: null,
     }));
   }, []);
 
   const refresh = useCallback(async (): Promise<void> => {
-    const userId = getUserIdBigInt();
     if (!userId) {
       hasCompletedInitialLoadRef.current = true;
       setState({ ...INITIAL_STATE, isLoading: false, isInitializing: false });
@@ -286,7 +243,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
     // Check VfsStorage availability
     if (!VfsStorageClient.isAvailable()) {
       console.warn('[useNeuralKey] VfsStorage not available yet');
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         isLoading: false,
         isInitializing: false,
@@ -295,7 +252,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
       return;
     }
 
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
+    setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
     // Helper to read key store and update state
     const readAndUpdateState = (): boolean => {
@@ -319,7 +276,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
             console.warn('[useNeuralKey] LocalKeyStore missing created_at - may be old format');
           }
 
-          setState(prev => ({
+          setState((prev) => ({
             ...prev,
             hasNeuralKey: true,
             publicIdentifiers: {
@@ -338,7 +295,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to refresh Neural Key state';
         console.error('[useNeuralKey] refresh error:', errorMsg);
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           isLoading: false,
           isInitializing: false,
@@ -355,7 +312,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
       // On initial load, wait and retry before showing "no key" message
       // This gives the VFS cache time to populate
       console.log('[useNeuralKey] No key found on initial load, waiting before retry...');
-      await new Promise(resolve => setTimeout(resolve, INITIAL_LOAD_SETTLE_DELAY));
+      await new Promise((resolve) => setTimeout(resolve, INITIAL_LOAD_SETTLE_DELAY));
 
       // Retry reading
       const foundKeyOnRetry = readAndUpdateState();
@@ -363,7 +320,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
       if (!foundKeyOnRetry) {
         // Still no key after waiting - now we can show "no key" message
         console.log('[useNeuralKey] No key store found at', keyPath, '(after settle delay)');
-        setState(prev => ({
+        setState((prev) => ({
           ...prev,
           hasNeuralKey: false,
           publicIdentifiers: null,
@@ -378,7 +335,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
     } else if (!foundKey) {
       // Not initial load, immediately show "no key" message
       console.log('[useNeuralKey] No key store found at', keyPath);
-      setState(prev => ({
+      setState((prev) => ({
         ...prev,
         hasNeuralKey: false,
         publicIdentifiers: null,
@@ -390,7 +347,7 @@ export function useNeuralKey(): UseNeuralKeyReturn {
 
     // Mark initial load as complete
     hasCompletedInitialLoadRef.current = true;
-  }, [getUserIdBigInt]);
+  }, [userId]);
 
   // Auto-refresh on mount and when user changes
   // Reads directly from VfsStorage cache, no IPC client needed

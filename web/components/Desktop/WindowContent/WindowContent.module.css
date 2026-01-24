@@ -1,0 +1,161 @@
+/* Window-specific layout - visual styling handled by Panel */
+.window {
+  /* Panel handles: background, border, box-shadow, border-radius */
+
+  /* GPU-accelerated positioning via transform instead of left/top */
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform, width, height, opacity;
+
+  /* CRITICAL: Disable ALL CSS transitions - opacity is controlled by Rust for smooth crossfades */
+  transition: none !important;
+
+  /* Isolation for layout optimization - NOT paint (would clip border-future pseudo-elements) */
+  contain: layout style;
+}
+
+.title {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: var(--color-text-muted, #888);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+  /* Center the title absolutely within the title bar */
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 120px); /* Leave space for buttons on right */
+}
+
+.titleFocused {
+  color: var(--color-text-secondary, #ccc);
+}
+
+.titleBar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end; /* Buttons go to the right */
+  padding: 0 0 0 10px;
+  background: transparent;
+  flex-shrink: 0;
+  cursor: default;
+  user-select: none;
+  position: relative; /* For absolute positioning of centered title */
+}
+
+.titleBarBordered {
+  border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+}
+
+.buttons {
+  display: flex;
+  gap: 0;
+  position: relative;
+  z-index: 11; /* Above resize handles (z-index: 10) so they don't show resize cursor */
+}
+
+/* Make maximize icon smaller and thinner for visual balance */
+.buttons :global([data-action='maximize']) svg,
+.buttons :global(button:nth-child(2)) svg {
+  transform: scale(0.81);
+  stroke-width: 1.75;
+}
+
+.content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  /* Full isolation for window content - enables aggressive browser optimizations */
+  contain: strict;
+}
+
+/* =============================================================================
+ * Widget Windows - No title bar, only floating close button
+ * =============================================================================
+ */
+
+.widget .content {
+  /* Widget content fills the entire window */
+  border-radius: inherit;
+  /* Add padding at top-right so content doesn't crowd the close button */
+  padding: 28px 8px 8px 8px;
+}
+
+.widgetCloseButton {
+  /* Floating close button in top-right corner */
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 11; /* Above resize handles and content */
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* Show close button on hover */
+.widget:hover .widgetCloseButton {
+  opacity: 1;
+}
+
+/* Resize handles - invisible but show cursor on hover */
+.resizeHandle {
+  position: absolute;
+  z-index: 10;
+}
+
+/* Edge handles - leave space for larger corner handles (12px) */
+.resizeN {
+  top: 0;
+  left: 12px;
+  right: 12px;
+  cursor: ns-resize;
+}
+
+.resizeS {
+  bottom: 0;
+  left: 12px;
+  right: 12px;
+  cursor: ns-resize;
+}
+
+.resizeE {
+  top: 12px;
+  right: 0;
+  bottom: 12px;
+  cursor: ew-resize;
+}
+
+.resizeW {
+  top: 12px;
+  left: 0;
+  bottom: 12px;
+  cursor: ew-resize;
+}
+
+/* Corner handles */
+.resizeNE {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.resizeNW {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.resizeSE {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.resizeSW {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}

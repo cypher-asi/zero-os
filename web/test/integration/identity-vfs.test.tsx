@@ -1,14 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { createElement } from 'react';
-import {
-  useIdentityState,
-  type User,
-} from '../../desktop/hooks/useIdentity';
+import { useIdentityState, type User } from '../../desktop/hooks/useIdentity';
 
 /**
  * End-to-End Identity and VFS Integration Test
- * 
+ *
  * This test suite verifies the complete user flow from:
  * 1. User creation
  * 2. Login (session creation)
@@ -19,7 +16,8 @@ import {
  */
 
 // Mock VFS storage for testing
-const mockVfsStorage: Record<string, any> = {};
+
+const mockVfsStorage: Record<string, Record<string, unknown>> = {};
 
 const MockVfs = {
   exists: (path: string) => path in mockVfsStorage,
@@ -34,22 +32,24 @@ const MockVfs = {
     return entry?.type === 'file' ? entry.content : null;
   },
   clear: () => {
-    Object.keys(mockVfsStorage).forEach(key => delete mockVfsStorage[key]);
+    Object.keys(mockVfsStorage).forEach((key) => delete mockVfsStorage[key]);
   },
 };
 
 // Test component that uses identity and simulates VFS operations
 function TestApp({ onReady }: { onReady: (service: ReturnType<typeof useIdentityState>) => void }) {
   const service = useIdentityState();
-  
+
   // Call onReady once when mounted (using ref to track)
   const called = vi.fn();
   if (called.mock.calls.length === 0) {
     called();
     onReady(service);
   }
-  
-  return createElement('div', { 'data-testid': 'test-app' },
+
+  return createElement(
+    'div',
+    { 'data-testid': 'test-app' },
     service.state.currentUser
       ? createElement('span', { 'data-testid': 'user-name' }, service.state.currentUser.displayName)
       : createElement('span', { 'data-testid': 'no-user' }, 'Not logged in')
@@ -61,7 +61,7 @@ describe('Identity and VFS End-to-End Flow', () => {
 
   beforeEach(() => {
     MockVfs.clear();
-    
+
     // Initialize root filesystem
     MockVfs.mkdir('/');
     MockVfs.mkdir('/home');
@@ -71,18 +71,20 @@ describe('Identity and VFS End-to-End Flow', () => {
 
   it('completes full user flow: create → login → app → file → logout → login', async () => {
     // Step 1: Create user via identity service
-    render(createElement(TestApp, {
-      onReady: (service) => {
-        identityService = service;
-      },
-    }));
+    render(
+      createElement(TestApp, {
+        onReady: (service) => {
+          identityService = service;
+        },
+      })
+    );
 
     // Verify render completed
     expect(screen.getByTestId('test-app')).toBeTruthy();
 
     // Initial state has mock user
     expect(identityService.state.currentUser).not.toBeNull();
-    const initialUserId = identityService.state.currentUser!.id;
+    const initialUserId = identityService.state.currentUser?.id ?? '';
 
     // Step 2: Create home directory for user (simulating first boot)
     const homePath = `/home/${initialUserId}`;
@@ -91,13 +93,13 @@ describe('Identity and VFS End-to-End Flow', () => {
     MockVfs.mkdir(`${homePath}/.zos/sessions`);
     MockVfs.mkdir(`${homePath}/Apps`);
     MockVfs.mkdir(`${homePath}/Documents`);
-    
+
     expect(MockVfs.exists(homePath)).toBe(true);
     expect(MockVfs.exists(`${homePath}/.zos`)).toBe(true);
 
     // Step 3: Verify session exists (from mock initial state)
     expect(identityService.state.currentSession).not.toBeNull();
-    const sessionId = identityService.state.currentSession!.id;
+    const sessionId = identityService.state.currentSession?.id;
 
     // Step 4: Simulate session file in VFS
     const sessionPath = `${homePath}/.zos/sessions/current.json`;
@@ -153,11 +155,13 @@ describe('Identity and VFS End-to-End Flow', () => {
   });
 
   it('creates new user and initializes home directory', async () => {
-    render(createElement(TestApp, {
-      onReady: (service) => {
-        identityService = service;
-      },
-    }));
+    render(
+      createElement(TestApp, {
+        onReady: (service) => {
+          identityService = service;
+        },
+      })
+    );
 
     expect(screen.getByTestId('test-app')).toBeTruthy();
 
@@ -168,12 +172,12 @@ describe('Identity and VFS End-to-End Flow', () => {
     });
 
     expect(newUser).not.toBeNull();
-    expect(newUser!.displayName).toBe('New Test User');
+    expect(newUser?.displayName).toBe('New Test User');
 
     // Create home directory for new user
-    const newHomePath = `/home/${newUser!.id}`;
+    const newHomePath = `/home/${newUser?.id}`;
     MockVfs.mkdir(newHomePath);
-    
+
     // Bootstrap standard directories
     const standardDirs = [
       '.zos',
@@ -200,16 +204,18 @@ describe('Identity and VFS End-to-End Flow', () => {
   });
 
   it('handles app data isolation between users', async () => {
-    render(createElement(TestApp, {
-      onReady: (service) => {
-        identityService = service;
-      },
-    }));
+    render(
+      createElement(TestApp, {
+        onReady: (service) => {
+          identityService = service;
+        },
+      })
+    );
 
     expect(screen.getByTestId('test-app')).toBeTruthy();
 
     // User 1 home
-    const user1Id = identityService.state.currentUser!.id;
+    const user1Id = identityService.state.currentUser?.id;
     const user1Home = `/home/${user1Id}`;
     MockVfs.mkdir(user1Home);
     MockVfs.mkdir(`${user1Home}/Apps/test-app`);
@@ -225,7 +231,7 @@ describe('Identity and VFS End-to-End Flow', () => {
     });
 
     // User 2 home
-    const user2Home = `/home/${user2!.id}`;
+    const user2Home = `/home/${user2?.id}`;
     MockVfs.mkdir(user2Home);
     MockVfs.mkdir(`${user2Home}/Apps/test-app`);
 
@@ -242,15 +248,17 @@ describe('Identity and VFS End-to-End Flow', () => {
   });
 
   it('persists user preferences across sessions', async () => {
-    render(createElement(TestApp, {
-      onReady: (service) => {
-        identityService = service;
-      },
-    }));
+    render(
+      createElement(TestApp, {
+        onReady: (service) => {
+          identityService = service;
+        },
+      })
+    );
 
     expect(screen.getByTestId('test-app')).toBeTruthy();
 
-    const userId = identityService.state.currentUser!.id;
+    const userId = identityService.state.currentUser?.id;
     const configPath = `/home/${userId}/.zos/config`;
     MockVfs.mkdir(`/home/${userId}`);
     MockVfs.mkdir(`/home/${userId}/.zos`);
@@ -283,11 +291,13 @@ describe('Identity and VFS End-to-End Flow', () => {
   });
 
   it('handles session refresh', async () => {
-    render(createElement(TestApp, {
-      onReady: (service) => {
-        identityService = service;
-      },
-    }));
+    render(
+      createElement(TestApp, {
+        onReady: (service) => {
+          identityService = service;
+        },
+      })
+    );
 
     expect(screen.getByTestId('test-app')).toBeTruthy();
 
@@ -308,11 +318,13 @@ describe('Error Handling', () => {
   let identityService: ReturnType<typeof useIdentityState>;
 
   it('handles login error gracefully', async () => {
-    render(createElement(TestApp, {
-      onReady: (service) => {
-        identityService = service;
-      },
-    }));
+    render(
+      createElement(TestApp, {
+        onReady: (service) => {
+          identityService = service;
+        },
+      })
+    );
 
     expect(screen.getByTestId('test-app')).toBeTruthy();
 
@@ -335,11 +347,13 @@ describe('Error Handling', () => {
   });
 
   it('handles session refresh without session', async () => {
-    render(createElement(TestApp, {
-      onReady: (service) => {
-        identityService = service;
-      },
-    }));
+    render(
+      createElement(TestApp, {
+        onReady: (service) => {
+          identityService = service;
+        },
+      })
+    );
 
     expect(screen.getByTestId('test-app')).toBeTruthy();
 

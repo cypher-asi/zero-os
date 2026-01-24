@@ -30,7 +30,10 @@ const defaultState: MockSupervisorState = {
 
 export function createMockSupervisor(
   initialState: Partial<MockSupervisorState> = {}
-): Supervisor & { _state: MockSupervisorState; _updateState: (updates: Partial<MockSupervisorState>) => void } {
+): Supervisor & {
+  _state: MockSupervisorState;
+  _updateState: (updates: Partial<MockSupervisorState>) => void;
+} {
   const state: MockSupervisorState = { ...defaultState, ...initialState };
 
   const updateState = (updates: Partial<MockSupervisorState>) => {
@@ -53,9 +56,9 @@ export function createMockSupervisor(
         memory: 1024,
       });
     }),
-    send_input: vi.fn((input: string) => {}),
-    set_console_callback: vi.fn((callback: (text: string) => void) => {}),
-    set_spawn_callback: vi.fn((callback: (procType: string, name: string) => void) => {}),
+    send_input: vi.fn((_input: string) => {}),
+    set_console_callback: vi.fn((_callback: (text: string) => void) => {}),
+    set_spawn_callback: vi.fn((_callback: (procType: string, name: string) => void) => {}),
     complete_spawn: vi.fn((name: string, binary: Uint8Array) => {
       const pid = state.processes.length + 1;
       state.processes.push({
@@ -71,58 +74,64 @@ export function createMockSupervisor(
     poll_syscalls: vi.fn(() => 0),
     process_worker_messages: vi.fn(() => 0),
     kill_process: vi.fn((pid: number) => {
-      const process = state.processes.find(p => p.pid === pid);
+      const process = state.processes.find((p) => p.pid === pid);
       if (process) {
         process.state = 'zombie';
       }
     }),
     kill_all_processes: vi.fn(() => {
-      state.processes.forEach(p => p.state = 'zombie');
+      state.processes.forEach((p) => (p.state = 'zombie'));
     }),
     get_uptime_ms: vi.fn(() => state.uptime),
-    get_process_count: vi.fn(() => state.processes.filter(p => p.state !== 'zombie').length),
+    get_process_count: vi.fn(() => state.processes.filter((p) => p.state !== 'zombie').length),
     get_total_memory: vi.fn(() => state.totalMemory),
     get_endpoint_count: vi.fn(() => state.endpointCount),
     get_pending_messages: vi.fn(() => state.pendingMessages),
     get_total_ipc_messages: vi.fn(() => state.totalIpcMessages),
     get_process_list_json: vi.fn(() => JSON.stringify(state.processes)),
     get_process_capabilities_json: vi.fn((_pid: number) => JSON.stringify([])),
-    get_processes_with_capabilities_json: vi.fn(() => JSON.stringify(
-      state.processes.map(p => ({
-        pid: p.pid,
-        name: p.name,
-        state: p.state === 'running' ? 'Running' : p.state === 'blocked' ? 'Blocked' : 'Zombie',
-        capabilities: [],
-      }))
-    )),
+    get_processes_with_capabilities_json: vi.fn(() =>
+      JSON.stringify(
+        state.processes.map((p) => ({
+          pid: p.pid,
+          name: p.name,
+          state: p.state === 'running' ? 'Running' : p.state === 'blocked' ? 'Blocked' : 'Zombie',
+          capabilities: [],
+        }))
+      )
+    ),
     get_endpoint_list_json: vi.fn(() => JSON.stringify([])),
-    get_ipc_traffic_json: vi.fn((count: number) => JSON.stringify([])),
-    get_system_metrics_json: vi.fn(() => JSON.stringify({
-      uptime: state.uptime,
-      processCount: state.processes.length,
-      totalMemory: state.totalMemory,
-      endpointCount: state.endpointCount,
-      pendingMessages: state.pendingMessages,
-      totalIpcMessages: state.totalIpcMessages,
-    })),
-    get_axiom_stats_json: vi.fn(() => JSON.stringify({
-      commitCount: 0,
-      syslogCount: 0,
-    })),
-    get_commitlog_json: vi.fn((count: number) => JSON.stringify([])),
-    get_syslog_json: vi.fn((count: number) => JSON.stringify([])),
-    
+    get_ipc_traffic_json: vi.fn((_count: number) => JSON.stringify([])),
+    get_system_metrics_json: vi.fn(() =>
+      JSON.stringify({
+        uptime: state.uptime,
+        processCount: state.processes.length,
+        totalMemory: state.totalMemory,
+        endpointCount: state.endpointCount,
+        pendingMessages: state.pendingMessages,
+        totalIpcMessages: state.totalIpcMessages,
+      })
+    ),
+    get_axiom_stats_json: vi.fn(() =>
+      JSON.stringify({
+        commitCount: 0,
+        syslogCount: 0,
+      })
+    ),
+    get_commitlog_json: vi.fn((_count: number) => JSON.stringify([])),
+    get_syslog_json: vi.fn((_count: number) => JSON.stringify([])),
+
     // Process isolation APIs
-    send_input_to_process: vi.fn((pid: number, input: string) => {}),
-    register_console_callback: vi.fn((pid: number, callback: (text: string) => void) => {}),
-    unregister_console_callback: vi.fn((pid: number) => {}),
-    
+    send_input_to_process: vi.fn((_pid: number, _input: string) => {}),
+    register_console_callback: vi.fn((_pid: number, _callback: (text: string) => void) => {}),
+    unregister_console_callback: vi.fn((_pid: number) => {}),
+
     // Capability API
-    revoke_capability: vi.fn((pid: bigint, slot: number) => true),
-    
+    revoke_capability: vi.fn((_pid: bigint, _slot: number) => true),
+
     // Generic Service IPC API (Thin Boundary Layer)
-    set_ipc_response_callback: vi.fn((callback: (requestId: string, data: string) => void) => {}),
-    send_service_ipc: vi.fn((serviceName: string, tag: number, data: string) => {
+    set_ipc_response_callback: vi.fn((_callback: (requestId: string, data: string) => void) => {}),
+    send_service_ipc: vi.fn((_serviceName: string, tag: number, _data: string) => {
       // Return a mock request_id based on tag+1 convention
       const responseTag = tag + 1;
       return responseTag.toString(16).padStart(8, '0');

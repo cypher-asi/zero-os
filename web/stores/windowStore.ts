@@ -1,6 +1,6 @@
 /**
  * Window Store - Centralized state for window management.
- * 
+ *
  * State is synchronized from Rust's tick_frame() via the render loop.
  * This replaces the polling-based useWindows and useFocusedWindow hooks.
  */
@@ -19,13 +19,13 @@ interface WindowStoreState {
   focusedId: number | null;
   animating: boolean;
   transitioning: boolean;
-  
+
   // Actions (called from render loop sync)
   setWindows: (windows: WindowInfo[]) => void;
   setFocusedId: (id: number | null) => void;
   setAnimating: (animating: boolean) => void;
   setTransitioning: (transitioning: boolean) => void;
-  
+
   // Sync all from frame data (single atomic update)
   syncFromFrame: (frame: {
     windows: WindowInfo[];
@@ -45,20 +45,21 @@ export const useWindowStore = create<WindowStoreState>()(
     focusedId: null,
     animating: false,
     transitioning: false,
-    
+
     // Individual setters
     setWindows: (windows) => set({ windows }),
     setFocusedId: (focusedId) => set({ focusedId }),
     setAnimating: (animating) => set({ animating }),
     setTransitioning: (transitioning) => set({ transitioning }),
-    
+
     // Atomic sync from render loop
-    syncFromFrame: (frame) => set({
-      windows: frame.windows,
-      focusedId: frame.windows.find(w => w.focused)?.id ?? null,
-      animating: frame.animating,
-      transitioning: frame.transitioning,
-    }),
+    syncFromFrame: (frame) =>
+      set({
+        windows: frame.windows,
+        focusedId: frame.windows.find((w) => w.focused)?.id ?? null,
+        animating: frame.animating,
+        transitioning: frame.transitioning,
+      }),
   }))
 );
 
@@ -73,16 +74,16 @@ export const selectWindows = (state: WindowStoreState) => state.windows;
 export const selectFocusedId = (state: WindowStoreState) => state.focusedId;
 
 /** Select the focused window object */
-export const selectFocusedWindow = (state: WindowStoreState) => 
-  state.windows.find(w => w.id === state.focusedId) ?? null;
+export const selectFocusedWindow = (state: WindowStoreState) =>
+  state.windows.find((w) => w.id === state.focusedId) ?? null;
 
 /** Select a window by ID (returns selector function) */
 export const selectWindowById = (id: number) => (state: WindowStoreState) =>
-  state.windows.find(w => w.id === id);
+  state.windows.find((w) => w.id === id);
 
 /** Select visible (non-minimized) windows */
 export const selectVisibleWindows = (state: WindowStoreState) =>
-  state.windows.filter(w => w.state !== 'minimized');
+  state.windows.filter((w) => w.state !== 'minimized');
 
 /** Select whether any animation is in progress */
 export const selectAnimating = (state: WindowStoreState) => state.animating;

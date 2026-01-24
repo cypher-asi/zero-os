@@ -1,0 +1,141 @@
+.taskbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 48px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  z-index: 1000;
+  pointer-events: auto;
+}
+
+/* Begin Section */
+.beginSection {
+  position: relative;
+  margin-left: 8px;
+}
+
+.beginBtn {
+  position: relative;
+}
+
+.beginIcon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.beginCircle {
+  position: absolute;
+  opacity: 1;
+  transition: opacity 0.2s ease-in-out;
+}
+
+.beginSlash {
+  position: absolute;
+  font-size: 16px;
+  font-weight: 300;
+  opacity: 0;
+  transform: rotate(90deg);
+  transition:
+    opacity 0.2s ease-in-out,
+    transform 0.2s ease-in-out;
+}
+
+.beginBtnActive .beginCircle {
+  opacity: 0;
+}
+
+.beginBtnActive .beginSlash {
+  opacity: 1;
+  transform: rotate(0deg);
+}
+
+/* Windows Section */
+.windowsSection {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 16px;
+  overflow-x: auto;
+}
+
+.windowItem {
+  max-width: 200px;
+  animation: fadeIn 0.3s ease-in-out;
+  transition:
+    opacity 0.2s ease-in-out,
+    transform 0.2s ease-in-out;
+}
+
+.windowItem.minimized {
+  opacity: 0.6;
+  transition: opacity 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.windowTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Workspaces Section */
+.workspacesSection {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workspaceBtn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  padding: 0 !important;
+}
+
+.workspaceAdd {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  padding: 0 !important;
+}
+
+.walletBtn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  padding: 0 !important;
+}
+
+.neuralKeyWrapper {
+  position: relative;
+}
+
+.neuralKey {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  padding: 0 !important;
+}

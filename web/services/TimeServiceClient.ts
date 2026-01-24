@@ -112,12 +112,10 @@ interface PendingRequest<T> {
 let requestCounter = 0;
 
 /** Map of pending requests by response tag (hex) */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const pendingRequestsByTag = new Map<string, PendingRequest<any>[]>();
+const pendingRequestsByTag = new Map<string, PendingRequest<unknown>[]>();
 
 /** Map of pending requests by unique ID (for timeout cleanup) */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const pendingRequestsById = new Map<string, { tagHex: string; request: PendingRequest<any> }>();
+const pendingRequestsById = new Map<string, { tagHex: string; request: PendingRequest<unknown> }>();
 
 /** Track whether callback has been registered */
 let callbackRegistered = false;
@@ -176,7 +174,8 @@ function resolveOldestPendingRequest(tagHex: string, data: unknown): boolean {
     return false;
   }
 
-  const request = queue.shift()!;
+  const request = queue.shift();
+  if (!request) return false;
   clearTimeout(request.timeoutId);
   pendingRequestsById.delete(request.uniqueId);
 
@@ -202,18 +201,22 @@ function ensureCallbackRegistered(supervisor: Supervisor): void {
       if (resolveOldestPendingRequest(requestId, parsed)) {
         // Successfully resolved
       } else {
-        console.log(`[TimeServiceClient] Received response for tag ${requestId} with no pending requests`);
+        console.log(
+          `[TimeServiceClient] Received response for tag ${requestId} with no pending requests`
+        );
       }
     } catch (e) {
       const queue = pendingRequestsByTag.get(requestId);
       if (queue && queue.length > 0) {
-        const request = queue.shift()!;
-        clearTimeout(request.timeoutId);
-        pendingRequestsById.delete(request.uniqueId);
-        if (queue.length === 0) {
-          pendingRequestsByTag.delete(requestId);
+        const request = queue.shift();
+        if (request) {
+          clearTimeout(request.timeoutId);
+          pendingRequestsById.delete(request.uniqueId);
+          if (queue.length === 0) {
+            pendingRequestsByTag.delete(requestId);
+          }
+          request.reject(new Error(`Invalid response JSON: ${e}`));
         }
-        request.reject(new Error(`Invalid response JSON: ${e}`));
       }
     }
   });
@@ -295,10 +298,7 @@ export class TimeServiceClient {
    */
   async getTimeSettings(): Promise<TimeSettings> {
     try {
-      const response = await this.request<TimeSettings>(
-        TIME_MSG.GET_TIME_SETTINGS,
-        {}
-      );
+      const response = await this.request<TimeSettings>(TIME_MSG.GET_TIME_SETTINGS, {});
       return response;
     } catch (error) {
       // On error, return defaults
@@ -313,10 +313,7 @@ export class TimeServiceClient {
    * @param settings - New settings to save
    */
   async setTimeSettings(settings: TimeSettings): Promise<void> {
-    await this.request<TimeSettings>(
-      TIME_MSG.SET_TIME_SETTINGS,
-      settings
-    );
+    await this.request<TimeSettings>(TIME_MSG.SET_TIME_SETTINGS, settings);
   }
 
   /**

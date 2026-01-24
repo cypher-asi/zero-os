@@ -7,7 +7,6 @@ use zos_vfs::VfsService;
 use zos_vfs::types::FilePermissions;
 
 extern crate alloc;
-use alloc::string::String;
 
 /// Test that an app can read/write to its data directory.
 #[test]

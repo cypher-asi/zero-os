@@ -3,7 +3,11 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
 import { useWindows, useFocusedWindow, useWindowActions } from '../useWindows';
 import { DesktopControllerProvider, SupervisorProvider } from '../useSupervisor';
-import { createMockDesktopController, createMockDesktopControllerWithWindows, createMockSupervisor } from '../../../test/mocks';
+import {
+  createMockDesktopController,
+  createMockDesktopControllerWithWindows,
+  createMockSupervisor,
+} from '../../../test/mocks';
 
 describe('useWindows', () => {
   beforeEach(() => {
@@ -147,9 +151,25 @@ describe('useWindowActions', () => {
 
     const { result } = renderHook(() => useWindowActions(), { wrapper });
 
-    const windowId = result.current.createWindow('Test Window', 100, 100, 800, 600, 'test-app', false);
+    const windowId = result.current.createWindow(
+      'Test Window',
+      100,
+      100,
+      800,
+      600,
+      'test-app',
+      false
+    );
 
-    expect(mockDesktop.create_window).toHaveBeenCalledWith('Test Window', 100, 100, 800, 600, 'test-app', false);
+    expect(mockDesktop.create_window).toHaveBeenCalledWith(
+      'Test Window',
+      100,
+      100,
+      800,
+      600,
+      'test-app',
+      false
+    );
     expect(windowId).toBeDefined();
   });
 
@@ -214,7 +234,9 @@ describe('useWindowActions', () => {
   });
 
   it('provides restoreWindow action', () => {
-    const mockDesktop = createMockDesktopControllerWithWindows([{ id: 1, title: 'Test', state: 'minimized' }]);
+    const mockDesktop = createMockDesktopControllerWithWindows([
+      { id: 1, title: 'Test', state: 'minimized' },
+    ]);
 
     const wrapper = ({ children }: { children: React.ReactNode }) =>
       createElement(DesktopControllerProvider, { value: mockDesktop }, children);

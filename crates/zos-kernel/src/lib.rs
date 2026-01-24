@@ -6,16 +6,28 @@
 //! - IPC endpoints and message passing
 //! - Syscall dispatch
 //!
+//! # Architecture (per docs/invariants/invariants.md)
+//!
+//! The kernel is structured as two separate components:
+//!
+//! - **Axiom** - Verification layer (SysLog, CommitLog, audit)
+//! - **KernelCore** - Execution layer (state, capabilities, IPC)
+//!
+//! These are combined in the `System` struct, which is the primary entry point:
+//!
+//! ```text
+//! Supervisor → System.process_syscall() → Axiom (log) → KernelCore (execute)
+//! ```
+//!
 //! # Module Organization
 //!
+//! - `system` - System struct combining Axiom and KernelCore (primary entry point)
 //! - `types` - Core kernel types (ProcessId, EndpointId, etc.)
 //! - `capability` - Capability tokens and permission checking
 //! - `ipc` - Inter-process communication types
 //! - `syscall` - Syscall definitions and results
 //! - `error` - Kernel error types
-//! - `dispatch` - Raw syscall dispatch
-//! - `core` - KernelCore implementation (internal)
-//! - `wrapper` - Kernel wrapper with Axiom integration
+//! - `core` - KernelCore implementation
 //! - `replay` - Deterministic replay support
 
 #![no_std]
@@ -23,18 +35,17 @@ extern crate alloc;
 
 // Submodules
 pub mod capability;
-pub mod dispatch;
 pub mod error;
 pub mod ipc;
 pub mod syscall;
+pub mod system;
 pub mod types;
 
-// Internal modules
-mod core;
-mod kernel;
+// Internal modules (now public for System)
+pub mod core;
 mod replay;
 
-// Re-export all public types for backwards compatibility
+// Re-export all public types
 pub use capability::{axiom_check, AxiomError, Capability, CapabilitySpace, Permissions};
 pub use error::KernelError;
 pub use ipc::{
@@ -62,6 +73,6 @@ pub use zos_axiom::{
     SysEventType, SysLog,
 };
 
-// Re-export main types from internal modules
+// Re-export main types from modules
 pub use core::KernelCore;
-pub use kernel::Kernel;
+pub use system::System;

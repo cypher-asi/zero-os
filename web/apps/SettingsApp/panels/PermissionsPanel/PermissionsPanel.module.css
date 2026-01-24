@@ -1,0 +1,37 @@
+/* PermissionsPanel specific styles */
+
+.panelContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* Collapsible Section - full bleed */
+.collapsibleSection {
+  border-bottom: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.collapsibleSection:last-child {
+  border-bottom: none;
+}
+
+/* Menu content wrapper with bottom padding only */
+.menuContent {
+  padding: 0 0 12px 0;
+  overflow: visible;
+}
+
+/* Remove left/right padding from direct children of collapsible (GroupCollapsible content area) */
+.collapsibleSection > :global(div) > :global(div) {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+/* Menu status with label and caps count */
+.menuStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 100;
+}

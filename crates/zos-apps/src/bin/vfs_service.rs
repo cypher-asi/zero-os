@@ -124,17 +124,20 @@ enum PendingOp {
     /// List children for readdir
     ListChildren {
         client_pid: u32,
+        #[allow(dead_code)]
         path: String,
     },
     /// Check exists
     ExistsCheck {
         client_pid: u32,
+        #[allow(dead_code)]
         path: String,
     },
 }
 
 /// Type of inode operation
 #[derive(Clone)]
+#[allow(dead_code)]
 enum InodeOpType {
     /// Stat request
     Stat,
@@ -563,7 +566,7 @@ impl VfsService {
         }
     }
 
-    /// Handle inode read result
+    /// Handle inode read result - dispatches to specific handlers
     fn handle_inode_result(
         &mut self,
         _ctx: &AppContext,
@@ -574,243 +577,289 @@ impl VfsService {
         data: &[u8],
     ) -> Result<(), AppError> {
         match op_type {
-            InodeOpType::Stat => {
-                let response = if result_type == storage_result::READ_OK {
-                    match serde_json::from_slice::<Inode>(data) {
-                        Ok(inode) => StatResponse { result: Ok(inode) },
-                        Err(e) => StatResponse {
-                            result: Err(VfsError::StorageError(e.to_string())),
-                        },
-                    }
-                } else if result_type == storage_result::NOT_FOUND {
-                    StatResponse {
-                        result: Err(VfsError::NotFound),
-                    }
-                } else {
-                    StatResponse {
-                        result: Err(VfsError::StorageError(String::from_utf8_lossy(data).to_string())),
-                    }
-                };
-                self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_STAT_RESPONSE, &response)
-            }
-
-            InodeOpType::Exists => {
-                let exists = result_type == storage_result::READ_OK;
-                let response = ExistsResponse { exists };
-                self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_EXISTS_RESPONSE, &response)
-            }
-
-            InodeOpType::ReadFile => {
-                if result_type == storage_result::READ_OK {
-                    // Parse inode and verify it's a file
-                    match serde_json::from_slice::<Inode>(data) {
-                        Ok(inode) if inode.is_file() => {
-                            // Now get the content
-                            self.start_storage_read(
-                                &format!("content:{}", path),
-                                PendingOp::GetContent {
-                                    client_pid,
-                                    path: path.to_string(),
-                                },
-                            )
-                        }
-                        Ok(_) => {
-                            let response = ReadFileResponse {
-                                result: Err(VfsError::NotAFile),
-                            };
-                            self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_READ_RESPONSE, &response)
-                        }
-                        Err(e) => {
-                            let response = ReadFileResponse {
-                                result: Err(VfsError::StorageError(e.to_string())),
-                            };
-                            self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_READ_RESPONSE, &response)
-                        }
-                    }
-                } else if result_type == storage_result::NOT_FOUND {
-                    let response = ReadFileResponse {
-                        result: Err(VfsError::NotFound),
-                    };
-                    self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_READ_RESPONSE, &response)
-                } else {
-                    let response = ReadFileResponse {
-                        result: Err(VfsError::StorageError(String::from_utf8_lossy(data).to_string())),
-                    };
-                    self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_READ_RESPONSE, &response)
-                }
-            }
-
+            InodeOpType::Stat => self.handle_stat_inode_result(client_pid, result_type, data),
+            InodeOpType::Exists => self.handle_exists_inode_result(client_pid, result_type),
+            InodeOpType::ReadFile => self.handle_read_file_inode_result(client_pid, path, result_type, data),
             InodeOpType::MkdirCheckParent { create_parents: _ } => {
-                // This was checking if the path already exists (via exists check)
-                if result_type == storage_result::EXISTS_OK {
-                    // data[0] tells us if it exists
-                    let exists = !data.is_empty() && data[0] == 1;
-                    if exists {
-                        let response = MkdirResponse {
-                            result: Err(VfsError::AlreadyExists),
-                        };
-                        return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_MKDIR_RESPONSE, &response);
-                    }
+                self.handle_mkdir_inode_result(client_pid, path, result_type, data)
+            }
+            InodeOpType::WriteFileCheckParent { content } => {
+                self.handle_write_file_inode_result(client_pid, path, result_type, content)
+            }
+            InodeOpType::Rmdir { recursive: _ } => {
+                self.handle_rmdir_inode_result(client_pid, path, result_type, data)
+            }
+            InodeOpType::Unlink => self.handle_unlink_inode_result(client_pid, path, result_type, data),
+            InodeOpType::Readdir => Ok(()), // readdir uses ListChildren
+        }
+    }
+
+    /// Handle stat operation inode result
+    fn handle_stat_inode_result(
+        &self,
+        client_pid: u32,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        let response = if result_type == storage_result::READ_OK {
+            match serde_json::from_slice::<Inode>(data) {
+                Ok(inode) => StatResponse { result: Ok(inode) },
+                Err(e) => StatResponse {
+                    result: Err(VfsError::StorageError(e.to_string())),
+                },
+            }
+        } else if result_type == storage_result::NOT_FOUND {
+            StatResponse {
+                result: Err(VfsError::NotFound),
+            }
+        } else {
+            StatResponse {
+                result: Err(VfsError::StorageError(String::from_utf8_lossy(data).to_string())),
+            }
+        };
+        self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_STAT_RESPONSE, &response)
+    }
+
+    /// Handle exists check inode result
+    fn handle_exists_inode_result(
+        &self,
+        client_pid: u32,
+        result_type: u8,
+    ) -> Result<(), AppError> {
+        let exists = result_type == storage_result::READ_OK;
+        let response = ExistsResponse { exists };
+        self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_EXISTS_RESPONSE, &response)
+    }
+
+    /// Handle read file inode result
+    fn handle_read_file_inode_result(
+        &mut self,
+        client_pid: u32,
+        path: &str,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        if result_type == storage_result::READ_OK {
+            match serde_json::from_slice::<Inode>(data) {
+                Ok(inode) if inode.is_file() => {
+                    self.start_storage_read(
+                        &format!("content:{}", path),
+                        PendingOp::GetContent {
+                            client_pid,
+                            path: path.to_string(),
+                        },
+                    )
                 }
-                
-                // Create the directory inode
-                let name = path.rsplit('/').next().unwrap_or(path).to_string();
-                let parent = parent_path(path);
-                let now = syscall::get_wallclock();
-                let inode = Inode::new_directory(path.to_string(), parent, name, None, now);
-                
-                let inode_json = match serde_json::to_vec(&inode) {
-                    Ok(j) => j,
-                    Err(e) => {
-                        let response = MkdirResponse {
-                            result: Err(VfsError::StorageError(e.to_string())),
-                        };
-                        return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_MKDIR_RESPONSE, &response);
-                    }
+                Ok(_) => {
+                    let response = ReadFileResponse {
+                        result: Err(VfsError::NotAFile),
+                    };
+                    self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_READ_RESPONSE, &response)
+                }
+                Err(e) => {
+                    let response = ReadFileResponse {
+                        result: Err(VfsError::StorageError(e.to_string())),
+                    };
+                    self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_READ_RESPONSE, &response)
+                }
+            }
+        } else if result_type == storage_result::NOT_FOUND {
+            let response = ReadFileResponse {
+                result: Err(VfsError::NotFound),
+            };
+            self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_READ_RESPONSE, &response)
+        } else {
+            let response = ReadFileResponse {
+                result: Err(VfsError::StorageError(String::from_utf8_lossy(data).to_string())),
+            };
+            self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_READ_RESPONSE, &response)
+        }
+    }
+
+    /// Handle mkdir inode result (checking if path already exists)
+    fn handle_mkdir_inode_result(
+        &mut self,
+        client_pid: u32,
+        path: &str,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        if result_type == storage_result::EXISTS_OK {
+            let exists = !data.is_empty() && data[0] == 1;
+            if exists {
+                let response = MkdirResponse {
+                    result: Err(VfsError::AlreadyExists),
                 };
-                
-                self.start_storage_write(
+                return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_MKDIR_RESPONSE, &response);
+            }
+        }
+
+        let name = path.rsplit('/').next().unwrap_or(path).to_string();
+        let parent = parent_path(path);
+        let now = syscall::get_wallclock();
+        let inode = Inode::new_directory(path.to_string(), parent, name, None, now);
+
+        let inode_json = match serde_json::to_vec(&inode) {
+            Ok(j) => j,
+            Err(e) => {
+                let response = MkdirResponse {
+                    result: Err(VfsError::StorageError(e.to_string())),
+                };
+                return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_MKDIR_RESPONSE, &response);
+            }
+        };
+
+        self.start_storage_write(
+            &format!("inode:{}", path),
+            &inode_json,
+            PendingOp::PutInode {
+                client_pid,
+                response_tag: vfs_msg::MSG_VFS_MKDIR_RESPONSE,
+            },
+        )
+    }
+
+    /// Handle write file inode result (checking parent exists)
+    fn handle_write_file_inode_result(
+        &mut self,
+        client_pid: u32,
+        path: &str,
+        result_type: u8,
+        content: Vec<u8>,
+    ) -> Result<(), AppError> {
+        if result_type == storage_result::NOT_FOUND {
+            let response = WriteFileResponse {
+                result: Err(VfsError::NotFound),
+            };
+            return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_WRITE_RESPONSE, &response);
+        }
+
+        let name = path.rsplit('/').next().unwrap_or(path).to_string();
+        let parent = parent_path(path);
+        let now = syscall::get_wallclock();
+        let inode = Inode::new_file(
+            path.to_string(),
+            parent,
+            name,
+            None,
+            content.len() as u64,
+            None,
+            now,
+        );
+
+        let inode_json = match serde_json::to_vec(&inode) {
+            Ok(j) => j,
+            Err(e) => {
+                let response = WriteFileResponse {
+                    result: Err(VfsError::StorageError(e.to_string())),
+                };
+                return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_WRITE_RESPONSE, &response);
+            }
+        };
+
+        // Store inode first, then content
+        let _ = self.start_storage_write(
+            &format!("inode:{}", path),
+            &inode_json,
+            PendingOp::PutInode {
+                client_pid: 0,
+                response_tag: 0,
+            },
+        );
+
+        self.start_storage_write(
+            &format!("content:{}", path),
+            &content,
+            PendingOp::PutContent {
+                client_pid,
+                path: path.to_string(),
+            },
+        )
+    }
+
+    /// Handle rmdir inode result
+    fn handle_rmdir_inode_result(
+        &mut self,
+        client_pid: u32,
+        path: &str,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        if result_type == storage_result::NOT_FOUND {
+            let response = RmdirResponse {
+                result: Err(VfsError::NotFound),
+            };
+            return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_RMDIR_RESPONSE, &response);
+        }
+
+        match serde_json::from_slice::<Inode>(data) {
+            Ok(inode) if inode.is_directory() => {
+                self.start_storage_delete(
                     &format!("inode:{}", path),
-                    &inode_json,
-                    PendingOp::PutInode {
+                    PendingOp::DeleteInode {
                         client_pid,
-                        response_tag: vfs_msg::MSG_VFS_MKDIR_RESPONSE,
+                        response_tag: vfs_msg::MSG_VFS_RMDIR_RESPONSE,
                     },
                 )
             }
-
-            InodeOpType::WriteFileCheckParent { content } => {
-                if result_type == storage_result::NOT_FOUND {
-                    let response = WriteFileResponse {
-                        result: Err(VfsError::NotFound),
-                    };
-                    return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_WRITE_RESPONSE, &response);
-                }
-
-                // Create/update file inode
-                let name = path.rsplit('/').next().unwrap_or(path).to_string();
-                let parent = parent_path(path);
-                let now = syscall::get_wallclock();
-                let inode = Inode::new_file(
-                    path.to_string(),
-                    parent,
-                    name,
-                    None,
-                    content.len() as u64,
-                    None,
-                    now,
-                );
-
-                let inode_json = match serde_json::to_vec(&inode) {
-                    Ok(j) => j,
-                    Err(e) => {
-                        let response = WriteFileResponse {
-                            result: Err(VfsError::StorageError(e.to_string())),
-                        };
-                        return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_WRITE_RESPONSE, &response);
-                    }
+            Ok(_) => {
+                let response = RmdirResponse {
+                    result: Err(VfsError::NotADirectory),
                 };
+                self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_RMDIR_RESPONSE, &response)
+            }
+            Err(e) => {
+                let response = RmdirResponse {
+                    result: Err(VfsError::StorageError(e.to_string())),
+                };
+                self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_RMDIR_RESPONSE, &response)
+            }
+        }
+    }
 
-                // Store inode first, then content
-                // For simplicity, we'll write both and respond after content write
-                let _ = self.start_storage_write(
-                    &format!("inode:{}", path),
-                    &inode_json,
-                    PendingOp::PutInode {
-                        client_pid: 0, // Don't respond yet
-                        response_tag: 0,
-                    },
-                );
+    /// Handle unlink inode result
+    fn handle_unlink_inode_result(
+        &mut self,
+        client_pid: u32,
+        path: &str,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        if result_type == storage_result::NOT_FOUND {
+            let response = UnlinkResponse {
+                result: Err(VfsError::NotFound),
+            };
+            return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_UNLINK_RESPONSE, &response);
+        }
 
-                self.start_storage_write(
+        match serde_json::from_slice::<Inode>(data) {
+            Ok(inode) if inode.is_file() => {
+                let _ = self.start_storage_delete(
                     &format!("content:{}", path),
-                    &content,
-                    PendingOp::PutContent {
-                        client_pid,
+                    PendingOp::DeleteContent {
+                        client_pid: 0,
                         path: path.to_string(),
                     },
+                );
+                self.start_storage_delete(
+                    &format!("inode:{}", path),
+                    PendingOp::DeleteInode {
+                        client_pid,
+                        response_tag: vfs_msg::MSG_VFS_UNLINK_RESPONSE,
+                    },
                 )
             }
-
-            InodeOpType::Rmdir { recursive: _ } => {
-                if result_type == storage_result::NOT_FOUND {
-                    let response = RmdirResponse {
-                        result: Err(VfsError::NotFound),
-                    };
-                    return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_RMDIR_RESPONSE, &response);
-                }
-
-                // Parse inode and check it's a directory
-                match serde_json::from_slice::<Inode>(data) {
-                    Ok(inode) if inode.is_directory() => {
-                        // Delete the inode (simplified - not handling recursive or empty check)
-                        self.start_storage_delete(
-                            &format!("inode:{}", path),
-                            PendingOp::DeleteInode {
-                                client_pid,
-                                response_tag: vfs_msg::MSG_VFS_RMDIR_RESPONSE,
-                            },
-                        )
-                    }
-                    Ok(_) => {
-                        let response = RmdirResponse {
-                            result: Err(VfsError::NotADirectory),
-                        };
-                        self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_RMDIR_RESPONSE, &response)
-                    }
-                    Err(e) => {
-                        let response = RmdirResponse {
-                            result: Err(VfsError::StorageError(e.to_string())),
-                        };
-                        self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_RMDIR_RESPONSE, &response)
-                    }
-                }
+            Ok(_) => {
+                let response = UnlinkResponse {
+                    result: Err(VfsError::NotAFile),
+                };
+                self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_UNLINK_RESPONSE, &response)
             }
-
-            InodeOpType::Unlink => {
-                if result_type == storage_result::NOT_FOUND {
-                    let response = UnlinkResponse {
-                        result: Err(VfsError::NotFound),
-                    };
-                    return self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_UNLINK_RESPONSE, &response);
-                }
-
-                match serde_json::from_slice::<Inode>(data) {
-                    Ok(inode) if inode.is_file() => {
-                        // Delete content first, then inode
-                        let _ = self.start_storage_delete(
-                            &format!("content:{}", path),
-                            PendingOp::DeleteContent {
-                                client_pid: 0, // Don't respond yet
-                                path: path.to_string(),
-                            },
-                        );
-                        self.start_storage_delete(
-                            &format!("inode:{}", path),
-                            PendingOp::DeleteInode {
-                                client_pid,
-                                response_tag: vfs_msg::MSG_VFS_UNLINK_RESPONSE,
-                            },
-                        )
-                    }
-                    Ok(_) => {
-                        let response = UnlinkResponse {
-                            result: Err(VfsError::NotAFile),
-                        };
-                        self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_UNLINK_RESPONSE, &response)
-                    }
-                    Err(e) => {
-                        let response = UnlinkResponse {
-                            result: Err(VfsError::StorageError(e.to_string())),
-                        };
-                        self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_UNLINK_RESPONSE, &response)
-                    }
-                }
-            }
-
-            InodeOpType::Readdir => {
-                // This shouldn't happen - readdir uses ListChildren
-                Ok(())
+            Err(e) => {
+                let response = UnlinkResponse {
+                    result: Err(VfsError::StorageError(e.to_string())),
+                };
+                self.send_response_via_debug(client_pid, vfs_msg::MSG_VFS_UNLINK_RESPONSE, &response)
             }
         }
     }

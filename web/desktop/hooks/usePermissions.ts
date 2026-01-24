@@ -4,9 +4,8 @@ import {
   OBJECT_TYPE,
   encodePermissions,
   type ObjectType,
-  type Permissions,
   type CapabilityRequest,
-} from '../../apps/shared/app-protocol';
+} from '../../apps/_wire-format/app-protocol';
 import {
   usePermissionStore,
   selectPendingRequest,
@@ -46,10 +45,7 @@ export interface UsePermissionsActions {
     onComplete?: (success: boolean) => void
   ) => void;
   /** Grant permissions after user approval */
-  grantPermissions: (
-    pid: number,
-    capabilities: CapabilityRequest[]
-  ) => Promise<boolean>;
+  grantPermissions: (pid: number, capabilities: CapabilityRequest[]) => Promise<boolean>;
   /** Revoke a permission */
   revokePermission: (pid: number, objectType: ObjectType) => Promise<boolean>;
   /** Revoke all permissions for a process */
@@ -72,28 +68,97 @@ export interface UsePermissionsActions {
  * - Granting permissions (via Init)
  * - Revoking permissions (via Init)
  * - Tracking granted capabilities
- * 
+ *
  * @deprecated Use `usePermissionStore` directly for better performance.
  * This hook is kept for backward compatibility.
  */
 export function usePermissions(): UsePermissionsState & UsePermissionsActions {
   const supervisor = useSupervisor();
   const store = usePermissionStore();
-  
+
   // Get state from store via selectors
   const pendingRequest = usePermissionStore(selectPendingRequest);
   const grantedCapabilities = usePermissionStore(selectAllGrantedCapabilities);
   const isLoading = usePermissionStore(selectPermissionIsLoading);
 
   /**
+   * Internal function to grant permissions via Init
+   */
+  const grantPermissionsInternal = useCallback(
+    async (pid: number, capabilities: CapabilityRequest[]): Promise<boolean> => {
+      if (!supervisor) {
+        console.error('Supervisor not available');
+        return false;
+      }
+
+      store.setLoading(true);
+
+      try {
+        const grantedCaps: CapabilityInfo[] = [];
+
+        for (const cap of capabilities) {
+          // Encode grant request
+          const objectTypeValue = OBJECT_TYPE[cap.objectType];
+          const permsValue = encodePermissions(cap.permissions);
+          const reasonBytes = new TextEncoder().encode(cap.reason);
+
+          // Build message: [target_pid: u32, object_type: u8, perms: u8, reason_len: u16, reason]
+          const msgSize = 4 + 1 + 1 + 2 + reasonBytes.length;
+          const msgData = new Uint8Array(msgSize);
+          let offset = 0;
+
+          // Target PID (little-endian)
+          msgData[offset++] = pid & 0xff;
+          msgData[offset++] = (pid >> 8) & 0xff;
+          msgData[offset++] = (pid >> 16) & 0xff;
+          msgData[offset++] = (pid >> 24) & 0xff;
+
+          // Object type
+          msgData[offset++] = objectTypeValue;
+
+          // Permissions
+          msgData[offset++] = permsValue;
+
+          // Reason (length-prefixed)
+          msgData[offset++] = reasonBytes.length & 0xff;
+          msgData[offset++] = (reasonBytes.length >> 8) & 0xff;
+          msgData.set(reasonBytes, offset);
+
+          // Send to Init via supervisor IPC
+          // The supervisor intercepts INIT:GRANT messages and forwards to init process
+          const hex = Array.from(msgData)
+            .map((b) => b.toString(16).padStart(2, '0'))
+            .join('');
+          supervisor.send_input(`grant ${pid} ${hex}`);
+
+          // For now, assume success and track locally
+          // In a full implementation, we'd wait for MSG_PERMISSION_RESPONSE
+          grantedCaps.push({
+            slot: grantedCaps.length, // Placeholder slot
+            objectType: cap.objectType,
+            permissions: cap.permissions,
+          });
+        }
+
+        // Update store
+        store.grantCapabilities(pid, grantedCaps);
+
+        return true;
+      } catch (error) {
+        console.error('Failed to grant permissions:', error);
+        return false;
+      } finally {
+        store.setLoading(false);
+      }
+    },
+    [supervisor, store]
+  );
+
+  /**
    * Request permissions for an app - shows the permission dialog
    */
   const requestPermissions = useCallback(
-    (
-      pid: number,
-      app: AppManifest,
-      onComplete?: (success: boolean) => void
-    ) => {
+    (pid: number, app: AppManifest, onComplete?: (success: boolean) => void) => {
       // Factory apps are auto-granted basic capabilities
       if (app.isFactory) {
         // Auto-grant Endpoint for factory apps
@@ -124,81 +189,8 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
         },
       });
     },
-    [store]
+    [store, grantPermissionsInternal]
   );
-
-  /**
-   * Internal function to grant permissions via Init
-   */
-  const grantPermissionsInternal = async (
-    pid: number,
-    capabilities: CapabilityRequest[]
-  ): Promise<boolean> => {
-    if (!supervisor) {
-      console.error('Supervisor not available');
-      return false;
-    }
-
-    store.setLoading(true);
-
-    try {
-      const grantedCaps: CapabilityInfo[] = [];
-
-      for (const cap of capabilities) {
-        // Encode grant request
-        const objectTypeValue = OBJECT_TYPE[cap.objectType];
-        const permsValue = encodePermissions(cap.permissions);
-        const reasonBytes = new TextEncoder().encode(cap.reason);
-
-        // Build message: [target_pid: u32, object_type: u8, perms: u8, reason_len: u16, reason]
-        const msgSize = 4 + 1 + 1 + 2 + reasonBytes.length;
-        const msgData = new Uint8Array(msgSize);
-        let offset = 0;
-
-        // Target PID (little-endian)
-        msgData[offset++] = pid & 0xff;
-        msgData[offset++] = (pid >> 8) & 0xff;
-        msgData[offset++] = (pid >> 16) & 0xff;
-        msgData[offset++] = (pid >> 24) & 0xff;
-
-        // Object type
-        msgData[offset++] = objectTypeValue;
-
-        // Permissions
-        msgData[offset++] = permsValue;
-
-        // Reason (length-prefixed)
-        msgData[offset++] = reasonBytes.length & 0xff;
-        msgData[offset++] = (reasonBytes.length >> 8) & 0xff;
-        msgData.set(reasonBytes, offset);
-
-        // Send to Init via supervisor IPC
-        // The supervisor intercepts INIT:GRANT messages and forwards to init process
-        const hex = Array.from(msgData)
-          .map((b) => b.toString(16).padStart(2, '0'))
-          .join('');
-        supervisor.send_input(`grant ${pid} ${hex}`);
-
-        // For now, assume success and track locally
-        // In a full implementation, we'd wait for MSG_PERMISSION_RESPONSE
-        grantedCaps.push({
-          slot: grantedCaps.length, // Placeholder slot
-          objectType: cap.objectType,
-          permissions: cap.permissions,
-        });
-      }
-
-      // Update store
-      store.grantCapabilities(pid, grantedCaps);
-
-      return true;
-    } catch (error) {
-      console.error('Failed to grant permissions:', error);
-      return false;
-    } finally {
-      store.setLoading(false);
-    }
-  };
 
   /**
    * Grant permissions (public API)
@@ -207,7 +199,7 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
     async (pid: number, capabilities: CapabilityRequest[]): Promise<boolean> => {
       return grantPermissionsInternal(pid, capabilities);
     },
-    [supervisor, store]
+    [grantPermissionsInternal]
   );
 
   /**
@@ -226,7 +218,7 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
         // Find the capability slot for this object type from store
         const caps = store.getGrantedCaps(pid);
         const cap = caps.find((c) => c.objectType === objectType);
-        
+
         if (!cap) {
           console.warn(`No capability found for PID ${pid} objectType ${objectType}`);
           return false;
@@ -235,7 +227,7 @@ export function usePermissions(): UsePermissionsState & UsePermissionsActions {
         // Use direct supervisor API to revoke the capability
         // Note: pid must be BigInt for wasm-bindgen u64 parameter
         const success = supervisor.revoke_capability(BigInt(pid), cap.slot);
-        
+
         if (success) {
           // Update store
           store.revokeCapability(pid, objectType);

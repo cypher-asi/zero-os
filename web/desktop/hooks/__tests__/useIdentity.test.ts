@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import {
   useIdentity,
   useIdentityState,
@@ -50,8 +50,8 @@ describe('useIdentityState', () => {
     });
 
     expect(newUser).not.toBeNull();
-    expect(newUser!.displayName).toBe('Test User');
-    expect(newUser!.status).toBe('Offline');
+    expect(newUser?.displayName).toBe('Test User');
+    expect(newUser?.status).toBe('Offline');
     expect(result.current.state.users.length).toBe(2);
   });
 
@@ -75,7 +75,7 @@ describe('useIdentityState', () => {
     });
 
     expect(session).not.toBeNull();
-    expect(session!.userId).toBe(userId);
+    expect(session?.userId).toBe(userId);
     expect(result.current.state.currentUser).not.toBeNull();
     expect(result.current.state.currentUser?.status).toBe('Active');
   });
@@ -126,10 +126,10 @@ describe('useIdentityState', () => {
 
     // Switch to new user
     await act(async () => {
-      await result.current.switchUser(newUser!.id);
+      if (newUser) await result.current.switchUser(newUser.id);
     });
 
-    expect(result.current.state.currentUser?.id).toBe(newUser!.id);
+    expect(result.current.state.currentUser?.id).toBe(newUser?.id);
     expect(result.current.state.currentUser?.displayName).toBe('Second User');
   });
 

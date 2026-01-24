@@ -7,7 +7,7 @@ mod result;
 
 pub(crate) use result::send_syscall_result;
 
-use zos_kernel::{Kernel, ProcessId};
+use zos_kernel::{ProcessId, System};
 
 use crate::hal::WasmHal;
 
@@ -19,7 +19,7 @@ extern "C" {
 
 /// Handle capability grant request from Init process
 /// Format: INIT:GRANT:{target_pid}:{from_slot}:{perms_byte}
-pub(crate) fn handle_init_grant(kernel: &mut Kernel<WasmHal>, msg: &str) {
+pub(crate) fn handle_init_grant(system: &mut System<WasmHal>, msg: &str) {
     // Parse: INIT:GRANT:{target_pid}:{from_slot}:{perms_byte}
     let parts: Vec<&str> = msg[11..].split(':').collect();
     if parts.len() >= 3 {
@@ -37,7 +37,7 @@ pub(crate) fn handle_init_grant(kernel: &mut Kernel<WasmHal>, msg: &str) {
 
             // Grant from init's capability to target process
             let init_pid = ProcessId(1);
-            match kernel.grant_capability(init_pid, slot, ProcessId(pid), permissions) {
+            match system.grant_capability(init_pid, slot, ProcessId(pid), permissions) {
                 Ok(new_slot) => {
                     log(&format!(
                         "[supervisor] Granted capability to PID {} at slot {} (from init slot {}, perms {:?})",
@@ -61,7 +61,7 @@ pub(crate) fn handle_init_grant(kernel: &mut Kernel<WasmHal>, msg: &str) {
 
 /// Handle capability revoke request from Init process
 /// Format: INIT:REVOKE:{target_pid}:{slot}
-pub(crate) fn handle_init_revoke(kernel: &mut Kernel<WasmHal>, msg: &str) {
+pub(crate) fn handle_init_revoke(system: &mut System<WasmHal>, msg: &str) {
     // Parse: INIT:REVOKE:{target_pid}:{slot}
     let parts: Vec<&str> = msg[12..].split(':').collect();
     if parts.len() >= 2 {
@@ -70,7 +70,7 @@ pub(crate) fn handle_init_revoke(kernel: &mut Kernel<WasmHal>, msg: &str) {
 
         if let (Some(pid), Some(s)) = (target_pid, slot) {
             // Use delete_capability for forceful removal (supervisor privilege)
-            match kernel.delete_capability(ProcessId(pid), s) {
+            match system.delete_capability(ProcessId(pid), s) {
                 Ok(()) => {
                     log(&format!(
                         "[supervisor] Revoked capability from PID {} slot {}",

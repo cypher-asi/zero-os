@@ -7,8 +7,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
-use crate::error::{CredentialError, KeyError, SessionError, UserError};
-use crate::keystore::{LocalKeyStore, MachineKeyCapabilities, MachineKeyRecord};
+use crate::error::{CredentialError, KeyError, SessionError, UserError, ZidError};
+use crate::keystore::{KeyScheme, LocalKeyStore, MachineKeyCapabilities, MachineKeyRecord};
 use crate::session::SessionId;
 use crate::types::{User, UserId, UserStatus};
 
@@ -92,6 +92,7 @@ pub struct CreateUserResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetUserRequest {
     /// User ID to retrieve
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
 }
 
@@ -120,6 +121,7 @@ pub struct ListUsersResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeleteUserRequest {
     /// User ID to delete
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// Whether to delete the home directory
     pub delete_home: bool,
@@ -140,6 +142,7 @@ pub struct DeleteUserResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LoginChallengeRequest {
     /// User ID attempting to login
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
 }
 
@@ -156,6 +159,7 @@ pub struct LoginChallengeResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LoginVerifyRequest {
     /// User ID
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// Signed challenge
     pub signature: Vec<u8>,
@@ -219,34 +223,36 @@ pub struct WhoamiResponse {
 // ============================================================================
 
 /// Attach email credential request.
+///
+/// Calls ZID API to attach email credential. Requires active ZID session.
+/// Password is hashed server-side with Argon2id.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AttachEmailRequest {
     /// User ID
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// Email address to attach
     pub email: String,
+    /// Password for ZID account (hashed server-side with Argon2id)
+    pub password: String,
+    /// JWT access token from ZID login
+    pub access_token: String,
+    /// ZID API endpoint (e.g., "https://api.zero-id.io")
+    pub zid_endpoint: String,
 }
 
 /// Attach email response.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AttachEmailResponse {
-    /// Result of the operation
-    pub result: Result<AttachEmailSuccess, CredentialError>,
-}
-
-/// Successful email attachment.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AttachEmailSuccess {
-    /// Verification required?
-    pub verification_required: bool,
-    /// Verification code sent to email (in dev mode only)
-    pub verification_code: Option<String>,
+    /// Result of the operation (simplified - no verification needed with ZID)
+    pub result: Result<(), CredentialError>,
 }
 
 /// Get credentials request.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetCredentialsRequest {
     /// User ID
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// Optional filter by credential type
     pub credential_type: Option<crate::keystore::CredentialType>,
@@ -257,6 +263,23 @@ pub struct GetCredentialsRequest {
 pub struct GetCredentialsResponse {
     /// List of credentials
     pub credentials: Vec<crate::keystore::LinkedCredential>,
+}
+
+/// Unlink credential request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UnlinkCredentialRequest {
+    /// User ID
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    /// Type of credential to unlink
+    pub credential_type: crate::keystore::CredentialType,
+}
+
+/// Unlink credential response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UnlinkCredentialResponse {
+    /// Result of the operation
+    pub result: Result<(), CredentialError>,
 }
 
 // ============================================================================
@@ -298,6 +321,7 @@ pub struct PublicIdentifiers {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GenerateNeuralKeyRequest {
     /// User ID to generate keys for
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
 }
 
@@ -323,6 +347,7 @@ pub struct GenerateNeuralKeyResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RecoverNeuralKeyRequest {
     /// User ID to recover keys for
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// At least 3 shards required for recovery
     pub shards: Vec<NeuralShard>,
@@ -346,6 +371,7 @@ pub struct RecoverNeuralKeyResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RegisterIdentityKeyRequest {
     /// User ID to register keys for
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// Identity-level signing public key (Ed25519)
     pub identity_signing_public_key: [u8; 32],
@@ -366,6 +392,7 @@ pub struct RegisterIdentityKeyResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetIdentityKeyRequest {
     /// User ID to get keys for
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
 }
 
@@ -383,11 +410,15 @@ pub struct GetIdentityKeyResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CreateMachineKeyRequest {
     /// User ID
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// Optional human-readable machine name
     pub machine_name: Option<String>,
     /// Machine key capabilities
     pub capabilities: MachineKeyCapabilities,
+    /// Key scheme to use (defaults to Classical)
+    #[serde(default)]
+    pub key_scheme: KeyScheme,
 }
 
 /// Create machine key response.
@@ -401,6 +432,7 @@ pub struct CreateMachineKeyResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ListMachineKeysRequest {
     /// User ID to list machines for
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
 }
 
@@ -415,6 +447,7 @@ pub struct ListMachineKeysResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GetMachineKeyRequest {
     /// User ID
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// Machine ID to retrieve (hex string for JavaScript interop)
     #[serde(with = "u128_hex_string")]
@@ -434,6 +467,7 @@ pub struct GetMachineKeyResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RevokeMachineKeyRequest {
     /// User ID
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// Machine ID to revoke (hex string for JavaScript interop)
     #[serde(with = "u128_hex_string")]
@@ -454,6 +488,7 @@ pub struct RevokeMachineKeyResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RotateMachineKeyRequest {
     /// User ID
+    #[serde(with = "u128_hex_string")]
     pub user_id: UserId,
     /// Machine ID to rotate keys for (hex string for JavaScript interop)
     #[serde(with = "u128_hex_string")]
@@ -465,6 +500,105 @@ pub struct RotateMachineKeyRequest {
 pub struct RotateMachineKeyResponse {
     /// Result containing the updated machine record
     pub result: Result<MachineKeyRecord, KeyError>,
+}
+
+// ============================================================================
+// ZID Auth Request/Response Types (0x7080-0x708F)
+// ============================================================================
+
+/// ZID login request (machine key challenge-response).
+///
+/// Initiates authentication with ZERO-ID server using local machine key:
+/// 1. Service requests challenge from ZID server
+/// 2. Signs challenge with machine key (Ed25519)
+/// 3. Submits signed challenge for verification
+/// 4. Receives tokens on success
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidLoginRequest {
+    /// User ID whose machine key should be used
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    /// ZID API endpoint (e.g., "https://api.zero-id.io")
+    pub zid_endpoint: String,
+}
+
+/// ZID login response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidLoginResponse {
+    /// Result containing tokens or error
+    pub result: Result<ZidTokens, ZidError>,
+}
+
+/// Tokens returned from successful ZID authentication.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidTokens {
+    /// JWT access token for API calls
+    pub access_token: String,
+    /// Refresh token for obtaining new access tokens
+    pub refresh_token: String,
+    /// Unique session identifier
+    pub session_id: String,
+    /// Access token lifetime in seconds
+    pub expires_in: u64,
+}
+
+/// Persisted ZID session (stored in VFS).
+///
+/// Path: `/home/{user_id}/.zos/identity/zid_session.json`
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidSession {
+    /// ZID API endpoint used for this session
+    pub zid_endpoint: String,
+    /// JWT access token
+    pub access_token: String,
+    /// Refresh token
+    pub refresh_token: String,
+    /// Session ID from ZID server
+    pub session_id: String,
+    /// When the access token expires (Unix timestamp ms)
+    pub expires_at: u64,
+    /// When this session was created (Unix timestamp ms)
+    pub created_at: u64,
+}
+
+/// ZID token refresh request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidRefreshRequest {
+    /// User ID
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    /// ZID API endpoint
+    pub zid_endpoint: String,
+}
+
+/// ZID token refresh response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidRefreshResponse {
+    /// Result containing new tokens or error
+    pub result: Result<ZidTokens, ZidError>,
+}
+
+/// ZID enroll machine request (register with ZID server).
+///
+/// Registers a new identity + machine with the ZID server:
+/// 1. Service reads local machine key from VFS
+/// 2. Posts to /v1/identity with machine's public key
+/// 3. Creates identity + first machine on ZID server
+/// 4. Returns tokens on success (auto-login after enrollment)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidEnrollMachineRequest {
+    /// User ID whose machine key should be enrolled
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    /// ZID API endpoint (e.g., "https://api.zero-id.io")
+    pub zid_endpoint: String,
+}
+
+/// ZID enroll machine response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZidEnrollMachineResponse {
+    /// Result containing tokens or error
+    pub result: Result<ZidTokens, ZidError>,
 }
 
 #[cfg(test)]
@@ -501,6 +635,7 @@ mod tests {
             user_id: 3,
             machine_name: Some(String::from("My Laptop")),
             capabilities: MachineKeyCapabilities::default(),
+            key_scheme: crate::keystore::KeyScheme::default(),
         };
         assert_eq!(create_req.user_id, 3);
         assert!(create_req.machine_name.is_some());

@@ -74,23 +74,23 @@ impl Supervisor {
             wasm_binary.len()
         ));
 
-        // TRANSITIONAL: Direct kernel call for process registration.
+        // TRANSITIONAL: Direct system call for process registration.
         // For Init, this is the bootstrap exception (see boot.rs).
         // For other processes, this should migrate to Init-driven spawn.
-        let kernel_pid = self.kernel.register_process(name);
+        let process_pid = self.system.register_process(name);
         log(&format!(
-            "[supervisor] Kernel assigned PID {} for '{}'",
-            kernel_pid.0, name
+            "[supervisor] System assigned PID {} for '{}'",
+            process_pid.0, name
         ));
 
         // Create endpoints for the process based on its role
-        self.setup_process_endpoints(kernel_pid, name);
+        self.setup_process_endpoints(process_pid, name);
 
-        // Spawn via HAL with the kernel PID
+        // Spawn via HAL with the system PID
         match self
-            .kernel
+            .system
             .hal()
-            .spawn_with_pid(kernel_pid.0, name, wasm_binary)
+            .spawn_with_pid(process_pid.0, name, wasm_binary)
         {
             Ok(handle) => {
                 log(&format!(
@@ -99,10 +99,10 @@ impl Supervisor {
                 ));
 
                 // Track init spawn and grant capabilities
-                self.setup_process_capabilities(kernel_pid, name);
+                self.setup_process_capabilities(process_pid, name);
 
                 // Check if this is part of an automated pingpong test
-                let pid = kernel_pid.0;
+                let pid = process_pid.0;
                 self.on_process_spawned(name, pid);
 
                 pid
@@ -110,45 +110,45 @@ impl Supervisor {
             Err(e) => {
                 self.write_console(&format!("Error spawning {}: {:?}\n", name, e));
                 log(&format!("[supervisor] Failed to spawn {}: {:?}", name, e));
-                // Clean up kernel registration
+                // Clean up system registration
                 // Note: This is a special case during spawn failure cleanup.
                 // The process hasn't started yet, so we use direct kill.
-                self.kernel.kill_process(kernel_pid);
+                self.system.kill_process(process_pid);
                 0
             }
         }
     }
 
     /// Set up endpoints for a process based on its role
-    fn setup_process_endpoints(&mut self, kernel_pid: ProcessId, name: &str) {
+    fn setup_process_endpoints(&mut self, process_pid: ProcessId, name: &str) {
         if name == "init" {
             // Init gets: slot 0 = init endpoint, slot 1 = console output
-            if let Ok((eid, slot)) = self.kernel.create_endpoint(kernel_pid) {
+            if let Ok((eid, slot)) = self.system.create_endpoint(process_pid) {
                 log(&format!(
                     "[supervisor] Created init endpoint {} at slot {} for init",
                     eid.0, slot
                 ));
             }
-            if let Ok((eid, slot)) = self.kernel.create_endpoint(kernel_pid) {
+            if let Ok((eid, slot)) = self.system.create_endpoint(process_pid) {
                 log(&format!(
                     "[supervisor] Created console output endpoint {} at slot {} for init",
                     eid.0, slot
                 ));
             }
         } else if name == "terminal" {
-            self.setup_terminal_endpoints(kernel_pid);
+            self.setup_terminal_endpoints(process_pid);
         } else {
             // Other processes get two endpoints: output (slot 0) and input (slot 1)
             // This matches the app_main! macro which expects:
             // - Slot 0: UI output endpoint
             // - Slot 1: Input endpoint (for receiving messages)
-            if let Ok((eid, slot)) = self.kernel.create_endpoint(kernel_pid) {
+            if let Ok((eid, slot)) = self.system.create_endpoint(process_pid) {
                 log(&format!(
                     "[supervisor] Created output endpoint {} at slot {} for {}",
                     eid.0, slot, name
                 ));
             }
-            if let Ok((eid, slot)) = self.kernel.create_endpoint(kernel_pid) {
+            if let Ok((eid, slot)) = self.system.create_endpoint(process_pid) {
                 log(&format!(
                     "[supervisor] Created input endpoint {} at slot {} for {}",
                     eid.0, slot, name
@@ -161,7 +161,7 @@ impl Supervisor {
     ///
     /// Terminal only needs its own input endpoint for receiving console input
     /// from the supervisor. Console output goes through SYS_CONSOLE_WRITE syscall.
-    fn setup_terminal_endpoints(&mut self, kernel_pid: ProcessId) {
+    fn setup_terminal_endpoints(&mut self, process_pid: ProcessId) {
         // Terminal endpoint setup:
         // - Slot 0: Terminal's own endpoint (for general IPC if needed)
         // - Slot 1: Terminal's input endpoint (receives console input from supervisor)
@@ -171,7 +171,7 @@ impl Supervisor {
         // handles directly during syscall processing (no kernel buffering).
 
         // Create terminal's primary endpoint at slot 0
-        if let Ok((eid, slot)) = self.kernel.create_endpoint(kernel_pid) {
+        if let Ok((eid, slot)) = self.system.create_endpoint(process_pid) {
             log(&format!(
                 "[supervisor] Created terminal endpoint {} at slot {} for terminal",
                 eid.0, slot
@@ -180,7 +180,7 @@ impl Supervisor {
 
         // Create terminal's input endpoint at slot 1
         // Supervisor will be granted a capability to this endpoint for console input
-        if let Ok((input_eid, slot)) = self.kernel.create_endpoint(kernel_pid) {
+        if let Ok((input_eid, slot)) = self.system.create_endpoint(process_pid) {
             log(&format!(
                 "[supervisor] Created terminal input endpoint {} at slot {} for terminal",
                 input_eid.0, slot
@@ -192,23 +192,23 @@ impl Supervisor {
     }
 
     /// Set up capabilities for a spawned process
-    fn setup_process_capabilities(&mut self, kernel_pid: ProcessId, name: &str) {
+    fn setup_process_capabilities(&mut self, process_pid: ProcessId, name: &str) {
         if name == "init" {
             self.init_spawned = true;
             log("[supervisor] Init process spawned (PID 1)");
             
             // Grant supervisor (PID 0) capability to Init's endpoint for IPC
-            self.grant_supervisor_capability_to_init(kernel_pid);
+            self.grant_supervisor_capability_to_init(process_pid);
         } else if name == "permission_manager" {
             // Grant supervisor (PID 0) capability to PM's endpoint for IPC
-            self.grant_supervisor_capability_to_pm(kernel_pid);
+            self.grant_supervisor_capability_to_pm(process_pid);
         } else if self.init_spawned {
             // Grant this process a capability to init's endpoint (slot 0 of PID 1)
             let init_pid = ProcessId(1);
-            match self.kernel.grant_capability(
+            match self.system.grant_capability(
                 init_pid,
                 0, // init's endpoint at slot 0
-                kernel_pid,
+                process_pid,
                 zos_kernel::Permissions {
                     read: false,
                     write: true,
@@ -231,13 +231,13 @@ impl Supervisor {
             
             // If VFS service is running, grant this process a capability to VFS endpoint
             // This goes in slot 3 (VFS_ENDPOINT_SLOT) for VfsClient to use
-            self.grant_vfs_capability_to_process(kernel_pid, name);
+            self.grant_vfs_capability_to_process(process_pid, name);
             
             // Create a dedicated endpoint for VFS responses (slot 4)
             // This prevents race conditions where the VFS client's blocking receive
             // on the general input endpoint (slot 1) could consume other IPC messages.
             // VFS responses are routed here by the supervisor via Init.
-            if let Ok((eid, slot)) = self.kernel.create_endpoint(kernel_pid) {
+            if let Ok((eid, slot)) = self.system.create_endpoint(process_pid) {
                 log(&format!(
                     "[supervisor] Created VFS response endpoint {} at slot {} for {}",
                     eid.0, slot, name
@@ -245,37 +245,37 @@ impl Supervisor {
                 
                 // Grant Init capability to this VFS response endpoint
                 // This enables Init to deliver VFS responses to the correct endpoint (slot 4)
-                self.grant_init_vfs_response_capability(name, kernel_pid);
+                self.grant_init_vfs_response_capability(name, process_pid);
             }
             
             // If Identity service is running, grant this process a capability to Identity endpoint
             // This enables proper capability-mediated IPC for identity operations
-            self.grant_identity_capability_to_process(kernel_pid, name);
+            self.grant_identity_capability_to_process(process_pid, name);
         }
         
         // When terminal is spawned, grant Init (PID 1) capability to terminal's input endpoint
         // and grant supervisor capability for console input routing
         if name == "terminal" {
-            self.grant_terminal_capabilities(kernel_pid);
+            self.grant_terminal_capabilities(process_pid);
         }
         
         // When vfs_service is spawned, grant its endpoint to processes that need VFS access
         // and grant Init (PID 1) capability to deliver IPC messages to VFS
         if name == "vfs_service" {
-            self.grant_vfs_capabilities_to_existing_processes(kernel_pid);
-            self.grant_init_capability_to_service("vfs_service", kernel_pid);
+            self.grant_vfs_capabilities_to_existing_processes(process_pid);
+            self.grant_init_capability_to_service("vfs_service", process_pid);
         }
         
         // When identity_service is spawned, grant its endpoint to processes that need identity access
         // and grant Init (PID 1) capability to deliver IPC messages to Identity
         if name == "identity_service" {
-            self.grant_identity_capabilities_to_existing_processes(kernel_pid);
-            self.grant_init_capability_to_service("identity_service", kernel_pid);
+            self.grant_identity_capabilities_to_existing_processes(process_pid);
+            self.grant_init_capability_to_service("identity_service", process_pid);
         }
         
         // When time_service is spawned, grant Init (PID 1) capability to deliver IPC messages
         if name == "time_service" {
-            self.grant_init_capability_to_service("time_service", kernel_pid);
+            self.grant_init_capability_to_service("time_service", process_pid);
         }
     }
     
@@ -289,7 +289,7 @@ impl Supervisor {
         let supervisor_pid = ProcessId(0);
         
         // Get Init's endpoint ID from slot 0
-        let endpoint_id = match self.kernel.get_cap_space(init_pid) {
+        let endpoint_id = match self.system.get_cap_space(init_pid) {
             Some(cspace) => match cspace.get(INIT_ENDPOINT_SLOT) {
                 Some(cap) => zos_kernel::EndpointId(cap.object_id),
                 None => {
@@ -304,7 +304,7 @@ impl Supervisor {
         };
         
         // Grant supervisor capability to Init's endpoint
-        match self.kernel.grant_capability_to_endpoint(
+        match self.system.grant_capability_to_endpoint(
             init_pid,
             endpoint_id,
             supervisor_pid,
@@ -337,7 +337,7 @@ impl Supervisor {
         let supervisor_pid = ProcessId(0);
         
         // Get PM's endpoint ID from slot 1
-        let endpoint_id = match self.kernel.get_cap_space(pm_pid) {
+        let endpoint_id = match self.system.get_cap_space(pm_pid) {
             Some(cspace) => match cspace.get(PM_INPUT_SLOT) {
                 Some(cap) => zos_kernel::EndpointId(cap.object_id),
                 None => {
@@ -352,7 +352,7 @@ impl Supervisor {
         };
         
         // Grant supervisor capability to PM's endpoint
-        match self.kernel.grant_capability_to_endpoint(
+        match self.system.grant_capability_to_endpoint(
             pm_pid,
             endpoint_id,
             supervisor_pid,
@@ -389,7 +389,7 @@ impl Supervisor {
         let supervisor_pid = ProcessId(0);
         
         // Get terminal's input endpoint ID
-        let endpoint_id = match self.kernel.get_cap_space(terminal_pid) {
+        let endpoint_id = match self.system.get_cap_space(terminal_pid) {
             Some(cspace) => match cspace.get(TERMINAL_INPUT_SLOT) {
                 Some(cap) => zos_kernel::EndpointId(cap.object_id),
                 None => {
@@ -410,7 +410,7 @@ impl Supervisor {
         };
         
         // Grant Init capability to terminal's input endpoint
-        match self.kernel.grant_capability_to_endpoint(
+        match self.system.grant_capability_to_endpoint(
             terminal_pid,
             endpoint_id,
             init_pid,
@@ -435,7 +435,7 @@ impl Supervisor {
         }
         
         // Grant supervisor capability to terminal's input endpoint
-        match self.kernel.grant_capability_to_endpoint(
+        match self.system.grant_capability_to_endpoint(
             terminal_pid,
             endpoint_id,
             supervisor_pid,
@@ -469,7 +469,7 @@ impl Supervisor {
             // VFS service's input endpoint is at slot 1
             const VFS_INPUT_SLOT: u32 = 1;
             
-            match self.kernel.grant_capability(
+            match self.system.grant_capability(
                 vfs_pid,
                 VFS_INPUT_SLOT,
                 target_pid,
@@ -502,7 +502,7 @@ impl Supervisor {
         
         // Get list of processes that need VFS access
         let processes: Vec<(ProcessId, String)> = self
-            .kernel
+            .system
             .list_processes()
             .into_iter()
             .filter(|(pid, proc)| {
@@ -513,7 +513,7 @@ impl Supervisor {
             .collect();
         
         for (pid, name) in processes {
-            match self.kernel.grant_capability(
+            match self.system.grant_capability(
                 vfs_pid,
                 VFS_INPUT_SLOT,
                 pid,
@@ -540,7 +540,7 @@ impl Supervisor {
             // Also create a dedicated VFS response endpoint for this process (slot 4)
             // This prevents race conditions where VFS client's blocking receive
             // could consume other IPC messages on the general input endpoint.
-            if let Ok((eid, slot)) = self.kernel.create_endpoint(pid) {
+            if let Ok((eid, slot)) = self.system.create_endpoint(pid) {
                 log(&format!(
                     "[supervisor] Created VFS response endpoint {} at slot {} for {} (PID {})",
                     eid.0, slot, name, pid.0
@@ -555,7 +555,7 @@ impl Supervisor {
     
     /// Find the VFS service process ID
     fn find_vfs_service_pid(&self) -> Option<ProcessId> {
-        for (pid, proc) in self.kernel.list_processes() {
+        for (pid, proc) in self.system.list_processes() {
             if proc.name == "vfs_service" {
                 return Some(pid);
             }
@@ -575,7 +575,7 @@ impl Supervisor {
             // Identity service's input endpoint is at slot 1
             const IDENTITY_INPUT_SLOT: u32 = 1;
             
-            match self.kernel.grant_capability(
+            match self.system.grant_capability(
                 identity_pid,
                 IDENTITY_INPUT_SLOT,
                 target_pid,
@@ -611,7 +611,7 @@ impl Supervisor {
         
         // Get list of processes that need Identity access
         let processes: Vec<(ProcessId, String)> = self
-            .kernel
+            .system
             .list_processes()
             .into_iter()
             .filter(|(pid, proc)| {
@@ -626,7 +626,7 @@ impl Supervisor {
             .collect();
         
         for (pid, name) in processes {
-            match self.kernel.grant_capability(
+            match self.system.grant_capability(
                 identity_pid,
                 IDENTITY_INPUT_SLOT,
                 pid,
@@ -654,7 +654,7 @@ impl Supervisor {
     
     /// Find the Identity service process ID (internal helper)
     fn find_identity_service_pid_internal(&self) -> Option<ProcessId> {
-        for (pid, proc) in self.kernel.list_processes() {
+        for (pid, proc) in self.system.list_processes() {
             if proc.name == "identity_service" {
                 return Some(pid);
             }
@@ -676,7 +676,7 @@ impl Supervisor {
         let init_pid = ProcessId(1);
         
         // Get service's input endpoint ID from slot 1
-        let endpoint_id = match self.kernel.get_cap_space(service_pid) {
+        let endpoint_id = match self.system.get_cap_space(service_pid) {
             Some(cspace) => match cspace.get(SERVICE_INPUT_SLOT) {
                 Some(cap) => zos_kernel::EndpointId(cap.object_id),
                 None => {
@@ -694,7 +694,7 @@ impl Supervisor {
         };
         
         // Grant Init capability to service's endpoint
-        match self.kernel.grant_capability_to_endpoint(
+        match self.system.grant_capability_to_endpoint(
             service_pid,
             endpoint_id,
             init_pid,
@@ -743,7 +743,7 @@ impl Supervisor {
         
         let supervisor_pid = ProcessId(0);
         
-        match self.kernel.ipc_send(supervisor_pid, init_slot, MSG_SERVICE_CAP_GRANTED, payload) {
+        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SERVICE_CAP_GRANTED, payload) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Notified Init of service PID {} cap at slot {}",
@@ -771,7 +771,7 @@ impl Supervisor {
         let init_pid = ProcessId(1);
         
         // Get process's VFS response endpoint ID from slot 4
-        let endpoint_id = match self.kernel.get_cap_space(process_pid) {
+        let endpoint_id = match self.system.get_cap_space(process_pid) {
             Some(cspace) => match cspace.get(VFS_RESPONSE_SLOT) {
                 Some(cap) => zos_kernel::EndpointId(cap.object_id),
                 None => {
@@ -789,7 +789,7 @@ impl Supervisor {
         };
         
         // Grant Init capability to process's VFS response endpoint
-        match self.kernel.grant_capability_to_endpoint(
+        match self.system.grant_capability_to_endpoint(
             process_pid,
             endpoint_id,
             init_pid,
@@ -838,7 +838,7 @@ impl Supervisor {
         
         let supervisor_pid = ProcessId(0);
         
-        match self.kernel.ipc_send(supervisor_pid, init_slot, MSG_VFS_RESPONSE_CAP_GRANTED, payload) {
+        match self.system.ipc_send(supervisor_pid, init_slot, MSG_VFS_RESPONSE_CAP_GRANTED, payload) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Notified Init of PID {} VFS response cap at slot {}",

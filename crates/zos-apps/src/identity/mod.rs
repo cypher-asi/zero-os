@@ -1,0 +1,16 @@
+//! Identity service shared modules
+//!
+//! This module provides reusable components for the identity service:
+//! - Crypto helpers for key generation and Shamir splitting
+//! - Pending operation types for async storage/network tracking
+//! - Response helpers for IPC response formatting
+
+pub mod crypto;
+pub mod pending;
+pub mod response;
+pub mod storage_handlers;
+pub mod network_handlers;
+
+pub use crypto::*;
+pub use pending::*;
+pub use response::*;
