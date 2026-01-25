@@ -32,7 +32,7 @@ fn test_app_permissions_checked_against_manifest() {
 
     // For now, verify the basic permission checking in VFS
     use zos_vfs::service::{check_read, check_write, PermissionContext};
-    use zos_vfs::types::Inode;
+    use zos_vfs::Inode;
 
     let user_id: u128 = 0x00000000000000000000000000000001;
 
@@ -91,7 +91,7 @@ fn test_app_data_directory_created() {
 #[test]
 fn test_permission_denial_for_unauthorized_operations() {
     use zos_vfs::service::{check_read, check_write, PermissionContext};
-    use zos_vfs::types::{FilePermissions, Inode};
+    use zos_vfs::{FilePermissions, Inode};
 
     let owner_id: u128 = 0x00000000000000000000000000000001;
     let attacker_id: u128 = 0x00000000000000000000000000000002;

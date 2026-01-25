@@ -6,6 +6,9 @@
 #![cfg_attr(target_arch = "wasm32", no_std)]
 #![cfg_attr(target_arch = "wasm32", no_main)]
 
+// Initialize bump allocator with 64KB heap (minimal)
+zos_allocator::init!(64 * 1024);
+
 #[cfg(target_arch = "wasm32")]
 extern crate alloc;
 
@@ -21,7 +24,7 @@ pub extern "C" fn _start() {
     // Just loop and yield, doing nothing
     // Check for exit command occasionally
     loop {
-        if let Some(msg) = syscall::receive(CMD_ENDPOINT) {
+        if let Ok(msg) = syscall::receive(CMD_ENDPOINT) {
             if msg.tag == CMD_EXIT {
                 syscall::exit(0);
             }
@@ -48,53 +51,3 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     syscall::exit(1);
 }
 
-#[cfg(target_arch = "wasm32")]
-mod allocator {
-    use core::alloc::{GlobalAlloc, Layout};
-
-    struct BumpAllocator {
-        head: core::sync::atomic::AtomicUsize,
-    }
-
-    #[global_allocator]
-    static ALLOCATOR: BumpAllocator = BumpAllocator {
-        head: core::sync::atomic::AtomicUsize::new(0),
-    };
-
-    const HEAP_START: usize = 0x10000;
-    const HEAP_SIZE: usize = 64 * 1024; // 64KB heap (minimal)
-
-    unsafe impl GlobalAlloc for BumpAllocator {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            let size = layout.size();
-            let align = layout.align();
-
-            loop {
-                let head = self.head.load(core::sync::atomic::Ordering::Relaxed);
-                let aligned = (HEAP_START + head + align - 1) & !(align - 1);
-                let new_head = aligned - HEAP_START + size;
-
-                if new_head > HEAP_SIZE {
-                    return core::ptr::null_mut();
-                }
-
-                if self
-                    .head
-                    .compare_exchange_weak(
-                        head,
-                        new_head,
-                        core::sync::atomic::Ordering::SeqCst,
-                        core::sync::atomic::Ordering::Relaxed,
-                    )
-                    .is_ok()
-                {
-                    return aligned as *mut u8;
-                }
-            }
-        }
-
-        unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-            // Bump allocator doesn't deallocate
-        }
-    }
-}

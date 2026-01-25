@@ -1,11 +1,10 @@
 //! Storage types for the VFS layer.
 //!
-//! Defines content records, quota management, and storage usage tracking.
+//! Defines quota management and storage usage tracking.
 
-use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
-use crate::types::UserId;
+use crate::core::UserId;
 
 /// Storage usage statistics.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -140,89 +139,6 @@ impl StorageQuota {
     }
 }
 
-/// Stored file content record.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ContentRecord {
-    /// File path (primary key)
-    pub path: alloc::string::String,
-
-    /// Content data (or first chunk if large)
-    pub data: Vec<u8>,
-
-    /// Total size in bytes
-    pub size: u64,
-
-    /// SHA-256 hash
-    pub hash: [u8; 32],
-
-    /// Is this file chunked?
-    pub chunked: bool,
-
-    /// Number of chunks (if chunked)
-    pub chunk_count: Option<u32>,
-
-    /// Is content encrypted?
-    pub encrypted: bool,
-
-    /// Encryption nonce (if encrypted)
-    pub nonce: Option<[u8; 12]>,
-}
-
-impl ContentRecord {
-    /// Create a new content record for small files.
-    pub fn new(path: alloc::string::String, data: Vec<u8>, hash: [u8; 32]) -> Self {
-        let size = data.len() as u64;
-        Self {
-            path,
-            data,
-            size,
-            hash,
-            chunked: false,
-            chunk_count: None,
-            encrypted: false,
-            nonce: None,
-        }
-    }
-
-    /// Create a chunked content record for large files.
-    pub fn new_chunked(
-        path: alloc::string::String,
-        size: u64,
-        hash: [u8; 32],
-        chunk_count: u32,
-    ) -> Self {
-        Self {
-            path,
-            data: Vec::new(),
-            size,
-            hash,
-            chunked: true,
-            chunk_count: Some(chunk_count),
-            encrypted: false,
-            nonce: None,
-        }
-    }
-}
-
-/// File chunk for large files.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChunkRecord {
-    /// File path
-    pub path: alloc::string::String,
-
-    /// Chunk index (0-based)
-    pub chunk_index: u32,
-
-    /// Chunk data
-    pub data: Vec<u8>,
-}
-
-/// Maximum chunk size (1 MB).
-pub const CHUNK_SIZE: usize = 1024 * 1024;
-
-/// Threshold for chunking files.
-pub const CHUNK_THRESHOLD: usize = CHUNK_SIZE;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,31 +180,5 @@ mod tests {
 
         quota.update_usage(-50 * 1024 * 1024); // Back to 60 MB
         assert!(!quota.over_quota);
-    }
-
-    #[test]
-    fn test_content_record() {
-        let data = alloc::vec![1u8, 2, 3, 4, 5];
-        let hash = [0u8; 32];
-        let record = ContentRecord::new(alloc::string::String::from("/test"), data, hash);
-
-        assert_eq!(record.size, 5);
-        assert!(!record.chunked);
-        assert!(!record.encrypted);
-    }
-
-    #[test]
-    fn test_chunked_content() {
-        let hash = [0u8; 32];
-        let record = ContentRecord::new_chunked(
-            alloc::string::String::from("/large"),
-            5 * 1024 * 1024,
-            hash,
-            5,
-        );
-
-        assert!(record.chunked);
-        assert_eq!(record.chunk_count, Some(5));
-        assert!(record.data.is_empty());
     }
 }

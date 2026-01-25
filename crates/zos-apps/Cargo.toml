@@ -20,28 +20,8 @@ name = "terminal"
 path = "src/bin/terminal.rs"
 
 [[bin]]
-name = "permission_manager"
-path = "src/bin/permission_manager.rs"
-
-[[bin]]
-name = "identity_service"
-path = "src/bin/identity_service/main.rs"
-
-[[bin]]
 name = "settings"
 path = "src/bin/settings.rs"
-
-[[bin]]
-name = "vfs_service"
-path = "src/bin/vfs_service/main.rs"
-
-[[bin]]
-name = "time_service"
-path = "src/bin/time_service.rs"
-
-[[bin]]
-name = "network_service"
-path = "src/bin/network_service.rs"
 
 [dependencies]
 zos-process = { path = "../zos-process" }
@@ -51,6 +31,7 @@ zos-network = { path = "../zos-network" }
 zos-vfs = { path = "../zos-vfs" }
 serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+thiserror = "2.0"
 uuid = { version = "1.20", default-features = false }
 
 [dev-dependencies]

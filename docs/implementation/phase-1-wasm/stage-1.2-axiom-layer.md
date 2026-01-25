@@ -15,7 +15,7 @@ This stage is **fully implemented**. All objectives have been achieved.
 | AxiomLog for capability mutations (legacy) | ✅ | `crates/Zero-kernel/src/lib.rs` |
 | Hash chain integrity | ✅ | `AxiomLog::verify_integrity()` |
 | CapOperation enum | ✅ | Create, Grant, Revoke, Transfer, Delete |
-| IndexedDB persistence | ✅ | `apps/zos-supervisor-web/www/index.html` |
+| IndexedDB persistence | ✅ | `apps/zos-supervisor/www/index.html` |
 | `axiom_check()` function | ✅ | `crates/Zero-kernel/src/lib.rs` |
 | **SysLog** | ✅ | `crates/Zero-axiom/src/syslog.rs` |
 | **CommitLog** | ✅ | `crates/Zero-axiom/src/commitlog.rs` |

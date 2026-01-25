@@ -18,7 +18,7 @@ This stage is **fully implemented** with Web Worker-based process isolation.
 | Process table | ✅ | `BTreeMap<ProcessId, Process>` |
 | `register_process()` | ✅ | `crates/Zero-kernel/src/lib.rs:849-876` |
 | `kill_process()` | ✅ | `crates/Zero-kernel/src/lib.rs:879-900` |
-| Web Worker spawning | ✅ | `apps/zos-supervisor-web/www/worker.js` |
+| Web Worker spawning | ✅ | `apps/zos-supervisor/www/worker.js` |
 | SharedArrayBuffer syscalls | ✅ | Atomics-based mailbox |
 | Sender verification | ✅ | PID from worker context |
 | Test processes | ✅ | idle, memhog, sender, receiver, pingpong |
@@ -27,7 +27,7 @@ This stage is **fully implemented** with Web Worker-based process isolation.
 
 ```
 Browser Main Thread
-├── Supervisor (zos-supervisor-web WASM)
+├── Supervisor (zos-supervisor WASM)
 │   ├── Kernel state (processes, capabilities, endpoints)
 │   ├── Syscall mailbox polling (SharedArrayBuffer)
 │   └── IPC message routing
@@ -82,7 +82,7 @@ pub fn register_process(&mut self, name: &str) -> ProcessId {
 #### Web Worker Bootstrap
 
 ```javascript
-// apps/zos-supervisor-web/www/worker.js
+// apps/zos-supervisor/www/worker.js
 self.onmessage = async (event) => {
     const { binary, pid } = event.data;
     

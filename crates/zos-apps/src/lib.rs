@@ -2,10 +2,9 @@
 //!
 //! This crate provides the platform-agnostic application model for Zero OS:
 //!
-//! - **ZeroApp trait**: The interface all apps implement
-//! - **AppManifest**: Declarative capability requirements
-//! - **AppRuntime**: Event loop that drives apps inside WASM processes
-//! - **App Protocol**: Binary wire format for Backend ↔ UI communication
+//! - **framework**: Core types and traits (ZeroApp, AppContext, AppRuntime, AppManifest)
+//! - **protocol**: Wire format for Backend ↔ UI communication
+//! - **apps**: Built-in applications (Calculator, Clock, Settings, Terminal)
 //!
 //! # Example
 //!
@@ -29,20 +28,28 @@
 // Note: Library uses std, but the app_main! macro sets up no_std for binaries
 extern crate alloc;
 
-pub mod app;
-pub mod app_protocol;
-pub mod error;
-pub mod identity;
-pub mod manifest;
-pub mod runtime;
-pub mod vfs_async;
+pub mod apps;
+pub mod framework;
+pub mod protocol;
 
-// Re-export core types at crate root
-pub use app::{AppContext, ControlFlow, Message, ZeroApp};
-pub use app_protocol::tags;
-pub use error::{AppError, ProtocolError};
-pub use manifest::{AppManifest, CapabilityRequest};
-pub use runtime::AppRuntime;
+// Re-export core types at crate root for convenience
+pub use framework::{
+    AppContext, AppError, AppManifest, AppRuntime, CapabilityRequest, ControlFlow, Message,
+    ObjectType, Permissions, ProtocolError, SessionId, UserContext, UserId, ZeroApp,
+    // Factory manifests
+    CALCULATOR_MANIFEST, CLOCK_MANIFEST, SETTINGS_MANIFEST, TERMINAL_MANIFEST,
+    // Debug helpers
+    debug_log, debug_log_with_pid,
+};
+
+// Re-export protocol types for convenience
+pub use protocol::{tags, type_tags, InputEvent, WireSerializable};
+
+// Re-export app state types (for UI/frontend consumption)
+pub use apps::{
+    CalculatorState, ClockState, InputAction, SettingsArea, SettingsState,
+    TerminalInput, TerminalState, MSG_CONSOLE_INPUT, TYPE_TERMINAL_INPUT, TYPE_TERMINAL_STATE,
+};
 
 // Re-export syscall interface from zos-process
 pub use zos_process as syscall;
@@ -50,6 +57,7 @@ pub use zos_process as syscall;
 // Re-export IPC protocol modules from zos-process (which re-exports from zos-ipc)
 // This allows apps to use consistent message constants.
 pub use zos_process::{init, kernel, permission, pm, storage, supervisor};
+
 
 /// Generate the entry point and runtime setup for a Zero app.
 ///
@@ -78,30 +86,17 @@ macro_rules! app_main {
         /// Entry point called by the WASM runtime
         #[no_mangle]
         pub extern "C" fn _start() {
-            // #region agent log
-            $crate::syscall::debug("[_start] Entry point called");
-            // #endregion
+            use alloc::format;
             
             // Create app instance
             let app = <$app_type>::default();
-            
-            // #region agent log
-            $crate::syscall::debug("[_start] App instance created");
-            // #endregion
 
             // Create and run runtime
             let mut runtime = $crate::AppRuntime::new();
-            
-            // #region agent log
-            use alloc::format;
-            $crate::syscall::debug(&format!(
-                "[_start] Runtime created, PID={}",
-                runtime.pid()
-            ));
-            // #endregion
 
             // Set app ID from manifest
-            runtime.set_app_id(<$app_type as $crate::ZeroApp>::manifest().id);
+            let manifest = <$app_type as $crate::ZeroApp>::manifest();
+            runtime.set_app_id(manifest.id);
 
             // Setup endpoints from capability slots
             // Slot 0 is typically the UI output endpoint
@@ -109,12 +104,11 @@ macro_rules! app_main {
             runtime.set_ui_endpoint(0);
             runtime.set_input_endpoint(1);
             
-            // #region agent log
             $crate::syscall::debug(&format!(
-                "[_start] Endpoints configured, starting run loop for {}",
-                <$app_type as $crate::ZeroApp>::manifest().id
+                "[{}] starting (PID={})",
+                manifest.id,
+                runtime.pid()
             ));
-            // #endregion
 
             // Run forever (exits via syscall::exit)
             runtime.run(app);

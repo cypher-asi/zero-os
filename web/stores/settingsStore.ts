@@ -14,7 +14,7 @@ import {
   IdentityServiceClient,
   type Supervisor,
   type KeyScheme,
-} from '../services';
+} from '../client-services';
 
 // =============================================================================
 // Constants

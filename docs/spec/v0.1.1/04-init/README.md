@@ -4,11 +4,11 @@
 
 The init process (PID 1) is the first user-space process spawned by the kernel. In v0.1.1, init has a minimal role:
 
-- **Bootstrap**: Spawn PermissionManager and initial services
+- **Bootstrap**: Spawn PermissionService and initial services
 - **Service Registry**: Maintain name → endpoint mapping for service discovery
 - **Idle**: After bootstrap, enter minimal loop handling service messages
 
-Permission management has been delegated to PermissionManager (PID 2).
+Permission management has been delegated to PermissionService (PID 2).
 
 ## Bootstrap Sequence
 
@@ -23,7 +23,7 @@ Init starts (PID 1)
                │
                ▼
 ┌──────────────────────────┐
-│  Spawn PermissionManager │
+│  Spawn PermissionService │
 │  (via INIT:SPAWN:)       │
 └──────────────┬───────────┘
                │
@@ -143,8 +143,8 @@ impl Init {
     }
     
     fn boot_sequence(&mut self) {
-        // Spawn PermissionManager (PID 2)
-        debug("INIT:SPAWN:permission_manager");
+        // Spawn PermissionService (PID 2)
+        debug("INIT:SPAWN:permission_service");
         
         // Terminal is spawned per-window by Desktop
         self.boot_complete = true;
@@ -200,5 +200,5 @@ Init communicates with the supervisor via debug messages for privileged operatio
 ### Differences from v0.1.0
 - Terminal no longer auto-spawned (Desktop handles it)
 - Console output via SYS_CONSOLE_WRITE syscall
-- Permission management delegated to PermissionManager
+- Permission management delegated to PermissionService
 - Minimal idle loop (not event-driven)

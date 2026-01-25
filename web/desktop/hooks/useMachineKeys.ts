@@ -19,7 +19,7 @@ import {
   getMachineKeysDir,
   bytesToHex,
   u128ToHex,
-} from '../../services';
+} from '../../client-services';
 
 // Re-export types from store for backward compatibility
 export type {
@@ -31,7 +31,7 @@ export type {
 } from '../../stores';
 
 /** Neural shard for key derivation */
-export type { NeuralShard } from '../../services';
+export type { NeuralShard } from '../../client-services';
 
 /**
  * Hook return type

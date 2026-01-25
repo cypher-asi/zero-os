@@ -6,7 +6,7 @@ import {
   type CredentialType as ServiceCredentialType,
   VfsStorageClient,
   getCredentialsPath,
-} from '../../services';
+} from '../../client-services';
 
 // =============================================================================
 // Linked Accounts Types (mirrors zos-identity/src/keystore.rs)

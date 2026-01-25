@@ -27,11 +27,11 @@ function Build-WebModules {
             Move-Item $configPath $configBackup -Force
         }
         
-        # Build zos-supervisor-web
-        Write-Host "Building zos-supervisor-web..."
-        Push-Location "$ProjectRoot\crates\zos-supervisor-web"
+        # Build zos-supervisor
+        Write-Host "Building zos-supervisor..."
+        Push-Location "$ProjectRoot\crates\zos-supervisor"
         wasm-pack build --target web --out-dir ../../web/pkg
-        if ($LASTEXITCODE -ne 0) { throw "zos-supervisor-web build failed" }
+        if ($LASTEXITCODE -ne 0) { throw "zos-supervisor build failed" }
         Pop-Location
         
         # Build zos-desktop
@@ -125,6 +125,11 @@ function Build-Processes {
         $exitCode = Invoke-CargoBuild -Package "zos-apps" -ExtraArgs "--bins"
         if ($exitCode -ne 0) { throw "zos-apps build failed" }
         
+        # Build services
+        Write-Host "Building zos-services..."
+        $exitCode = Invoke-CargoBuild -Package "zos-services" -ExtraArgs "--bins"
+        if ($exitCode -ne 0) { throw "zos-services build failed" }
+        
         # Copy to web/processes
         Write-Host "Copying process binaries to web/processes..."
         if (-not (Test-Path "$ProjectRoot\web\processes")) {
@@ -134,7 +139,7 @@ function Build-Processes {
         $releaseDir = "$ProjectRoot\target\wasm32-unknown-unknown\release"
         Copy-Item "$releaseDir\zos_init.wasm" "$ProjectRoot\web\processes\init.wasm" -Force
         Copy-Item "$releaseDir\terminal.wasm" "$ProjectRoot\web\processes\" -Force
-        Copy-Item "$releaseDir\permission_manager.wasm" "$ProjectRoot\web\processes\" -Force
+        Copy-Item "$releaseDir\permission_service.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\idle.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\memhog.wasm" "$ProjectRoot\web\processes\" -Force
         Copy-Item "$releaseDir\sender.wasm" "$ProjectRoot\web\processes\" -Force

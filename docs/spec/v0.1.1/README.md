@@ -27,7 +27,7 @@ This specification documents the **actual implementation** of Zero OS v0.1.1, in
 │                                                        │                    │
 │   ┌───────────────────────────────────────────────────┴────────────────┐   │
 │   │                         Supervisor                                  │   │
-│   │                    (zos-supervisor-web)                            │   │
+│   │                    (zos-supervisor)                            │   │
 │   │   • Process lifecycle (spawn/kill)                                 │   │
 │   │   • Syscall polling & dispatch                                     │   │
 │   │   • Console callback routing                                       │   │
@@ -61,9 +61,9 @@ This specification documents the **actual implementation** of Zero OS v0.1.1, in
 
 ### 1. Supervisor/Desktop Separation
 
-The original `zos-supervisor-web` has been split into two distinct concerns:
+The original `zos-supervisor` has been split into two distinct concerns:
 
-- **zos-supervisor-web**: Process management, syscall dispatch, IPC routing
+- **zos-supervisor**: Process management, syscall dispatch, IPC routing
 - **zos-desktop**: Window compositor, input routing, viewport management
 
 This separation enables:
@@ -124,7 +124,7 @@ Window interaction uses a 5px drag threshold allowing both click-to-interact and
 | `zos-init` | Init process (PID 1) | ~400 |
 | `zos-apps` | ZeroApp trait and app protocol | ~600 |
 | `zos-desktop` | Window compositor | ~2500 |
-| `zos-supervisor-web` | Web supervisor | ~800 |
+| `zos-supervisor` | Web supervisor | ~800 |
 
 ## Design Principles
 

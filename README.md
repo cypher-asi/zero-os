@@ -186,7 +186,7 @@ zero-os/
 │   ├── zos-apps/             # Userspace apps
 │   ├── zos-desktop/          # Desktop compositor
 │   ├── zos-network/          # Network service
-│   └── zos-supervisor-web/   # WASM supervisor
+│   └── zos-supervisor/       # WASM supervisor
 ├── web/                      # Browser UI
 │   ├── desktop/              # React desktop environment
 │   └── services/             # TypeScript service clients

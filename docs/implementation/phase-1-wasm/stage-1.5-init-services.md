@@ -212,7 +212,7 @@ Syscall::Spawn { name, binary_slot } => {
 
 ### Task 3: Update Bootstrap Sequence
 
-**File**: `apps/zos-supervisor-web/src/lib.rs`
+**File**: `apps/zos-supervisor/src/lib.rs`
 
 Modify boot to spawn init first:
 
@@ -308,7 +308,7 @@ build-processes:
 	mkdir -p web/processes
 	cp target/wasm32-unknown-unknown/release/Zero_init.wasm web/processes/init.wasm
 	cp target/wasm32-unknown-unknown/release/terminal.wasm web/processes/
-	cp target/wasm32-unknown-unknown/release/permission_manager.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/permission_service.wasm web/processes/
 	# ... other processes ...
 ```
 
@@ -377,7 +377,7 @@ fn test_service_registration() {
 | `crates/zos-init/` | New crate | ~200 |
 | `crates/Zero-kernel/src/lib.rs` | Modify | ~50 |
 | `crates/zos-apps/src/bin/terminal.rs` | New file | ~300 |
-| `crates/zos-supervisor-web/src/lib.rs` | Modify | ~50 |
+| `crates/zos-supervisor/src/lib.rs` | Modify | ~50 |
 | `Makefile` | Modify | ~10 |
 | Tests | Add | ~50 |
 

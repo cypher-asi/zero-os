@@ -6,6 +6,9 @@
 #![cfg_attr(target_arch = "wasm32", no_std)]
 #![cfg_attr(target_arch = "wasm32", no_main)]
 
+// Initialize bump allocator with 16MB heap for memory stress testing
+zos_allocator::init!(16 * 1024 * 1024);
+
 #[cfg(target_arch = "wasm32")]
 extern crate alloc;
 
@@ -40,7 +43,7 @@ pub extern "C" fn _start() {
     // Main loop: wait for commands and execute them
     loop {
         // Wait for command (blocking receive)
-        if let Some(msg) = syscall::receive(CMD_ENDPOINT) {
+        if let Ok(msg) = syscall::receive(CMD_ENDPOINT) {
             total_allocated = handle_command(msg, total_allocated);
         }
         syscall::yield_now();
@@ -129,53 +132,3 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     syscall::exit(1);
 }
 
-#[cfg(target_arch = "wasm32")]
-mod allocator {
-    use core::alloc::{GlobalAlloc, Layout};
-
-    struct BumpAllocator {
-        head: core::sync::atomic::AtomicUsize,
-    }
-
-    #[global_allocator]
-    static ALLOCATOR: BumpAllocator = BumpAllocator {
-        head: core::sync::atomic::AtomicUsize::new(0),
-    };
-
-    const HEAP_START: usize = 0x10000; // 64KB offset
-    const HEAP_SIZE: usize = 16 * 1024 * 1024; // 16MB heap for memhog
-
-    unsafe impl GlobalAlloc for BumpAllocator {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            let size = layout.size();
-            let align = layout.align();
-
-            loop {
-                let head = self.head.load(core::sync::atomic::Ordering::Relaxed);
-                let aligned = (HEAP_START + head + align - 1) & !(align - 1);
-                let new_head = aligned - HEAP_START + size;
-
-                if new_head > HEAP_SIZE {
-                    return core::ptr::null_mut();
-                }
-
-                if self
-                    .head
-                    .compare_exchange_weak(
-                        head,
-                        new_head,
-                        core::sync::atomic::Ordering::SeqCst,
-                        core::sync::atomic::Ordering::Relaxed,
-                    )
-                    .is_ok()
-                {
-                    return aligned as *mut u8;
-                }
-            }
-        }
-
-        unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-            // Bump allocator doesn't deallocate
-        }
-    }
-}

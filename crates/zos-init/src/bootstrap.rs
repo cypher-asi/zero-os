@@ -6,13 +6,13 @@ use crate::Init;
 use zos_process as syscall;
 
 impl Init {
-    /// Boot sequence - spawn PermissionManager, VfsService, IdentityService, and initial apps
+    /// Boot sequence - spawn PermissionService, VfsService, IdentityService, and initial apps
     pub fn boot_sequence(&mut self) {
         self.log("Starting boot sequence...");
 
-        // 1. Spawn PermissionManager (PID 2) - the capability authority
-        self.log("Spawning PermissionManager (PID 2)...");
-        syscall::debug("INIT:SPAWN:permission_manager");
+        // 1. Spawn PermissionService (PID 2) - the capability authority
+        self.log("Spawning PermissionService (PID 2)...");
+        syscall::debug("INIT:SPAWN:permission_service");
 
         // 2. Spawn VfsService (PID 3) - virtual filesystem service
         // NOTE: VFS must be spawned before IdentityService since identity needs VFS
@@ -34,7 +34,7 @@ impl Init {
 
         self.boot_complete = true;
         self.log("Boot sequence complete");
-        self.log("  PermissionManager: handles capability requests");
+        self.log("  PermissionService: handles capability requests");
         self.log("  VfsService: handles filesystem operations");
         self.log("  IdentityService: handles identity and key management");
         self.log("  TimeService: handles time settings");

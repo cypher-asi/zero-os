@@ -1,0 +1,44 @@
+[package]
+name = "zos-services"
+version = "0.1.0"
+edition = "2021"
+description = "System services for Zero OS - Identity, VFS, Time, Network, and Permission services"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "identity_service"
+path = "src/bin/identity_service.rs"
+
+[[bin]]
+name = "vfs_service"
+path = "src/bin/vfs_service.rs"
+
+[[bin]]
+name = "time_service"
+path = "src/bin/time_service.rs"
+
+[[bin]]
+name = "network_service"
+path = "src/bin/network_service.rs"
+
+[[bin]]
+name = "permission_service"
+path = "src/bin/permission_service.rs"
+
+[dependencies]
+zos-apps = { path = "../zos-apps" }
+zos-process = { path = "../zos-process" }
+zos-identity = { path = "../zos-identity" }
+zos-ipc = { path = "../zos-ipc" }
+zos-network = { path = "../zos-network" }
+zos-vfs = { path = "../zos-vfs" }
+serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
+uuid = { version = "1.20", default-features = false }
+
+[dev-dependencies]
+
+[features]
+default = []

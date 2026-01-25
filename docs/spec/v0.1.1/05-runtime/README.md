@@ -233,7 +233,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 ### Source Files
 - `crates/zos-process/src/lib.rs` - Process-side syscall library
-- `crates/zos-supervisor-web/src/supervisor/mod.rs` - Console routing
+- `crates/zos-supervisor/src/supervisor/mod.rs` - Console routing
 
 ### Key Invariants
 - [ ] Console output routed to correct process callback

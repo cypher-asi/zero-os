@@ -5,6 +5,9 @@
 #![cfg_attr(target_arch = "wasm32", no_std)]
 #![cfg_attr(target_arch = "wasm32", no_main)]
 
+// Initialize bump allocator with 1MB heap
+zos_allocator::init!(1024 * 1024);
+
 #[cfg(target_arch = "wasm32")]
 extern crate alloc;
 
@@ -30,7 +33,7 @@ pub extern "C" fn _start() {
 
     loop {
         // Check for commands (non-blocking)
-        if let Some(cmd) = syscall::receive(CMD_ENDPOINT) {
+        if let Ok(cmd) = syscall::receive(CMD_ENDPOINT) {
             match cmd.tag {
                 CMD_QUERY => {
                     report_stats(
@@ -52,7 +55,7 @@ pub extern "C" fn _start() {
         }
 
         // Check for data messages (non-blocking)
-        if let Some(msg) = syscall::receive(DATA_ENDPOINT) {
+        if let Ok(msg) = syscall::receive(DATA_ENDPOINT) {
             if msg.tag == MSG_DATA {
                 let now = syscall::get_time();
                 if first_msg_time.is_none() {
@@ -98,53 +101,3 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     syscall::exit(1);
 }
 
-#[cfg(target_arch = "wasm32")]
-mod allocator {
-    use core::alloc::{GlobalAlloc, Layout};
-
-    struct BumpAllocator {
-        head: core::sync::atomic::AtomicUsize,
-    }
-
-    #[global_allocator]
-    static ALLOCATOR: BumpAllocator = BumpAllocator {
-        head: core::sync::atomic::AtomicUsize::new(0),
-    };
-
-    const HEAP_START: usize = 0x10000;
-    const HEAP_SIZE: usize = 1024 * 1024; // 1MB heap
-
-    unsafe impl GlobalAlloc for BumpAllocator {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            let size = layout.size();
-            let align = layout.align();
-
-            loop {
-                let head = self.head.load(core::sync::atomic::Ordering::Relaxed);
-                let aligned = (HEAP_START + head + align - 1) & !(align - 1);
-                let new_head = aligned - HEAP_START + size;
-
-                if new_head > HEAP_SIZE {
-                    return core::ptr::null_mut();
-                }
-
-                if self
-                    .head
-                    .compare_exchange_weak(
-                        head,
-                        new_head,
-                        core::sync::atomic::Ordering::SeqCst,
-                        core::sync::atomic::Ordering::Relaxed,
-                    )
-                    .is_ok()
-                {
-                    return aligned as *mut u8;
-                }
-            }
-        }
-
-        unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-            // Bump allocator doesn't deallocate
-        }
-    }
-}

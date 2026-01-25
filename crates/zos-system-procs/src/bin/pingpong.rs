@@ -9,6 +9,9 @@
 #![cfg_attr(target_arch = "wasm32", no_std)]
 #![cfg_attr(target_arch = "wasm32", no_main)]
 
+// Initialize bump allocator with 1MB heap
+zos_allocator::init!(1024 * 1024);
+
 #[cfg(target_arch = "wasm32")]
 extern crate alloc;
 
@@ -36,7 +39,7 @@ pub extern "C" fn _start() {
     syscall::debug("pingpong: started, waiting for commands on slot 0");
 
     loop {
-        if let Some(msg) = syscall::receive(MY_ENDPOINT) {
+        if let Ok(msg) = syscall::receive(MY_ENDPOINT) {
             match msg.tag {
                 CMD_PING => {
                     // Run ping test: Parse [iterations: u32]
@@ -93,7 +96,7 @@ fn run_ping_mode(iterations: u32) {
         let timeout_ns = 100_000_000; // 100ms timeout
 
         loop {
-            if let Some(pong) = syscall::receive(MY_ENDPOINT) {
+            if let Ok(pong) = syscall::receive(MY_ENDPOINT) {
                 if pong.tag == MSG_PONG {
                     let elapsed = syscall::get_time() - start;
                     latencies.push(elapsed);
@@ -133,7 +136,7 @@ fn run_pong_mode() {
     let mut pong_count = 0u64;
 
     loop {
-        if let Some(msg) = syscall::receive(MY_ENDPOINT) {
+        if let Ok(msg) = syscall::receive(MY_ENDPOINT) {
             match msg.tag {
                 MSG_PING => {
                     // Send pong back to peer (slot 1)
@@ -220,53 +223,3 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     syscall::exit(1);
 }
 
-#[cfg(target_arch = "wasm32")]
-mod allocator {
-    use core::alloc::{GlobalAlloc, Layout};
-
-    struct BumpAllocator {
-        head: core::sync::atomic::AtomicUsize,
-    }
-
-    #[global_allocator]
-    static ALLOCATOR: BumpAllocator = BumpAllocator {
-        head: core::sync::atomic::AtomicUsize::new(0),
-    };
-
-    const HEAP_START: usize = 0x10000;
-    const HEAP_SIZE: usize = 1024 * 1024; // 1MB heap
-
-    unsafe impl GlobalAlloc for BumpAllocator {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            let size = layout.size();
-            let align = layout.align();
-
-            loop {
-                let head = self.head.load(core::sync::atomic::Ordering::Relaxed);
-                let aligned = (HEAP_START + head + align - 1) & !(align - 1);
-                let new_head = aligned - HEAP_START + size;
-
-                if new_head > HEAP_SIZE {
-                    return core::ptr::null_mut();
-                }
-
-                if self
-                    .head
-                    .compare_exchange_weak(
-                        head,
-                        new_head,
-                        core::sync::atomic::Ordering::SeqCst,
-                        core::sync::atomic::Ordering::Relaxed,
-                    )
-                    .is_ok()
-                {
-                    return aligned as *mut u8;
-                }
-            }
-        }
-
-        unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-            // Bump allocator doesn't deallocate
-        }
-    }
-}

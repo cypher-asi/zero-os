@@ -208,51 +208,52 @@ pub fn send(_endpoint_slot: u32, _tag: u32, _data: &[u8]) -> Result<(), u32> {
     Ok(())
 }
 
-/// Receive a message from an endpoint (non-blocking)
+/// Receive a message from an endpoint (non-blocking).
+///
+/// # Returns
+/// - `Ok(msg)`: Successfully received a message
+/// - `Err(RecvError::NoMessage)`: No message available (try again later)
+/// - `Err(RecvError::PermissionDenied)`: No permission to receive on this endpoint
+/// - `Err(RecvError::InvalidEndpoint)`: Invalid endpoint slot
+/// - `Err(RecvError::ParseError)`: Message data was malformed
 #[cfg(target_arch = "wasm32")]
-pub fn receive(endpoint_slot: u32) -> Option<ReceivedMessage> {
+pub fn receive(endpoint_slot: u32) -> Result<ReceivedMessage, error::RecvError> {
+    use error::RecvError;
+
     // Buffer sized to support large IPC messages (e.g., PQ hybrid keys ~6KB)
     let mut buffer = [0u8; 16384];
     unsafe {
         let result = zos_syscall(SYS_RECV, endpoint_slot, 0, 0) as i32;
         
         if result <= 0 {
-            // 0 = no message, negative = error (e.g., permission denied)
-            // #region agent log
-            if result < 0 {
-                debug(&format!("[receive] SYS_RECV failed with error code {} for slot {}", result, endpoint_slot));
-            }
-            // #endregion
-            return None;
+            // 0 = no message, negative = error code
+            return Err(RecvError::from_code(result));
         }
         
         // CRITICAL: Get the message data BEFORE any debug logging!
         // Debug logging makes a SYS_DEBUG syscall which clears the mailbox buffer.
         let len = zos_recv_bytes(buffer.as_mut_ptr(), buffer.len() as u32);
         
-        // #region agent log
         if len == 0 {
             // This should never happen - if SYS_RECV returned success, there should be data
-            debug(&format!("[receive] WARNING: SYS_RECV returned result={} but zos_recv_bytes returned 0 bytes for slot {}", result, endpoint_slot));
-            return None;
+            return Err(RecvError::ParseError);
         }
-        debug(&format!("[receive] SYS_RECV success, result={}, slot={}, received {} bytes", result, endpoint_slot, len));
-        // #endregion
+
         // Parse message format:
         // [from_pid: u32][tag: u32][num_caps: u8][cap_slots: u32*num_caps][data: ...]
         // Minimum: 4 + 4 + 1 = 9 bytes
         if len < 9 {
-            return None;
+            return Err(RecvError::ParseError);
         }
         let from_pid = u32::from_le_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]);
         let tag = u32::from_le_bytes([buffer[4], buffer[5], buffer[6], buffer[7]]);
         let num_caps = buffer[8] as usize;
 
-        // Parse capability slots
-        let cap_data_len = num_caps * 4;
-        let data_start = 9 + cap_data_len;
+        // Parse capability slots with overflow check
+        let cap_data_len = num_caps.checked_mul(4).ok_or(RecvError::ParseError)?;
+        let data_start = 9usize.checked_add(cap_data_len).ok_or(RecvError::ParseError)?;
         if (len as usize) < data_start {
-            return None;
+            return Err(RecvError::ParseError);
         }
 
         let mut cap_slots = Vec::with_capacity(num_caps);
@@ -268,7 +269,7 @@ pub fn receive(endpoint_slot: u32) -> Option<ReceivedMessage> {
         }
 
         let data = buffer[data_start..len as usize].to_vec();
-        Some(ReceivedMessage {
+        Ok(ReceivedMessage {
             from_pid,
             tag,
             cap_slots,
@@ -278,24 +279,44 @@ pub fn receive(endpoint_slot: u32) -> Option<ReceivedMessage> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn receive(_endpoint_slot: u32) -> Option<ReceivedMessage> {
+pub fn receive(_endpoint_slot: u32) -> Result<ReceivedMessage, error::RecvError> {
+    Err(error::RecvError::NoMessage)
+}
+
+/// Receive a message from an endpoint (legacy, returns Option).
+///
+/// **Deprecated**: Prefer `receive()` which returns `Result<_, RecvError>` for
+/// better error handling.
+#[cfg(target_arch = "wasm32")]
+pub fn receive_opt(endpoint_slot: u32) -> Option<ReceivedMessage> {
+    receive(endpoint_slot).ok()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn receive_opt(_endpoint_slot: u32) -> Option<ReceivedMessage> {
     None
 }
 
-/// Receive a message, blocking until one arrives
+/// Receive a message, blocking until one arrives.
+///
+/// This polls `receive()` in a loop, yielding between attempts.
+/// Returns immediately on non-recoverable errors (permission denied, invalid endpoint).
 #[cfg(target_arch = "wasm32")]
-pub fn receive_blocking(endpoint_slot: u32) -> ReceivedMessage {
+pub fn receive_blocking(endpoint_slot: u32) -> Result<ReceivedMessage, error::RecvError> {
+    use error::RecvError;
+    
     loop {
-        if let Some(msg) = receive(endpoint_slot) {
-            return msg;
+        match receive(endpoint_slot) {
+            Ok(msg) => return Ok(msg),
+            Err(RecvError::NoMessage) => yield_now(), // Keep polling
+            Err(e) => return Err(e), // Non-recoverable error
         }
-        yield_now();
     }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub fn receive_blocking(_endpoint_slot: u32) -> ReceivedMessage {
-    panic!("receive_blocking not supported outside WASM")
+pub fn receive_blocking(_endpoint_slot: u32) -> Result<ReceivedMessage, error::RecvError> {
+    Err(error::RecvError::NoMessage)
 }
 
 /// Send a message with capabilities to transfer
@@ -463,7 +484,7 @@ pub fn cap_revoke(_slot: u32) -> Result<(), u32> {
 
 /// Revoke a capability from another process (privileged operation)
 ///
-/// This is a privileged syscall for the PermissionManager (PID 2).
+/// This is a privileged syscall for the PermissionService (PID 2).
 /// It allows revoking capabilities from any process's CSpace.
 ///
 /// # Arguments
@@ -592,18 +613,22 @@ pub fn cap_derive(_slot: u32, _new_perms: Permissions) -> Result<u32, u32> {
 /// # Returns
 /// - `Ok((endpoint_id, slot))`: Endpoint ID and capability slot
 /// - `Err(code)`: Error code
+///
+/// # ABI Format
+/// The kernel returns a packed u64: `(slot << 32) | (endpoint_id & 0xFFFFFFFF)`
+/// This is consistent with `create_endpoint_for`.
 #[cfg(target_arch = "wasm32")]
 pub fn create_endpoint() -> Result<(u64, u32), u32> {
     unsafe {
-        let result = zos_syscall(SYS_CREATE_ENDPOINT, 0, 0, 0);
-        if result & 0x80000000 == 0 {
-            // Result format: high 32 = endpoint_id, low 32 = slot
-            let high = zos_syscall(SYS_CREATE_ENDPOINT, 1, 0, 0);
-            let endpoint_id = ((high as u64) << 32) | (result as u64 >> 32);
-            let slot = result & 0xFFFFFFFF;
+        let result = zos_syscall(SYS_CREATE_ENDPOINT, 0, 0, 0) as i64;
+        if result >= 0 {
+            // Kernel returns packed: (slot << 32) | endpoint_id
+            // Unpack: slot in high 32 bits, endpoint_id in low 32 bits
+            let slot = (result >> 32) as u32;
+            let endpoint_id = (result & 0xFFFFFFFF) as u64;
             Ok((endpoint_id, slot))
         } else {
-            Err(result & 0x7FFFFFFF)
+            Err((-result) as u32)
         }
     }
 }
@@ -659,12 +684,17 @@ pub fn register_process(_name: &str) -> Result<u32, u32> {
 /// # Returns
 /// - `Ok((endpoint_id, slot))`: The created endpoint ID and slot
 /// - `Err(code)`: Error code (e.g., permission denied if caller is not Init)
+///
+/// # ABI Format
+/// The kernel returns a packed i64: `(slot << 32) | (endpoint_id & 0xFFFFFFFF)`
+/// This is consistent with `create_endpoint`.
 #[cfg(target_arch = "wasm32")]
 pub fn create_endpoint_for(target_pid: u32) -> Result<(u64, u32), u32> {
     unsafe {
         let result = zos_syscall(SYS_CREATE_ENDPOINT_FOR, target_pid, 0, 0) as i64;
         if result >= 0 {
-            // Result is packed: high 32 = slot, low 32 = endpoint_id
+            // Kernel returns packed: (slot << 32) | endpoint_id
+            // Unpack: slot in high 32 bits, endpoint_id in low 32 bits
             let slot = (result >> 32) as u32;
             let endpoint_id = (result & 0xFFFFFFFF) as u64;
             Ok((endpoint_id, slot))

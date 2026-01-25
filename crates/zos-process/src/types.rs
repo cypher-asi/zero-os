@@ -7,57 +7,16 @@ use alloc::vec::Vec;
 // Object Types (for capabilities)
 // ============================================================================
 
-/// Types of kernel objects that can be accessed via capabilities
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub enum ObjectType {
-    /// IPC endpoint
-    Endpoint = 1,
-    /// Console I/O
-    Console = 2,
-    /// Persistent storage (namespaced per-app)
-    Storage = 3,
-    /// Network access
-    Network = 4,
-    /// Process management (spawn, kill)
-    Process = 5,
-    /// Memory region
-    Memory = 6,
-}
-
-impl ObjectType {
-    /// Convert from u8
-    pub fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            1 => Some(ObjectType::Endpoint),
-            2 => Some(ObjectType::Console),
-            3 => Some(ObjectType::Storage),
-            4 => Some(ObjectType::Network),
-            5 => Some(ObjectType::Process),
-            6 => Some(ObjectType::Memory),
-            _ => None,
-        }
-    }
-
-    /// Get display name
-    pub fn name(&self) -> &'static str {
-        match self {
-            ObjectType::Endpoint => "Endpoint",
-            ObjectType::Console => "Console",
-            ObjectType::Storage => "Storage",
-            ObjectType::Network => "Network",
-            ObjectType::Process => "Process",
-            ObjectType::Memory => "Memory",
-        }
-    }
-}
+// Re-export ObjectType from zos-ipc - the single source of truth for capability types.
+// This ensures all crates use consistent values when granting/checking capabilities.
+pub use zos_ipc::ObjectType;
 
 // ============================================================================
 // Permissions
 // ============================================================================
 
 /// Permission flags for capability operations
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Permissions {
     pub read: bool,
     pub write: bool,

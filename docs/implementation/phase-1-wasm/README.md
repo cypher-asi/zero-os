@@ -26,7 +26,7 @@ Phase 1 implements Zero OS running entirely in the browser using WebAssembly. Th
 │  ┌───────────────────────────────────────────────────────────┐ │
 │  │               Supervisor (Rust/WASM + JavaScript)          │ │
 │  │                                                           │ │
-│  │  • zos-supervisor-web: Rust WASM supervisor                      │ │
+│  │  • zos-supervisor: Rust WASM supervisor                      │ │
 │  │  • Spawns Web Workers for each process                    │ │
 │  │  • Polls SharedArrayBuffer mailboxes for syscalls         │ │
 │  │  • Routes IPC messages between workers                    │ │
@@ -91,7 +91,7 @@ Phase 1 is divided into eight stages, each building on the previous:
    - Process-side syscall library with full ABI
    - Syscall runtime provided by `worker.js` using SharedArrayBuffer + Atomics
 
-4. **Browser Supervisor** (`zos-supervisor-web`, `worker.js`)
+4. **Browser Supervisor** (`zos-supervisor`, `worker.js`)
    - Web Worker process isolation
    - SharedArrayBuffer mailbox polling
    - Full dashboard UI (processes, memory, endpoints, IPC traffic, Axiom log)
@@ -100,7 +100,7 @@ Phase 1 is divided into eight stages, each building on the previous:
 5. **Userspace Processes** (`zos-apps`, `zos-system-procs`)
    - Terminal app implementing ZeroApp trait
    - Clock, Calculator apps with IPC protocol
-   - PermissionManager service (PID 2)
+   - PermissionService (PID 2)
    - idle, memhog, sender, receiver, pingpong test processes
 
 6. **Axiom Layer** (`Zero-axiom`)
@@ -165,11 +165,11 @@ crates/
   Zero-hal/             # HAL trait definition
   Zero-kernel/          # Kernel with capabilities, IPC, Axiom integration (includes mock HAL for tests)
   zos-process/         # Process-side syscall library
-  zos-apps/            # Userspace apps (Terminal, Clock, Calculator, PermissionManager)
+  zos-apps/            # Userspace apps (Terminal, Clock, Calculator, PermissionService)
   zos-system-procs/    # System processes (idle, memhog, etc.)
 
 apps/
-  zos-supervisor-web/             # Browser supervisor
+  zos-supervisor/             # Browser supervisor
     src/
       lib.rs               # Rust WASM supervisor
     www/

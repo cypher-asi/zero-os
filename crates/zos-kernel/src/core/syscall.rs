@@ -107,7 +107,9 @@ impl<H: HAL> KernelCore<H> {
     ) -> (SyscallResult, Vec<Commit>) {
         let (result, commits) = self.create_endpoint(from_pid, timestamp);
         let syscall_result = match result {
-            Ok((eid, slot)) => SyscallResult::Ok((eid.0 << 32) | (slot as u64)),
+            // Pack as (slot << 32) | endpoint_id - consistent with execute_create_endpoint_for
+            // Slot in high 32 bits, endpoint_id (truncated to 32 bits) in low 32 bits
+            Ok((eid, slot)) => SyscallResult::Ok(((slot as u64) << 32) | (eid.0 & 0xFFFFFFFF)),
             Err(e) => SyscallResult::Err(e),
         };
         (syscall_result, commits)

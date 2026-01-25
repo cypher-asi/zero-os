@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 
 // =============================================================================
-// Supervisor Type - Kernel/Process management (from zos-supervisor-web)
+// Supervisor Type - Kernel/Process management (from zos-supervisor)
 // =============================================================================
 
 export interface Supervisor {

@@ -1,4 +1,4 @@
-# zos-supervisor-web Deprecation Plan
+# zos-supervisor Deprecation Plan
 
 **Status:** In Progress  
 **Target:** Replace with `zos-desktop` crate  
@@ -8,13 +8,13 @@
 
 ## Overview
 
-The `zos-supervisor-web` crate is being deprecated in favor of a new `zos-desktop` crate. The existing implementation will be retained as a backup while the new crate is developed.
+The `zos-supervisor` crate is being deprecated in favor of a new `zos-desktop` crate. The existing implementation will be retained as a backup while the new crate is developed.
 
 ---
 
 ## Rationale
 
-The current `zos-supervisor-web` implementation has grown organically and has several architectural limitations:
+The current `zos-supervisor` implementation has grown organically and has several architectural limitations:
 
 1. **Tight coupling** between compositor, window management, and React integration
 2. **Code organization** does not follow strict size limits (60-line functions, 500-line files)
@@ -35,7 +35,7 @@ The new `zos-desktop` crate addresses these with:
 
 ### Phase 1: Backup and Parallel Development
 
-1. **Rename** `crates/zos-supervisor-web/` to `crates/zos-supervisor-web-legacy/`
+1. **Rename** `crates/zos-supervisor/` to `crates/zos-supervisor-legacy/`
 2. **Create** new `crates/zos-desktop/` with clean architecture
 3. **Update** workspace `Cargo.toml` to include both crates
 4. **Keep** web frontend using legacy crate during development
@@ -44,7 +44,7 @@ The new `zos-desktop` crate addresses these with:
 
 Implement core features in `zos-desktop`:
 
-| Feature | zos-supervisor-web | zos-desktop |
+| Feature | zos-supervisor | zos-desktop |
 |---------|-------------|-----------------|
 | Desktop management | Partial | Full (create/remove/switch) |
 | Void overview | No | Yes |
@@ -63,7 +63,7 @@ Implement core features in `zos-desktop`:
 
 ### Phase 4: Cleanup
 
-1. **Archive** `zos-supervisor-web-legacy` (move to `archive/` or separate branch)
+1. **Archive** `zos-supervisor-legacy` (move to `archive/` or separate branch)
 2. **Remove** from workspace
 3. **Update** documentation
 
@@ -71,10 +71,10 @@ Implement core features in `zos-desktop`:
 
 ## File Mapping
 
-### Legacy Structure (zos-supervisor-web)
+### Legacy Structure (zos-supervisor)
 
 ```
-crates/zos-supervisor-web/
+crates/zos-supervisor/
 ├── src/
 │   ├── lib.rs
 │   ├── background.rs
@@ -159,14 +159,14 @@ The web frontend has been successfully migrated to use `zos-desktop`:
 **Changes Made:**
 
 1. **Desktop Controller Migration**
-   - Web frontend now uses `DesktopController` from `zos-desktop` (not `zos-supervisor-web`)
+   - Web frontend now uses `DesktopController` from `zos-desktop` (not `zos-supervisor`)
    - All window management, viewport, and transition logic handled by `zos-desktop`
 
 2. **Module Cleanup**
-   - Removed `desktop/` module from `zos-supervisor-web/src/`
+   - Removed `desktop/` module from `zos-supervisor/src/`
    - Moved `background/` module to `zos-desktop/src/`
    - Updated `lib.rs` with deprecation notice
-   - `zos-supervisor-web` now only provides:
+   - `zos-supervisor` now only provides:
      - `Supervisor` (process/IPC management)
      - Re-exports `background` module from `zos-desktop`
 
@@ -177,7 +177,7 @@ The web frontend has been successfully migrated to use `zos-desktop`:
 
 4. **File Structure**
    ```
-   crates/zos-supervisor-web/
+   crates/zos-supervisor/
    ├── src/
    │   ├── lib.rs           (Supervisor + HAL)
    │   ├── axiom.rs         (Axiom IPC)

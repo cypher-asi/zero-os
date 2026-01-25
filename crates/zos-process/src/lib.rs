@@ -52,18 +52,112 @@ pub mod error {
     pub const E_EXIST: u32 = 9;
     /// Buffer overflow
     pub const E_OVERFLOW: u32 = 10;
+
+    // =========================================================================
+    // Typed Syscall Errors
+    // =========================================================================
+
+    /// Errors from the receive syscall.
+    ///
+    /// These provide semantic meaning instead of raw error codes, making
+    /// it easier to handle specific failure modes.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum RecvError {
+        /// No message available (non-blocking recv)
+        NoMessage,
+        /// Permission denied on the endpoint
+        PermissionDenied,
+        /// Invalid endpoint slot
+        InvalidEndpoint,
+        /// Buffer too small for the message
+        BufferOverflow,
+        /// Parse error (malformed message data)
+        ParseError,
+    }
+
+    impl RecvError {
+        /// Convert from raw syscall result code.
+        pub fn from_code(code: i32) -> Self {
+            match code {
+                0 => RecvError::NoMessage,
+                code if code == -(E_PERM as i32) => RecvError::PermissionDenied,
+                code if code == -(E_BADF as i32) => RecvError::InvalidEndpoint,
+                code if code == -(E_OVERFLOW as i32) => RecvError::BufferOverflow,
+                _ => RecvError::InvalidEndpoint,
+            }
+        }
+    }
+
+    /// Errors from list operations (list_caps, list_processes).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum ListError {
+        /// Permission denied
+        PermissionDenied,
+        /// Buffer too small - output was truncated
+        Truncated {
+            /// Number of items that fit in the buffer
+            received: usize,
+            /// Total number of items available (if known)
+            total: Option<usize>,
+        },
+        /// Parse error in response data
+        ParseError,
+    }
+
+    impl ListError {
+        /// Convert from raw syscall error code.
+        pub fn from_code(code: u32) -> Self {
+            match code {
+                E_PERM => ListError::PermissionDenied,
+                _ => ListError::ParseError,
+            }
+        }
+    }
+
+    /// Errors from capability operations.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum CapError {
+        /// Permission denied
+        PermissionDenied,
+        /// Invalid capability slot
+        InvalidSlot,
+        /// Capability not found
+        NotFound,
+        /// Target process not found
+        ProcessNotFound,
+        /// Cannot grant - insufficient permissions
+        InsufficientPermissions,
+    }
+
+    impl CapError {
+        /// Convert from raw syscall error code.
+        pub fn from_code(code: u32) -> Self {
+            match code {
+                E_PERM => CapError::PermissionDenied,
+                E_BADF => CapError::InvalidSlot,
+                E_NOENT => CapError::NotFound,
+                _ => CapError::PermissionDenied,
+            }
+        }
+    }
 }
 
 // Re-export types
-pub use types::{CapInfo, ObjectType, Permissions, ProcessInfo, ReceivedMessage};
+pub use types::{CapInfo, Permissions, ProcessInfo, ReceivedMessage};
+
+// Re-export ObjectType from zos-ipc (single source of truth for capability object types)
+pub use zos_ipc::ObjectType;
 
 // Re-export core syscalls
 pub use syscalls::{
     call, cap_delete, cap_derive, cap_grant, cap_inspect, cap_revoke, cap_revoke_from,
     console_write, create_endpoint, create_endpoint_for, debug, exit, get_pid, get_time,
-    get_wallclock, kill, list_caps, list_processes, receive, receive_blocking, register_process,
-    reply, send, send_with_caps, yield_now,
+    get_wallclock, kill, list_caps, list_processes, receive, receive_blocking, receive_opt,
+    register_process, reply, send, send_with_caps, yield_now,
 };
+
+// Re-export typed error types
+pub use error::{CapError, ListError, RecvError};
 
 // Re-export storage syscalls
 pub use syscalls::storage::{
@@ -160,10 +254,10 @@ pub use zos_ipc::supervisor::MSG_SUPERVISOR_KILL_PROCESS;
 pub use zos_ipc::supervisor::MSG_SUPERVISOR_IPC_DELIVERY;
 
 // =============================================================================
-// Supervisor → PermissionManager Protocol
+// Supervisor → PermissionService Protocol
 // =============================================================================
 
-/// Supervisor requests PermissionManager to revoke a capability from a process.
+/// Supervisor requests PermissionService to revoke a capability from a process.
 /// Payload: [target_pid: u32, slot: u32, reason: u8]
 pub use zos_ipc::supervisor::MSG_SUPERVISOR_REVOKE_CAP;
 

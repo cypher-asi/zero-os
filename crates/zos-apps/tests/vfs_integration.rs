@@ -2,7 +2,7 @@
 //!
 //! Tests that verify app filesystem access and restrictions.
 
-use zos_vfs::types::FilePermissions;
+use zos_vfs::FilePermissions;
 use zos_vfs::MemoryVfs;
 use zos_vfs::VfsService;
 

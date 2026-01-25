@@ -8,7 +8,7 @@ import {
   VfsStorageClient,
   getIdentityKeyStorePath,
   bytesToHex,
-} from '../../services';
+} from '../../client-services';
 
 // =============================================================================
 // Neural Key Types (public API - mirrors zos-identity/src/ipc.rs)

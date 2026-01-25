@@ -659,6 +659,7 @@ pub struct CreateIdentityRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::string::ToString;
 
     #[test]
     fn test_request_serialization() {
@@ -672,8 +673,6 @@ mod tests {
 
     #[test]
     fn test_create_identity_serialization() {
-        use alloc::string::ToString;
-        
         let request = CreateIdentityRequest {
             identity_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
             identity_signing_public_key: "a1b2c3d4".to_string(),

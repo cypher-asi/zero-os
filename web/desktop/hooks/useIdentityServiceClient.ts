@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSupervisor, type Supervisor } from './useSupervisor';
 import { useIdentityStore, selectCurrentUser } from '../../stores';
-import { IdentityServiceClient, userIdToBigInt } from '../../services';
+import { IdentityServiceClient, userIdToBigInt } from '../../client-services';
 
 /**
  * Shared hook for accessing the IdentityServiceClient.

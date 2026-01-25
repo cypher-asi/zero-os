@@ -24,7 +24,7 @@ let mockVfsIsAvailable = vi.fn(() => true);
 let mockVfsReadJsonSync = vi.fn(() => null);
 const mockVfsGetCacheStats = vi.fn(() => ({ hits: 0, misses: 0 }));
 
-vi.mock('../../../services', () => ({
+vi.mock('../../../client-services', () => ({
   IdentityServiceClient: vi.fn().mockImplementation(() => ({
     generateNeuralKey: (...args: unknown[]) => mockGenerateNeuralKey(...args),
     recoverNeuralKey: (...args: unknown[]) => mockRecoverNeuralKey(...args),

@@ -29,8 +29,8 @@
 //! | 0x1010-0x101F | Permission protocol (legacy)         |
 //! | 0x2000-0x200F | App protocol (state, input, etc.)    |
 //! | 0x2001-0x200F | Supervisor → Init protocol           |
-//! | 0x2010-0x201F | PermissionManager protocol           |
-//! | 0x2020        | Supervisor → PermissionManager       |
+//! | 0x2010-0x201F | PermissionService protocol           |
+//! | 0x2020        | Supervisor → PermissionService       |
 //! | 0x3000-0x30FF | Kernel notifications                 |
 //! | 0x4000-0x4FFF | System diagnostics (memhog, etc.)    |
 //! | 0x5000-0x50FF | Identity permission checks           |
@@ -55,6 +55,83 @@
 //! ```
 
 #![no_std]
+
+// =============================================================================
+// Object Types (Canonical definition for capabilities)
+// =============================================================================
+
+/// Types of kernel objects that can be accessed via capabilities.
+///
+/// **CRITICAL**: This is the single source of truth for object type values.
+/// All crates MUST use this definition to ensure consistent capability grants.
+///
+/// # Safety
+///
+/// Using mismatched object type values between crates can cause:
+/// - Granting wrong capabilities (e.g., Storage instead of Console)
+/// - Security policy bypass
+/// - Undefined behavior in capability checks
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ObjectType {
+    /// IPC endpoint - for process-to-process communication
+    Endpoint = 1,
+    /// Another process - for spawn/kill operations
+    Process = 2,
+    /// Memory region - for shared memory
+    Memory = 3,
+    /// IRQ handler - for interrupt handling (reserved for drivers)
+    Irq = 4,
+    /// I/O port range - for hardware access (reserved for drivers)
+    IoPort = 5,
+    /// Console/debug output - for terminal I/O
+    Console = 6,
+    /// Persistent storage - namespaced per-app key-value store
+    Storage = 7,
+    /// Network access - for HTTP/WebSocket operations
+    Network = 8,
+    /// Filesystem access - for VFS operations
+    Filesystem = 9,
+    /// User identity service - for authentication
+    Identity = 10,
+}
+
+impl ObjectType {
+    /// Convert from u8 value.
+    ///
+    /// Returns `None` for invalid/unknown values.
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(ObjectType::Endpoint),
+            2 => Some(ObjectType::Process),
+            3 => Some(ObjectType::Memory),
+            4 => Some(ObjectType::Irq),
+            5 => Some(ObjectType::IoPort),
+            6 => Some(ObjectType::Console),
+            7 => Some(ObjectType::Storage),
+            8 => Some(ObjectType::Network),
+            9 => Some(ObjectType::Filesystem),
+            10 => Some(ObjectType::Identity),
+            _ => None,
+        }
+    }
+
+    /// Get human-readable display name.
+    pub fn name(&self) -> &'static str {
+        match self {
+            ObjectType::Endpoint => "Endpoint",
+            ObjectType::Process => "Process",
+            ObjectType::Memory => "Memory",
+            ObjectType::Irq => "IRQ",
+            ObjectType::IoPort => "I/O Port",
+            ObjectType::Console => "Console",
+            ObjectType::Storage => "Storage",
+            ObjectType::Network => "Network",
+            ObjectType::Filesystem => "Filesystem",
+            ObjectType::Identity => "Identity",
+        }
+    }
+}
 
 // =============================================================================
 // Syscall Numbers (Process → Kernel operations)
@@ -260,7 +337,7 @@ pub mod init {
 /// Permission protocol messages (Desktop/Supervisor -> Init).
 ///
 /// These are legacy permission messages routed through Init.
-/// Prefer using the PermissionManager IPC protocol (`pm` module) instead.
+/// Prefer using the PermissionService IPC protocol (`pm` module) instead.
 pub mod permission {
     /// Request Init to grant a capability to a process.
     pub const MSG_GRANT_PERMISSION: u32 = 0x1010;
@@ -338,7 +415,7 @@ pub mod supervisor {
     /// Payload: [success: u8, new_slot: u32]
     pub const MSG_SUPERVISOR_CAP_RESPONSE: u32 = 0x2009;
 
-    /// Supervisor requests PermissionManager to revoke a capability from a process.
+    /// Supervisor requests PermissionService to revoke a capability from a process.
     /// Payload: [target_pid: u32, slot: u32, reason: u8]
     ///
     /// **IMPORTANT**: This is the canonical value (0x2020). The supervisor had
@@ -347,15 +424,15 @@ pub mod supervisor {
 }
 
 // =============================================================================
-// PermissionManager Protocol (0x2010 - 0x201F)
+// PermissionService Protocol (0x2010 - 0x201F)
 // =============================================================================
 
-/// PermissionManager protocol messages.
+/// PermissionService protocol messages.
 ///
 /// These messages are used by processes to request capabilities from
-/// the PermissionManager service (PID 2).
+/// the PermissionService (PID 2).
 pub mod pm {
-    /// Request a capability from PermissionManager.
+    /// Request a capability from PermissionService.
     /// Payload: [object_type: u8, object_id: u64, requested_perms: u8]
     pub const MSG_REQUEST_CAPABILITY: u32 = 0x2010;
 
@@ -426,7 +503,7 @@ pub mod diagnostics {
 
 /// Identity permission service messages.
 ///
-/// Note: These are different from the PermissionManager (pm) messages.
+/// Note: These are different from the PermissionService (pm) messages.
 /// This is for checking user-level permissions in the identity layer.
 pub mod identity_perm {
     /// Check permission request.
@@ -735,6 +812,53 @@ pub mod net {
 }
 
 // =============================================================================
+// Debug Message Protocol (String Prefixes)
+// =============================================================================
+
+/// Debug message protocol prefixes.
+///
+/// These constants define the string prefixes used for supervisor<->process
+/// debug message communication. Using constants instead of string literals
+/// provides compile-time safety and consistency.
+pub mod debug {
+    // === Init Protocol ===
+    /// Init spawn request: "INIT:SPAWN:{service_name}"
+    pub const INIT_SPAWN: &str = "INIT:SPAWN:";
+    /// Init grant capability: "INIT:GRANT:{details}"
+    pub const INIT_GRANT: &str = "INIT:GRANT:";
+    /// Init revoke capability: "INIT:REVOKE:{details}"
+    pub const INIT_REVOKE: &str = "INIT:REVOKE:";
+    /// Init kill success: "INIT:KILL_OK:{pid}"
+    pub const INIT_KILL_OK: &str = "INIT:KILL_OK:";
+    /// Init kill failure: "INIT:KILL_FAIL:{pid}:{error}"
+    pub const INIT_KILL_FAIL: &str = "INIT:KILL_FAIL:";
+    /// Init permission response: "INIT:PERM_RESPONSE:{details}"
+    pub const INIT_PERM_RESPONSE: &str = "INIT:PERM_RESPONSE:";
+    /// Init permission list: "INIT:PERM_LIST:{details}"
+    pub const INIT_PERM_LIST: &str = "INIT:PERM_LIST:";
+    /// Generic init message prefix
+    pub const INIT_PREFIX: &str = "INIT:";
+
+    // === Service Responses ===
+    /// Service IPC response: "SERVICE:RESPONSE:{hex_data}"
+    pub const SERVICE_RESPONSE: &str = "SERVICE:RESPONSE:";
+    /// VFS service response: "VFS:RESPONSE:{hex_data}"
+    pub const VFS_RESPONSE: &str = "VFS:RESPONSE:";
+
+    // === Spawn Protocol ===
+    /// Spawn response: "SPAWN:RESPONSE:{hex_data}"
+    pub const SPAWN_RESPONSE: &str = "SPAWN:RESPONSE:";
+    /// Endpoint response: "ENDPOINT:RESPONSE:{hex_data}"
+    pub const ENDPOINT_RESPONSE: &str = "ENDPOINT:RESPONSE:";
+    /// Capability response: "CAP:RESPONSE:{hex_data}"
+    pub const CAP_RESPONSE: &str = "CAP:RESPONSE:";
+
+    // === Debug/Instrumentation ===
+    /// Agent log prefix for debug instrumentation: "AGENT_LOG:{message}"
+    pub const AGENT_LOG: &str = "AGENT_LOG:";
+}
+
+// =============================================================================
 // Well-Known Slots
 // =============================================================================
 
@@ -785,5 +909,33 @@ mod tests {
         // Time service in 0x8100-0x810F
         const { assert!(time::MSG_GET_TIME_SETTINGS >= 0x8100) };
         const { assert!(time::MSG_SET_TIME_SETTINGS_RESPONSE <= 0x810F) };
+    }
+
+    #[test]
+    fn test_object_type_canonical_values() {
+        // CRITICAL: These values MUST NOT change!
+        // Any change would break capability grants across all crates.
+        assert_eq!(ObjectType::Endpoint as u8, 1);
+        assert_eq!(ObjectType::Process as u8, 2);
+        assert_eq!(ObjectType::Memory as u8, 3);
+        assert_eq!(ObjectType::Irq as u8, 4);
+        assert_eq!(ObjectType::IoPort as u8, 5);
+        assert_eq!(ObjectType::Console as u8, 6);
+        assert_eq!(ObjectType::Storage as u8, 7);
+        assert_eq!(ObjectType::Network as u8, 8);
+        assert_eq!(ObjectType::Filesystem as u8, 9);
+        assert_eq!(ObjectType::Identity as u8, 10);
+    }
+
+    #[test]
+    fn test_object_type_from_u8_roundtrip() {
+        for val in 1..=10u8 {
+            let obj_type = ObjectType::from_u8(val).expect("valid value");
+            assert_eq!(obj_type as u8, val);
+        }
+        // Invalid values should return None
+        assert!(ObjectType::from_u8(0).is_none());
+        assert!(ObjectType::from_u8(11).is_none());
+        assert!(ObjectType::from_u8(255).is_none());
     }
 }

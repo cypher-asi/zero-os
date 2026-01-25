@@ -32,10 +32,10 @@ todos:
 - [crates/zos-kernel/src/system.rs](crates/zos-kernel/src/system.rs)
 - [crates/zos-kernel/src/core/process.rs](crates/zos-kernel/src/core/process.rs)
 - [crates/zos-kernel/src/core/endpoint.rs](crates/zos-kernel/src/core/endpoint.rs)
-- [crates/zos-supervisor-web/src/supervisor/boot.rs](crates/zos-supervisor-web/src/supervisor/boot.rs)
-- [crates/zos-supervisor-web/src/supervisor/spawn.rs](crates/zos-supervisor-web/src/supervisor/spawn.rs)
-- [crates/zos-supervisor-web/src/supervisor/mod.rs](crates/zos-supervisor-web/src/supervisor/mod.rs)
-- [crates/zos-supervisor-web/src/syscall/mod.rs](crates/zos-supervisor-web/src/syscall/mod.rs)
+- [crates/zos-supervisor/src/supervisor/boot.rs](crates/zos-supervisor/src/supervisor/boot.rs)
+- [crates/zos-supervisor/src/supervisor/spawn.rs](crates/zos-supervisor/src/supervisor/spawn.rs)
+- [crates/zos-supervisor/src/supervisor/mod.rs](crates/zos-supervisor/src/supervisor/mod.rs)
+- [crates/zos-supervisor/src/syscall/mod.rs](crates/zos-supervisor/src/syscall/mod.rs)
 - [crates/zos-init/src/lib.rs](crates/zos-init/src/lib.rs)
 - [crates/zos-process/src/lib.rs](crates/zos-process/src/lib.rs)
 
@@ -119,7 +119,7 @@ todos:
 ```
 
 - Current bootstrap logic in `Supervisor::boot()`:
-```60:87:crates/zos-supervisor-web/src/supervisor/boot.rs
+```60:87:crates/zos-supervisor/src/supervisor/boot.rs
     #[wasm_bindgen]
     pub fn boot(&mut self) {
         log("[supervisor] Booting Zero OS kernel...");

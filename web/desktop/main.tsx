@@ -315,7 +315,7 @@ function App() {
         // Workers make syscalls (including SYS_RECEIVE for IPC) which are processed here.
         //
         // Note: deliver_pending_messages() is DEPRECATED and intentionally not called.
-        // See crates/zos-supervisor-web/src/supervisor/ipc.rs for details.
+        // See crates/zos-supervisor/src/supervisor/ipc.rs for details.
         cleanupState.pollIntervalId = setInterval(() => {
           supervisor.poll_syscalls();
           supervisor.process_worker_messages();

@@ -9,7 +9,7 @@ all: build
 # Build everything
 build: build-processes
 	@echo "Building supervisor WASM module..."
-	cd crates/zos-supervisor-web && wasm-pack build --target web --out-dir ../../web/pkg
+	cd crates/zos-supervisor && wasm-pack build --target web --out-dir ../../web/pkg
 	@echo "Building desktop WASM module..."
 	cd crates/zos-desktop && wasm-pack build --target web --features wasm
 	mkdir -p web/pkg-desktop
@@ -28,7 +28,7 @@ build-processes:
 	mkdir -p web/processes
 	cp target/wasm32-unknown-unknown/release/zos_init.wasm web/processes/init.wasm
 	cp target/wasm32-unknown-unknown/release/terminal.wasm web/processes/
-	cp target/wasm32-unknown-unknown/release/permission_manager.wasm web/processes/
+	cp target/wasm32-unknown-unknown/release/permission_service.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/idle.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/memhog.wasm web/processes/
 	cp target/wasm32-unknown-unknown/release/sender.wasm web/processes/

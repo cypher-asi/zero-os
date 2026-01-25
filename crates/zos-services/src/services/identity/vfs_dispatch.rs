@@ -1,0 +1,811 @@
+//! VFS Result Dispatch
+//!
+//! Handles MSG_VFS_*_RESPONSE messages and routes to appropriate handlers
+//! based on the pending operation type.
+
+use alloc::format;
+
+use super::handlers::{credentials, keys, session};
+use super::pending::{PendingStorageOp, RequestContext};
+use super::{response, IdentityService};
+use zos_apps::syscall;
+use zos_apps::{AppError, Message};
+use zos_identity::error::CredentialError;
+use zos_identity::keystore::{CredentialStore, LocalKeyStore};
+use zos_identity::KeyError;
+use zos_vfs::async_client;
+use zos_vfs::ipc::vfs_msg;
+
+impl IdentityService {
+    // =========================================================================
+    // VFS result handler (dispatches to per-response-type handlers)
+    // =========================================================================
+
+    /// Handle VFS IPC responses. Routes to specific handlers based on response type.
+    ///
+    /// VFS IPC doesn't use request IDs, so we process pending operations in FIFO order.
+    pub fn handle_vfs_result(&mut self, msg: &Message) -> Result<(), AppError> {
+        syscall::debug(&format!(
+            "IdentityService: handle_vfs_result tag=0x{:x}, data_len={}",
+            msg.tag,
+            msg.data.len()
+        ));
+
+        match msg.tag {
+            vfs_msg::MSG_VFS_READ_RESPONSE => self.handle_vfs_read_response(msg),
+            vfs_msg::MSG_VFS_WRITE_RESPONSE => self.handle_vfs_write_response(msg),
+            vfs_msg::MSG_VFS_EXISTS_RESPONSE => self.handle_vfs_exists_response(msg),
+            vfs_msg::MSG_VFS_MKDIR_RESPONSE => self.handle_vfs_mkdir_response(msg),
+            vfs_msg::MSG_VFS_READDIR_RESPONSE => self.handle_vfs_readdir_response(msg),
+            vfs_msg::MSG_VFS_UNLINK_RESPONSE => self.handle_vfs_unlink_response(msg),
+            _ => {
+                syscall::debug(&format!(
+                    "IdentityService: Unhandled VFS response tag 0x{:x}",
+                    msg.tag
+                ));
+                Ok(())
+            }
+        }
+    }
+
+    /// Take the next pending VFS operation (FIFO order).
+    /// Returns None if no operations are pending.
+    fn take_next_pending_vfs_op(&mut self) -> Option<PendingStorageOp> {
+        // Get the smallest key (oldest operation)
+        let key = *self.pending_vfs_ops.keys().next()?;
+        self.pending_vfs_ops.remove(&key)
+    }
+
+    /// Handle VFS read response (MSG_VFS_READ_RESPONSE)
+    fn handle_vfs_read_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS read response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = async_client::parse_read_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_read_result(pending_op, result)
+    }
+
+    /// Handle VFS write response (MSG_VFS_WRITE_RESPONSE)
+    fn handle_vfs_write_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS write response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = async_client::parse_write_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_write_result(pending_op, result)
+    }
+
+    /// Handle VFS exists response (MSG_VFS_EXISTS_RESPONSE)
+    fn handle_vfs_exists_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS exists response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = async_client::parse_exists_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_exists_result(pending_op, result)
+    }
+
+    /// Handle VFS mkdir response (MSG_VFS_MKDIR_RESPONSE)
+    fn handle_vfs_mkdir_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS mkdir response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = async_client::parse_mkdir_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_mkdir_result(pending_op, result)
+    }
+
+    /// Handle VFS readdir response (MSG_VFS_READDIR_RESPONSE)
+    fn handle_vfs_readdir_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS readdir response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = async_client::parse_readdir_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_readdir_result(pending_op, result)
+    }
+
+    /// Handle VFS unlink response (MSG_VFS_UNLINK_RESPONSE)
+    fn handle_vfs_unlink_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS unlink response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = async_client::parse_unlink_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_unlink_result(pending_op, result)
+    }
+
+    // =========================================================================
+    // VFS result dispatchers
+    // =========================================================================
+    //
+    // VFS operations are single-step (no content/inode split), so handlers
+    // complete with a single response after the VFS operation succeeds.
+
+    /// Dispatch VFS read result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_read_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<alloc::vec::Vec<u8>, alloc::string::String>,
+    ) -> Result<(), AppError> {
+        match op {
+            PendingStorageOp::GetIdentityKey { ctx } => match result {
+                Ok(data) => match serde_json::from_slice::<LocalKeyStore>(&data) {
+                    Ok(key_store) => response::send_get_identity_key_success(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        Some(key_store),
+                    ),
+                    Err(e) => {
+                        syscall::debug(&format!(
+                            "IdentityService: Failed to parse stored keys: {}",
+                            e
+                        ));
+                        response::send_get_identity_key_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            KeyError::StorageError(format!("Parse failed: {}", e)),
+                        )
+                    }
+                },
+                Err(_) => {
+                    // Key not found
+                    response::send_get_identity_key_success(ctx.client_pid, &ctx.cap_slots, None)
+                }
+            },
+            PendingStorageOp::ReadIdentityForRecovery {
+                ctx,
+                user_id,
+                zid_shards,
+            } => match result {
+                Ok(data) if !data.is_empty() => {
+                    match serde_json::from_slice::<LocalKeyStore>(&data) {
+                        Ok(key_store) => keys::continue_recover_after_identity_read(
+                            self,
+                            ctx.client_pid,
+                            user_id,
+                            zid_shards,
+                            key_store.identity_signing_public_key,
+                            ctx.cap_slots,
+                        ),
+                        Err(e) => {
+                            syscall::debug(&format!(
+                                "IdentityService: Failed to parse LocalKeyStore for recovery: {}",
+                                e
+                            ));
+                            response::send_recover_key_error(
+                                ctx.client_pid,
+                                &ctx.cap_slots,
+                                KeyError::StorageError("Corrupted identity key store".into()),
+                            )
+                        }
+                    }
+                }
+                _ => {
+                    syscall::debug("IdentityService: Identity read for recovery failed");
+                    response::send_recover_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::IdentityKeyRequired,
+                    )
+                }
+            },
+            PendingStorageOp::ReadIdentityForMachine { ctx, request } => match result {
+                Ok(data) if !data.is_empty() => {
+                    match serde_json::from_slice::<LocalKeyStore>(&data) {
+                        Ok(key_store) => keys::continue_create_machine_after_identity_read(
+                            self,
+                            ctx.client_pid,
+                            request,
+                            key_store.identity_signing_public_key,
+                            ctx.cap_slots,
+                        ),
+                        Err(e) => {
+                            syscall::debug(&format!(
+                                "IdentityService: Failed to parse LocalKeyStore: {}",
+                                e
+                            ));
+                            response::send_create_machine_key_error(
+                                ctx.client_pid,
+                                &ctx.cap_slots,
+                                KeyError::StorageError("Corrupted identity key store".into()),
+                            )
+                        }
+                    }
+                }
+                _ => {
+                    syscall::debug("IdentityService: Identity read failed");
+                    response::send_create_machine_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::IdentityKeyRequired,
+                    )
+                }
+            },
+            PendingStorageOp::ReadMachineKey {
+                ctx,
+                user_id,
+                mut remaining_paths,
+                mut records,
+            } => {
+                // Process this machine key result
+                if let Ok(data) = result {
+                    if let Ok(record) =
+                        serde_json::from_slice::<zos_identity::keystore::MachineKeyRecord>(&data)
+                    {
+                        records.push(record);
+                    }
+                }
+
+                // Continue reading remaining paths or send response
+                if remaining_paths.is_empty() {
+                    response::send_list_machine_keys(ctx.client_pid, &ctx.cap_slots, records)
+                } else {
+                    let next_path = remaining_paths.remove(0);
+                    self.start_vfs_read(
+                        &next_path,
+                        PendingStorageOp::ReadMachineKey {
+                            ctx: RequestContext::new(ctx.client_pid, ctx.cap_slots),
+                            user_id,
+                            remaining_paths,
+                            records,
+                        },
+                    )
+                }
+            }
+            PendingStorageOp::ReadSingleMachineKey { ctx } => match result {
+                Ok(data) => {
+                    match serde_json::from_slice::<zos_identity::keystore::MachineKeyRecord>(&data) {
+                        Ok(record) => response::send_get_machine_key_success(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            Some(record),
+                        ),
+                        Err(_) => {
+                            response::send_get_machine_key_success(ctx.client_pid, &ctx.cap_slots, None)
+                        }
+                    }
+                }
+                Err(_) => response::send_get_machine_key_success(ctx.client_pid, &ctx.cap_slots, None),
+            },
+            PendingStorageOp::ReadMachineForRotate {
+                ctx,
+                user_id,
+                machine_id,
+            } => match result {
+                Ok(data) => keys::continue_rotate_after_read(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    machine_id,
+                    &data,
+                    ctx.cap_slots,
+                ),
+                Err(_) => response::send_rotate_machine_key_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    KeyError::MachineKeyNotFound,
+                ),
+            },
+            PendingStorageOp::ReadCredentialsForAttach {
+                ctx,
+                user_id,
+                email,
+            } => {
+                let existing_store = result
+                    .ok()
+                    .and_then(|data| serde_json::from_slice::<CredentialStore>(&data).ok());
+                credentials::continue_attach_email_after_read(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    email,
+                    existing_store,
+                    ctx.cap_slots,
+                )
+            }
+            PendingStorageOp::GetCredentials { ctx } => {
+                let credentials = result
+                    .ok()
+                    .and_then(|data| serde_json::from_slice::<CredentialStore>(&data).ok())
+                    .map(|store| store.credentials)
+                    .unwrap_or_default();
+                response::send_get_credentials(ctx.client_pid, &ctx.cap_slots, credentials)
+            }
+            PendingStorageOp::ReadCredentialsForUnlink {
+                ctx,
+                user_id,
+                credential_type,
+            } => match result {
+                Ok(data) if !data.is_empty() => credentials::continue_unlink_credential_after_read(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    credential_type,
+                    &data,
+                    ctx.cap_slots,
+                ),
+                _ => response::send_unlink_credential_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    CredentialError::NotFound,
+                ),
+            },
+            PendingStorageOp::ReadMachineKeyForZidLogin {
+                ctx,
+                user_id,
+                zid_endpoint,
+            } => match result {
+                Ok(data) => session::continue_zid_login_after_read(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    zid_endpoint,
+                    &data,
+                    ctx.cap_slots,
+                ),
+                Err(_) => response::send_zid_login_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::MachineKeyNotFound,
+                ),
+            },
+            PendingStorageOp::ReadMachineKeyForZidEnroll {
+                ctx,
+                user_id,
+                zid_endpoint,
+            } => match result {
+                Ok(data) => session::continue_zid_enroll_after_read(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    zid_endpoint,
+                    &data,
+                    ctx.cap_slots,
+                ),
+                Err(_) => response::send_zid_enroll_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::MachineKeyNotFound,
+                ),
+            },
+            PendingStorageOp::ReadIdentityPreferences { ctx, user_id: _ } => {
+                let preferences = result
+                    .ok()
+                    .and_then(|data| {
+                        serde_json::from_slice::<zos_identity::ipc::IdentityPreferences>(&data).ok()
+                    })
+                    .unwrap_or_default();
+                let resp = zos_identity::ipc::GetIdentityPreferencesResponse { preferences };
+                response::send_get_identity_preferences_response(ctx.client_pid, &ctx.cap_slots, resp)
+            }
+            PendingStorageOp::ReadPreferencesForUpdate {
+                ctx,
+                user_id,
+                new_key_scheme,
+            } => {
+                let mut preferences = result
+                    .ok()
+                    .and_then(|data| {
+                        serde_json::from_slice::<zos_identity::ipc::IdentityPreferences>(&data).ok()
+                    })
+                    .unwrap_or_default();
+
+                preferences.default_key_scheme = new_key_scheme;
+
+                match serde_json::to_vec(&preferences) {
+                    Ok(json_bytes) => {
+                        let prefs_path =
+                            zos_identity::ipc::IdentityPreferences::storage_path(user_id);
+                        self.start_vfs_write(
+                            &prefs_path,
+                            &json_bytes,
+                            PendingStorageOp::WritePreferences {
+                                ctx: RequestContext::new(ctx.client_pid, ctx.cap_slots),
+                                user_id,
+                                json_bytes: json_bytes.clone(),
+                            },
+                        )
+                    }
+                    Err(_) => response::send_set_default_key_scheme_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("Serialization failed".into()),
+                    ),
+                }
+            }
+            _ => {
+                syscall::debug(&format!(
+                    "IdentityService: Unhandled VFS read result for {:?}",
+                    core::mem::discriminant(&op)
+                ));
+                Ok(())
+            }
+        }
+    }
+
+    /// Dispatch VFS write result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_write_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<(), alloc::string::String>,
+    ) -> Result<(), AppError> {
+        match op {
+            PendingStorageOp::WriteKeyStore {
+                ctx, result: key_result, ..
+            } => {
+                if result.is_ok() {
+                    syscall::debug("IdentityService: Neural key stored successfully via VFS");
+                    response::send_neural_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
+                } else {
+                    syscall::debug("IdentityService: Neural key write failed");
+                    response::send_neural_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("VFS write failed".into()),
+                    )
+                }
+            }
+            PendingStorageOp::WriteRecoveredKeyStore {
+                ctx, result: key_result, ..
+            } => {
+                if result.is_ok() {
+                    syscall::debug("IdentityService: Recovered key stored successfully via VFS");
+                    response::send_recover_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
+                } else {
+                    response::send_recover_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("VFS write failed".into()),
+                    )
+                }
+            }
+            PendingStorageOp::WriteMachineKey { ctx, record, .. } => {
+                if result.is_ok() {
+                    syscall::debug(&format!(
+                        "IdentityService: Machine key {:032x} stored successfully via VFS",
+                        record.machine_id
+                    ));
+                    response::send_create_machine_key_success(ctx.client_pid, &ctx.cap_slots, record)
+                } else {
+                    response::send_create_machine_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("VFS write failed".into()),
+                    )
+                }
+            }
+            PendingStorageOp::WriteRotatedMachineKey { ctx, record, .. } => {
+                if result.is_ok() {
+                    syscall::debug(&format!(
+                        "IdentityService: Rotated machine key {:032x} stored successfully via VFS",
+                        record.machine_id
+                    ));
+                    response::send_rotate_machine_key_success(ctx.client_pid, &ctx.cap_slots, record)
+                } else {
+                    response::send_rotate_machine_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("VFS write failed".into()),
+                    )
+                }
+            }
+            PendingStorageOp::WriteEmailCredential { ctx, .. } => {
+                if result.is_ok() {
+                    syscall::debug("IdentityService: Email credential stored successfully via VFS");
+                    response::send_attach_email_success(ctx.client_pid, &ctx.cap_slots)
+                } else {
+                    response::send_attach_email_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        CredentialError::StorageError("VFS write failed".into()),
+                    )
+                }
+            }
+            PendingStorageOp::WriteUnlinkedCredential { ctx, .. } => {
+                if result.is_ok() {
+                    syscall::debug("IdentityService: Credential unlinked successfully via VFS");
+                    response::send_unlink_credential_success(ctx.client_pid, &ctx.cap_slots)
+                } else {
+                    response::send_unlink_credential_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        CredentialError::StorageError("VFS write failed".into()),
+                    )
+                }
+            }
+            PendingStorageOp::WriteZidSession { ctx, tokens, .. } => {
+                if result.is_ok() {
+                    syscall::debug("IdentityService: ZID session stored successfully via VFS");
+                    response::send_zid_login_success(ctx.client_pid, &ctx.cap_slots, tokens)
+                } else {
+                    response::send_zid_login_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        zos_identity::error::ZidError::AuthenticationFailed,
+                    )
+                }
+            }
+            PendingStorageOp::WriteZidEnrollSession { ctx, tokens, .. } => {
+                if result.is_ok() {
+                    syscall::debug("IdentityService: ZID enroll session stored successfully via VFS");
+                    response::send_zid_enroll_success(ctx.client_pid, &ctx.cap_slots, tokens)
+                } else {
+                    response::send_zid_enroll_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        zos_identity::error::ZidError::EnrollmentFailed("Session write failed".into()),
+                    )
+                }
+            }
+            PendingStorageOp::WritePreferences { ctx, .. } => {
+                if result.is_ok() {
+                    syscall::debug("IdentityService: Preferences stored successfully via VFS");
+                    let resp = zos_identity::ipc::SetDefaultKeySchemeResponse { result: Ok(()) };
+                    response::send_set_default_key_scheme_response(ctx.client_pid, &ctx.cap_slots, resp)
+                } else {
+                    response::send_set_default_key_scheme_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("VFS write failed".into()),
+                    )
+                }
+            }
+            _ => {
+                syscall::debug(&format!(
+                    "IdentityService: Unhandled VFS write result for {:?}",
+                    core::mem::discriminant(&op)
+                ));
+                Ok(())
+            }
+        }
+    }
+
+    /// Dispatch VFS exists result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_exists_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<bool, alloc::string::String>,
+    ) -> Result<(), AppError> {
+        let exists = result.unwrap_or(false);
+
+        match op {
+            PendingStorageOp::CheckIdentityDirectory { ctx, user_id } => {
+                keys::continue_generate_after_directory_check(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    exists,
+                    ctx.cap_slots,
+                )
+            }
+            PendingStorageOp::CheckKeyExists { ctx, user_id } => {
+                keys::continue_generate_after_exists_check(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    exists,
+                    ctx.cap_slots,
+                )
+            }
+            _ => {
+                syscall::debug(&format!(
+                    "IdentityService: Unhandled VFS exists result for {:?}",
+                    core::mem::discriminant(&op)
+                ));
+                Ok(())
+            }
+        }
+    }
+
+    /// Dispatch VFS mkdir result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_mkdir_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<(), alloc::string::String>,
+    ) -> Result<(), AppError> {
+        match op {
+            PendingStorageOp::CreateIdentityDirectory {
+                ctx,
+                user_id,
+                directories,
+            } => {
+                if result.is_ok() {
+                    // Continue creating remaining directories
+                    keys::continue_create_directories(
+                        self,
+                        ctx.client_pid,
+                        user_id,
+                        directories,
+                        ctx.cap_slots,
+                    )
+                } else {
+                    syscall::debug("IdentityService: Failed to create identity directory");
+                    response::send_neural_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("Failed to create identity directory".into()),
+                    )
+                }
+            }
+            _ => {
+                syscall::debug(&format!(
+                    "IdentityService: Unhandled VFS mkdir result for {:?}",
+                    core::mem::discriminant(&op)
+                ));
+                Ok(())
+            }
+        }
+    }
+
+    /// Dispatch VFS readdir result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_readdir_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<alloc::vec::Vec<zos_vfs::DirEntry>, alloc::string::String>,
+    ) -> Result<(), AppError> {
+        match op {
+            PendingStorageOp::ListMachineKeys { ctx, user_id } => match result {
+                Ok(entries) => {
+                    // Convert directory entries to file paths and start reading machine keys
+                    let paths: alloc::vec::Vec<alloc::string::String> = entries
+                        .iter()
+                        .filter(|e| e.name.ends_with(".json"))
+                        .map(|e| format!("/home/{}/.zos/identity/machine/{}", user_id, e.name))
+                        .collect();
+
+                    if paths.is_empty() {
+                        response::send_list_machine_keys(ctx.client_pid, &ctx.cap_slots, alloc::vec![])
+                    } else {
+                        let mut remaining_paths = paths;
+                        let first_path = remaining_paths.remove(0);
+                        self.start_vfs_read(
+                            &first_path,
+                            PendingStorageOp::ReadMachineKey {
+                                ctx: RequestContext::new(ctx.client_pid, ctx.cap_slots),
+                                user_id,
+                                remaining_paths,
+                                records: alloc::vec![],
+                            },
+                        )
+                    }
+                }
+                Err(_) => {
+                    // No machine keys directory or error - return empty list
+                    response::send_list_machine_keys(ctx.client_pid, &ctx.cap_slots, alloc::vec![])
+                }
+            },
+            PendingStorageOp::ReadMachineKeyForZidLogin {
+                ctx,
+                user_id,
+                zid_endpoint,
+            } => match result {
+                Ok(entries) => {
+                    let paths: alloc::vec::Vec<alloc::string::String> = entries
+                        .iter()
+                        .filter(|e| e.name.ends_with(".json"))
+                        .map(|e| format!("/home/{}/.zos/identity/machine/{}", user_id, e.name))
+                        .collect();
+                    session::continue_zid_login_after_list(
+                        self,
+                        ctx.client_pid,
+                        user_id,
+                        zid_endpoint,
+                        paths,
+                        ctx.cap_slots,
+                    )
+                }
+                Err(_) => response::send_zid_login_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::MachineKeyNotFound,
+                ),
+            },
+            PendingStorageOp::ReadMachineKeyForZidEnroll {
+                ctx,
+                user_id,
+                zid_endpoint,
+            } => match result {
+                Ok(entries) => {
+                    let paths: alloc::vec::Vec<alloc::string::String> = entries
+                        .iter()
+                        .filter(|e| e.name.ends_with(".json"))
+                        .map(|e| format!("/home/{}/.zos/identity/machine/{}", user_id, e.name))
+                        .collect();
+                    session::continue_zid_enroll_after_list(
+                        self,
+                        ctx.client_pid,
+                        user_id,
+                        zid_endpoint,
+                        paths,
+                        ctx.cap_slots,
+                    )
+                }
+                Err(_) => response::send_zid_enroll_error(
+                    ctx.client_pid,
+                    &ctx.cap_slots,
+                    zos_identity::error::ZidError::MachineKeyNotFound,
+                ),
+            },
+            _ => {
+                syscall::debug(&format!(
+                    "IdentityService: Unhandled VFS readdir result for {:?}",
+                    core::mem::discriminant(&op)
+                ));
+                Ok(())
+            }
+        }
+    }
+
+    /// Dispatch VFS unlink result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_unlink_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<(), alloc::string::String>,
+    ) -> Result<(), AppError> {
+        match op {
+            PendingStorageOp::DeleteMachineKey { ctx, .. } => {
+                if result.is_ok() {
+                    syscall::debug("IdentityService: Machine key deleted successfully via VFS");
+                    response::send_revoke_machine_key_success(ctx.client_pid, &ctx.cap_slots)
+                } else {
+                    response::send_revoke_machine_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::MachineKeyNotFound,
+                    )
+                }
+            }
+            _ => {
+                syscall::debug(&format!(
+                    "IdentityService: Unhandled VFS unlink result for {:?}",
+                    core::mem::discriminant(&op)
+                ));
+                Ok(())
+            }
+        }
+    }
+}

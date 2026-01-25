@@ -489,3 +489,57 @@ fn test_sys_create_endpoint_for_init_only() {
         "Non-Init processes should not be able to create endpoints for others"
     );
 }
+
+/// Test that create_endpoint_for returns correctly packed (slot, endpoint_id).
+///
+/// The kernel returns: (slot << 32) | (endpoint_id & 0xFFFFFFFF)
+/// This verifies the packing format is consistent with documentation.
+#[test]
+fn test_create_endpoint_for_bit_packing() {
+    use zos_ipc::syscall::SYS_CREATE_ENDPOINT_FOR;
+
+    let hal = MockHal::new();
+    let mut kernel = System::new(hal);
+
+    // Create Init (PID 1)
+    let init_pid = kernel.register_process_with_pid(ProcessId(1), "init");
+    assert_eq!(init_pid, ProcessId(1));
+
+    // Create a target process (PID 2)
+    let target_pid = kernel.register_process("target");
+    assert_eq!(target_pid, ProcessId(2));
+
+    // Create an endpoint for the target
+    let (packed_result, _rich, _data) = kernel.process_syscall(
+        init_pid,
+        SYS_CREATE_ENDPOINT_FOR,
+        [target_pid.0 as u32, 0, 0, 0],
+        &[],
+    );
+    assert!(packed_result >= 0, "Should succeed");
+
+    // Unpack using the documented format: (slot << 32) | endpoint_id
+    let slot = (packed_result >> 32) as u32;
+    let endpoint_id = (packed_result & 0xFFFFFFFF) as u64;
+
+    // Verify the values are sensible
+    assert!(endpoint_id > 0, "Endpoint ID should be positive, got {}", endpoint_id);
+    assert!(slot < 100, "Slot should be small (got {}), packed incorrectly?", slot);
+
+    // Create another endpoint and verify IDs increment
+    let (packed_result2, _rich2, _data2) = kernel.process_syscall(
+        init_pid,
+        SYS_CREATE_ENDPOINT_FOR,
+        [target_pid.0 as u32, 0, 0, 0],
+        &[],
+    );
+    assert!(packed_result2 >= 0, "Should succeed");
+
+    let endpoint_id2 = (packed_result2 & 0xFFFFFFFF) as u64;
+    assert!(
+        endpoint_id2 > endpoint_id,
+        "Endpoint IDs should increment: {} should be > {}",
+        endpoint_id2,
+        endpoint_id
+    );
+}

@@ -111,4 +111,4 @@ For implementers, the recommended reading order is:
 | `zos-vfs` | 06 | Complete |
 | `zos-apps` | 07 | Complete |
 | `zos-desktop` | 08 | Complete |
-| `zos-supervisor-web` | All | Complete |
+| `zos-supervisor` | All | Complete |

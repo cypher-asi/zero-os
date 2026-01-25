@@ -6,9 +6,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
-use crate::error::VfsError;
+use crate::core::{FilePermissions, VfsError};
 use crate::service::VfsService;
-use crate::types::FilePermissions;
 
 /// Machine configuration stored at /system/config/machine.json
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -237,8 +236,11 @@ struct UserRegistryData {
 /// Minimal user registry entry for bootstrap.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct UserRegistryEntryData {
+    #[allow(dead_code)]
     id: u128,
+    #[allow(dead_code)]
     display_name: String,
+    #[allow(dead_code)]
     created_at: u64,
 }
 
@@ -248,33 +250,14 @@ struct UserRegistryEntryData {
 
 /// Serialize a value to JSON bytes.
 fn serialize_json<T: Serialize>(value: &T) -> Result<Vec<u8>, VfsError> {
-    // In a real implementation, this would use serde_json
-    // For no_std, we need a minimal JSON serializer
-    // For now, we'll use a simple format that serde can handle
-    #[cfg(feature = "std")]
-    {
-        serde_json::to_vec(value).map_err(|e| VfsError::StorageError(alloc::format!("{}", e)))
-    }
-    #[cfg(not(feature = "std"))]
-    {
-        // Minimal no_std JSON serialization using serde
-        // This requires serde_json with alloc feature
-        serde_json::to_vec(value)
-            .map_err(|_| VfsError::StorageError(String::from("JSON serialization failed")))
-    }
+    serde_json::to_vec(value)
+        .map_err(|_| VfsError::StorageError(String::from("JSON serialization failed")))
 }
 
 /// Deserialize JSON bytes to a value.
 fn deserialize_json<T: for<'de> Deserialize<'de>>(data: &[u8]) -> Result<T, VfsError> {
-    #[cfg(feature = "std")]
-    {
-        serde_json::from_slice(data).map_err(|e| VfsError::StorageError(alloc::format!("{}", e)))
-    }
-    #[cfg(not(feature = "std"))]
-    {
-        serde_json::from_slice(data)
-            .map_err(|_| VfsError::StorageError(String::from("JSON deserialization failed")))
-    }
+    serde_json::from_slice(data)
+        .map_err(|_| VfsError::StorageError(String::from("JSON deserialization failed")))
 }
 
 #[cfg(test)]
@@ -294,9 +277,10 @@ mod tests {
 
     #[test]
     fn test_user_home_path() {
-        let user_id = 0x12345678_9abcdef0_12345678_9abcdef0u128;
+        let user_id = 12345u128;
         let home = alloc::format!("/home/{}", user_id);
         assert!(home.starts_with("/home/"));
-        assert_eq!(home.len(), "/home/".len() + 32);
+        // The user ID is formatted as a decimal number
+        assert_eq!(home, "/home/12345");
     }
 }

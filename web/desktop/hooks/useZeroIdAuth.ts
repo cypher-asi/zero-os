@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { IdentityServiceClient, ZidTokens, ZidSession } from '../../services/IdentityServiceClient';
-import { VfsStorageClient, formatUserId } from '../../services/VfsStorageClient';
+import { IdentityServiceClient, ZidTokens, ZidSession } from '../../client-services/IdentityServiceClient';
+import { VfsStorageClient, formatUserId } from '../../client-services/VfsStorageClient';
 import { useSupervisor } from './useSupervisor';
 import { useIdentityStore, selectCurrentUser } from '../../stores';
 

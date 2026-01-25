@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Web Supervisor (`zos-supervisor-web`) runs in the browser's main thread and acts as a boundary layer between user-space WASM processes and the kernel.
+The Web Supervisor (`zos-supervisor`) runs in the browser's main thread and acts as a boundary layer between user-space WASM processes and the kernel.
 
 ## Responsibilities
 
@@ -356,11 +356,11 @@ tick();
 ## Compliance Checklist
 
 ### Source Files
-- `crates/zos-supervisor-web/src/supervisor/mod.rs` - Main supervisor
-- `crates/zos-supervisor-web/src/supervisor/boot.rs` - Boot sequence
-- `crates/zos-supervisor-web/src/supervisor/spawn.rs` - Process spawning
-- `crates/zos-supervisor-web/src/syscall/*.rs` - Syscall handling
-- `crates/zos-supervisor-web/src/hal.rs` - WasmHal
+- `crates/zos-supervisor/src/supervisor/mod.rs` - Main supervisor
+- `crates/zos-supervisor/src/supervisor/boot.rs` - Boot sequence
+- `crates/zos-supervisor/src/supervisor/spawn.rs` - Process spawning
+- `crates/zos-supervisor/src/syscall/*.rs` - Syscall handling
+- `crates/zos-supervisor/src/hal.rs` - WasmHal
 
 ### Key Invariants
 - [ ] All syscalls flow through Axiom gateway

@@ -19,7 +19,7 @@ This stage is **fully implemented**. All objectives have been achieved.
 | Process syscall library | ✅ | `crates/zos-process/src/lib.rs` |
 | WASM runtime (JS atomics) | ✅ | `web/public/worker.js` |
 | Web Worker bootstrap | ✅ | `web/public/worker.js` |
-| Browser supervisor | ✅ | `crates/zos-supervisor-web/src/lib.rs` |
+| Browser supervisor | ✅ | `crates/zos-supervisor/src/lib.rs` |
 | HTML entry point | ✅ | `web/desktop/index.html` |
 
 ### Key Implementation Details

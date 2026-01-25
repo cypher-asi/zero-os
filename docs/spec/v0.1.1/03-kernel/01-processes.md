@@ -37,7 +37,7 @@ pub enum ProcessState {
 |-----|---------|-------|
 | 0 | Supervisor | Not a real process, used for audit logging |
 | 1 | Init | Service registry, bootstrap |
-| 2 | PermissionManager | Capability authority |
+| 2 | PermissionService | Capability authority |
 | 3+ | User processes | Terminal, apps, etc. |
 
 ## Lifecycle

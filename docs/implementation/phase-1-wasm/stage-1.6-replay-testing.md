@@ -430,7 +430,7 @@ fn test_nondeterminism_detection() {
 
 ### Task 6: Add Replay to Browser (Optional)
 
-**File**: `apps/zos-supervisor-web/www/index.html`
+**File**: `apps/zos-supervisor/www/index.html`
 
 Add UI for replay:
 

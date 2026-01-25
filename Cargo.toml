@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/zos-allocator",
     "crates/zos-apps",
     "crates/zos-axiom",
     "crates/zos-desktop",
@@ -11,8 +12,9 @@ members = [
     "crates/zos-kernel",
     "crates/zos-network",
     "crates/zos-process",
+    "crates/zos-services",
     "crates/zos-system-procs",
-    "crates/zos-supervisor-web",
+    "crates/zos-supervisor",
     "crates/zos-vfs",
     "tools/dev-server",
 ]
@@ -25,6 +27,7 @@ repository = "https://github.com/cypher-asi/zero-os"
 
 [workspace.dependencies]
 # Internal crates
+zos-allocator = { path = "crates/zos-allocator" }
 zos-apps = { path = "crates/zos-apps" }
 zos-axiom = { path = "crates/zos-axiom" }
 zos-desktop = { path = "crates/zos-desktop" }
@@ -35,6 +38,7 @@ zos-ipc = { path = "crates/zos-ipc" }
 zos-kernel = { path = "crates/zos-kernel" }
 zos-network = { path = "crates/zos-network" }
 zos-process = { path = "crates/zos-process" }
+zos-services = { path = "crates/zos-services" }
 zos-system-procs = { path = "crates/zos-system-procs" }
 zos-vfs = { path = "crates/zos-vfs" }
 

@@ -8,11 +8,8 @@ description = "Virtual filesystem layer for Zero OS - hierarchical paths, inodes
 [lib]
 crate-type = ["rlib"]
 
-[features]
-default = []
-std = []
 # Note: Browser-specific IndexedDB access is now handled by ZosStorage (JS)
-# and accessed through HAL methods in zos-supervisor-web.
+# and accessed through HAL methods in zos-supervisor.
 
 [dependencies]
 serde = { workspace = true }

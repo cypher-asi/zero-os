@@ -51,7 +51,7 @@ const mockIdentityServiceClient = {
   rotateMachineKey: vi.fn(),
 };
 
-vi.mock('../../../services', () => ({
+vi.mock('../../../client-services', () => ({
   IdentityServiceClient: vi.fn().mockImplementation(() => mockIdentityServiceClient),
   VfsStorageClient: {
     isAvailable: vi.fn(() => true),

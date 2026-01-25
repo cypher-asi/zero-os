@@ -12,4 +12,5 @@ crate-type = ["cdylib"]
 default = []
 
 [dependencies]
+zos-allocator.workspace = true
 zos-process.workspace = true

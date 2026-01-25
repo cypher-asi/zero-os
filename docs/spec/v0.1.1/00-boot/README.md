@@ -79,7 +79,7 @@ When init starts (PID 1):
 
 1. Creates its service registry
 2. Spawns core services:
-   - `permission_manager` (PID 2) - capability authority
+   - `permission_service` (PID 2) - capability authority
 3. Enters idle loop handling service messages
 
 Note: Terminal processes are spawned on-demand by the Desktop component, not during boot.
@@ -112,13 +112,13 @@ MSG_LOOKUP_RESPONSE (0x1002)
 ## Compliance Checklist
 
 ### Source Files
-- `crates/zos-supervisor-web/src/supervisor/boot.rs` - Boot sequence
+- `crates/zos-supervisor/src/supervisor/boot.rs` - Boot sequence
 - `crates/zos-init/src/lib.rs` - Init process
 
 ### Key Invariants
 - [ ] Supervisor PID is always 0
 - [ ] Init PID is always 1
-- [ ] PermissionManager PID is always 2
+- [ ] PermissionService PID is always 2
 - [ ] Init endpoint ID is always 1
 - [ ] All boot operations logged to SysLog
 

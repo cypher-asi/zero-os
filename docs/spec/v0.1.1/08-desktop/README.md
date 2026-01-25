@@ -84,7 +84,7 @@ let result = engine.on_mouse_down(500.0, 400.0, 0.0);
 
 The desktop is separate from the supervisor:
 
-| Concern | Desktop (zos-desktop) | Supervisor (zos-supervisor-web) |
+| Concern | Desktop (zos-desktop) | Supervisor (zos-supervisor) |
 |---------|----------------------|--------------------------------|
 | Window management | Yes | No |
 | Input routing | Yes | No |

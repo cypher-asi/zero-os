@@ -339,7 +339,7 @@ This architecture ensures Axiom and Kernel remain **separate concerns** with no 
       * Bootstrap happens once at system start
       * HAL trait methods are synchronous but IndexedDB is async
       * After Init starts, all storage access goes through processes
-    * The vfs module is internal to zos-supervisor-web
+    * The vfs module is internal to zos-supervisor
 
 31. **Storage Hierarchy Enforcement**
 
@@ -519,7 +519,7 @@ This single rule:
       * 0x0001-0x000F: Console/System
       * 0x1000-0x100F: Init service
       * 0x2000-0x200F: Supervisor → Init
-      * 0x2010-0x201F: PermissionManager
+      * 0x2010-0x201F: PermissionService
       * 0x3000-0x30FF: Kernel notifications
       * 0x7000-0x70FF: Identity service
       * 0x8000-0x80FF: VFS service
@@ -541,12 +541,12 @@ The following are known violations in the current codebase that must be fixed to
 
 | Violation | Location | Invariant Violated | Status | Required Fix |
 |-----------|----------|-------------------|--------|--------------|
-| ~~`Supervisor.revoke_capability()`~~ | `zos-supervisor-web/src/supervisor/mod.rs` | 14, 16 | **FIXED** | ~~Route through PermissionManager process via IPC~~ |
+| ~~`Supervisor.revoke_capability()`~~ | `zos-supervisor/src/supervisor/mod.rs` | 14, 16 | **FIXED** | ~~Route through PermissionService process via IPC~~ |
 | ~~`kernel.deliver_console_input()`~~ | `zos-kernel/src/kernel_impl.rs` | 13, 16 | **FIXED** | ~~Use IPC with capability granted by Init~~ |
 | ~~`kernel.deliver_supervisor_ipc()`~~ | `zos-kernel/src/kernel_impl.rs` | 13, 16 | **FIXED** | ~~Method removed; routes via Init~~ |
 | ~~Kernel owns Axiom~~ | `zos-kernel/src/kernel.rs` | 1, 9 | **FIXED** | ~~System struct separates Axiom and KernelCore~~ |
-| ~~Direct `kernel.kill_process()`~~ | `zos-supervisor-web/src/supervisor/mod.rs` | 13, 16 | **FIXED** | ~~All kills route via `MSG_SUPERVISOR_KILL_PROCESS` (Init PID 1 exception documented)~~ |
-| `identity_service` direct storage syscalls | `zos-apps/src/bin/identity_service/service.rs` (lines 41, 66) | 31 | **OPEN** | Refactor to use VFS IPC protocol for all storage operations |
+| ~~Direct `kernel.kill_process()`~~ | `zos-supervisor/src/supervisor/mod.rs` | 13, 16 | **FIXED** | ~~All kills route via `MSG_SUPERVISOR_KILL_PROCESS` (Init PID 1 exception documented)~~ |
+| ~~`identity_service` direct storage syscalls~~ | `zos-apps/src/bin/identity_service/service.rs` | 31 | **FIXED** | ~~Now uses VFS IPC via `vfs_async` module~~ |
 | ~~`time_service` direct storage syscalls~~ | `zos-apps/src/bin/time_service.rs` | 31 | **FIXED** | ~~Now uses VFS IPC via `vfs_async` module~~ |
 
 ### Architectural Changes
@@ -562,13 +562,15 @@ The `System` struct is the canonical entry point for all kernel operations.
 
 ### Fixed Violations
 
-1. **`Supervisor.revoke_capability()`**: Now routes through PermissionManager (PID 2) via IPC using `MSG_SUPERVISOR_REVOKE_CAP (0x2020)`. The supervisor sends an IPC message to PM, which performs the capability deletion and notifies the affected process.
+1. **`Supervisor.revoke_capability()`**: Now routes through PermissionService (PID 2) via IPC using `MSG_SUPERVISOR_REVOKE_CAP (0x2020)`. The supervisor sends an IPC message to PS, which performs the capability deletion and notifies the affected process.
 
 2. **`kernel.deliver_console_input()`**: Method removed. Console input now uses capability-checked IPC routed through Init via `MSG_SUPERVISOR_CONSOLE_INPUT (0x2001)`.
 
 3. **`kernel.deliver_supervisor_ipc()`**: Method removed. IPC delivery now routes through Init via `MSG_SUPERVISOR_IPC_DELIVERY (0x2003)`.
 
 4. **`time_service` direct storage syscalls**: Now uses VFS IPC via `vfs_async::send_read_request()` and `vfs_async::send_write_request()` per Invariant 31.
+
+5. **`identity_service` direct storage syscalls**: Now uses VFS IPC via the `start_vfs_*` helper methods (`start_vfs_read`, `start_vfs_write`, `start_vfs_exists`, `start_vfs_mkdir`, `start_vfs_readdir`, `start_vfs_delete`) per Invariant 31. All handlers have been refactored to use VFS IPC instead of direct storage syscalls.
 
 ### Init (PID 1) Exception
 

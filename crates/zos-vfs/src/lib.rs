@@ -44,27 +44,23 @@
 #![no_std]
 extern crate alloc;
 
-pub mod bootstrap;
 pub mod client;
-pub mod error;
-// Note: IndexedDB access is handled by ZosStorage in web/public/zos-storage.js
-// and accessed through HAL methods. The browser-specific storage bindings
-// live in zos-supervisor-web/src/vfs.rs for bootstrap operations only.
+pub mod core;
 pub mod ipc;
-pub mod memory;
-pub mod path;
 pub mod service;
+pub mod testing;
+
+pub mod bootstrap;
 pub mod storage;
-pub mod types;
 
-// Re-export main types
-pub use client::VfsClient;
-pub use error::{StorageError, VfsError};
-pub use memory::MemoryVfs;
-pub use path::{normalize_path, parent_path, validate_path};
-pub use service::VfsService;
-pub use storage::{ContentRecord, StorageQuota, StorageUsage};
-pub use types::{DirEntry, FilePermissions, Inode, InodeType};
-
-// IPC message constants
+// Convenient re-exports at crate root
+pub use client::{VfsClient, VFS_ENDPOINT_SLOT, VFS_RESPONSE_SLOT};
+pub use core::{normalize_path, parent_path, validate_path};
+pub use core::{DirEntry, FilePermissions, Inode, InodeType, StorageErrorKind, UserId, VfsError};
 pub use ipc::vfs_msg;
+pub use service::{check_execute, check_read, check_write, PermissionContext, ProcessClass, VfsService};
+pub use storage::{StorageQuota, StorageUsage};
+pub use testing::MemoryVfs;
+
+// Re-export async_client module for backward compatibility
+pub use client::async_ops as async_client;

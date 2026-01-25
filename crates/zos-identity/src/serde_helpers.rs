@@ -206,6 +206,7 @@ pub mod option_bytes_hex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize, Debug, PartialEq)]

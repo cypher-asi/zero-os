@@ -67,7 +67,7 @@ This stage is **fully implemented** with a comprehensive dashboard UI.
 #### Dashboard Update Loop
 
 ```javascript
-// apps/zos-supervisor-web/www/index.html
+// apps/zos-supervisor/www/index.html
 setInterval(updateDashboard, 500);  // Update every 500ms
 
 function updateDashboard() {
@@ -138,7 +138,7 @@ function updateMemoryBar() {
 #### IndexedDB Axiom Persistence
 
 ```javascript
-// apps/zos-supervisor-web/www/index.html
+// apps/zos-supervisor/www/index.html
 window.AxiomStorage = {
     DB_NAME: 'Zero-axiom',
     STORE_NAME: 'log',
@@ -193,7 +193,7 @@ setInterval(async () => {
 ### API Methods (Rust → JavaScript)
 
 ```rust
-// apps/zos-supervisor-web/src/lib.rs
+// apps/zos-supervisor/src/lib.rs
 #[wasm_bindgen]
 impl Supervisor {
     pub fn get_uptime_ms(&self) -> f64;

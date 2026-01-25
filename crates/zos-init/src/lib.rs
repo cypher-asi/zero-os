@@ -3,11 +3,11 @@
 //! The init process is the first user-space process spawned by the kernel.
 //! In the refactored architecture, init has a minimal role:
 //!
-//! - **Bootstrap**: Spawn PermissionManager (PID 2) and initial apps
+//! - **Bootstrap**: Spawn PermissionService (PID 2) and initial apps
 //! - **Service Registry**: Maintain name → endpoint mapping for service discovery
 //! - **Idle**: After bootstrap, enter minimal loop
 //!
-//! Permission management has been delegated to PermissionManager (PID 2).
+//! Permission management has been delegated to PermissionService (PID 2).
 //!
 //! # Service Protocol
 //!
@@ -19,6 +19,9 @@
 //! - `MSG_SPAWN_SERVICE (0x1003)`: Request init to spawn a new service
 
 #![cfg_attr(target_arch = "wasm32", no_std)]
+
+// Initialize bump allocator with 1MB heap
+zos_allocator::init!(1024 * 1024);
 
 #[cfg(target_arch = "wasm32")]
 extern crate alloc;
@@ -146,12 +149,15 @@ impl Init {
             }
             
             match syscall::receive(self.endpoint_slot) {
-                Some(msg) => {
+                Ok(msg) => {
                     self.log(&format!("AGENT_LOG:receive_returned_message:tag=0x{:x}:from_pid={}:len={}", msg.tag, msg.from_pid, msg.data.len()));
                     self.handle_message(&msg);
                 }
-                None => {
-                    // No message available
+                Err(syscall::RecvError::NoMessage) => {
+                    // No message available - this is normal
+                }
+                Err(e) => {
+                    self.log(&format!("AGENT_LOG:receive_error:{:?}", e));
                 }
             }
             syscall::yield_now();
@@ -223,57 +229,3 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     syscall::exit(1);
 }
 
-// =============================================================================
-// Allocator (required for alloc in no_std on WASM)
-// =============================================================================
-
-#[cfg(target_arch = "wasm32")]
-mod allocator {
-    use core::alloc::{GlobalAlloc, Layout};
-
-    struct BumpAllocator {
-        head: core::sync::atomic::AtomicUsize,
-    }
-
-    #[global_allocator]
-    static ALLOCATOR: BumpAllocator = BumpAllocator {
-        head: core::sync::atomic::AtomicUsize::new(0),
-    };
-
-    const HEAP_START: usize = 0x10000; // 64KB offset
-    const HEAP_SIZE: usize = 1024 * 1024; // 1MB heap
-
-    unsafe impl GlobalAlloc for BumpAllocator {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            let size = layout.size();
-            let align = layout.align();
-
-            loop {
-                let head = self.head.load(core::sync::atomic::Ordering::Relaxed);
-                let aligned = (HEAP_START + head + align - 1) & !(align - 1);
-                let new_head = aligned - HEAP_START + size;
-
-                if new_head > HEAP_SIZE {
-                    return core::ptr::null_mut();
-                }
-
-                if self
-                    .head
-                    .compare_exchange_weak(
-                        head,
-                        new_head,
-                        core::sync::atomic::Ordering::SeqCst,
-                        core::sync::atomic::Ordering::Relaxed,
-                    )
-                    .is_ok()
-                {
-                    return aligned as *mut u8;
-                }
-            }
-        }
-
-        unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-            // Bump allocator doesn't deallocate
-        }
-    }
-}

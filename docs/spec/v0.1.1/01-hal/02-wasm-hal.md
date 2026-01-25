@@ -156,8 +156,8 @@ This path is slower but works without SharedArrayBuffer support.
 ## Compliance Checklist
 
 ### Source Files
-- `crates/zos-supervisor-web/src/hal.rs` - WasmHal implementation
-- `crates/zos-supervisor-web/src/worker.rs` - Worker message types
+- `crates/zos-supervisor/src/hal.rs` - WasmHal implementation
+- `crates/zos-supervisor/src/worker.rs` - Worker message types
 - `web/public/worker.js` - JavaScript worker script
 
 ### Key Invariants

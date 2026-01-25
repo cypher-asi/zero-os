@@ -1,0 +1,8 @@
+[package]
+name = "zos-allocator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Bump allocator for Zero OS WASM processes"
+
+[lib]
