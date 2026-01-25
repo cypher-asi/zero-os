@@ -2,6 +2,14 @@
 //!
 //! Contains the IdentityService struct, storage/network syscall helpers,
 //! and result dispatchers for async operations.
+//!
+//! # Storage Access
+//!
+//! This service is being migrated to use VFS IPC (async pattern) for storage.
+//! New code should use the `start_vfs_*` helpers. Legacy code still uses
+//! `start_storage_*` helpers until fully migrated.
+//!
+//! All storage operations flow through VFS Service (PID 4) per Invariant 31.
 
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -11,12 +19,14 @@ use zos_apps::identity::pending::{PendingNetworkOp, PendingStorageOp};
 use zos_apps::identity::response;
 use zos_apps::identity::storage_handlers::{self, StorageHandlerResult};
 use zos_apps::syscall;
+use zos_apps::vfs_async;
 use zos_apps::{AppError, Message};
 use zos_identity::error::CredentialError;
 use zos_identity::keystore::{CredentialStore, LocalKeyStore};
 use zos_identity::KeyError;
 use zos_network::{HttpRequest, HttpResponse, NetworkError};
 use zos_process::storage_result;
+use zos_vfs::ipc::vfs_msg;
 
 /// IdentityService - manages user cryptographic identities
 #[derive(Default)]
@@ -24,7 +34,14 @@ pub struct IdentityService {
     /// Whether we have registered with init
     pub registered: bool,
     /// Pending storage operations: request_id -> operation context
+    /// Note: This is used by legacy storage syscalls. New VFS operations
+    /// use `pending_vfs_ops` instead.
     pub pending_ops: BTreeMap<u32, PendingStorageOp>,
+    /// Pending VFS operations: vfs_op_id -> operation context
+    /// VFS IPC doesn't return request IDs, so we use our own counter.
+    pub pending_vfs_ops: BTreeMap<u32, PendingStorageOp>,
+    /// Counter for generating VFS operation IDs
+    pub next_vfs_op_id: u32,
     /// Pending network operations: request_id -> operation context
     pub pending_net_ops: BTreeMap<u32, PendingNetworkOp>,
 }
@@ -155,6 +172,135 @@ impl IdentityService {
                 Err(AppError::IpcError(format!("Storage list failed: {}", e)))
             }
         }
+    }
+
+    // =========================================================================
+    // VFS IPC helpers (async, non-blocking) - Invariant 31 compliant
+    // =========================================================================
+    //
+    // These helpers route storage operations through VFS Service (PID 4) via IPC.
+    // Use these instead of the legacy storage syscall helpers for new code.
+
+    /// Start async VFS read and track the pending operation.
+    /// Uses VFS IPC instead of direct storage syscalls per Invariant 31.
+    pub fn start_vfs_read(
+        &mut self,
+        path: &str,
+        pending_op: PendingStorageOp,
+    ) -> Result<(), AppError> {
+        let op_id = self.next_vfs_op_id;
+        self.next_vfs_op_id += 1;
+        
+        syscall::debug(&format!(
+            "IdentityService: vfs_read({}) -> op_id={}",
+            path, op_id
+        ));
+        
+        vfs_async::send_read_request(path)?;
+        self.pending_vfs_ops.insert(op_id, pending_op);
+        Ok(())
+    }
+
+    /// Start async VFS write and track the pending operation.
+    /// Uses VFS IPC instead of direct storage syscalls per Invariant 31.
+    pub fn start_vfs_write(
+        &mut self,
+        path: &str,
+        value: &[u8],
+        pending_op: PendingStorageOp,
+    ) -> Result<(), AppError> {
+        let op_id = self.next_vfs_op_id;
+        self.next_vfs_op_id += 1;
+        
+        syscall::debug(&format!(
+            "IdentityService: vfs_write({}, {} bytes) -> op_id={}",
+            path, value.len(), op_id
+        ));
+        
+        vfs_async::send_write_request(path, value)?;
+        self.pending_vfs_ops.insert(op_id, pending_op);
+        Ok(())
+    }
+
+    /// Start async VFS delete (unlink) and track the pending operation.
+    /// Uses VFS IPC instead of direct storage syscalls per Invariant 31.
+    pub fn start_vfs_delete(
+        &mut self,
+        path: &str,
+        pending_op: PendingStorageOp,
+    ) -> Result<(), AppError> {
+        let op_id = self.next_vfs_op_id;
+        self.next_vfs_op_id += 1;
+        
+        syscall::debug(&format!(
+            "IdentityService: vfs_unlink({}) -> op_id={}",
+            path, op_id
+        ));
+        
+        vfs_async::send_unlink_request(path)?;
+        self.pending_vfs_ops.insert(op_id, pending_op);
+        Ok(())
+    }
+
+    /// Start async VFS exists check and track the pending operation.
+    /// Uses VFS IPC instead of direct storage syscalls per Invariant 31.
+    pub fn start_vfs_exists(
+        &mut self,
+        path: &str,
+        pending_op: PendingStorageOp,
+    ) -> Result<(), AppError> {
+        let op_id = self.next_vfs_op_id;
+        self.next_vfs_op_id += 1;
+        
+        syscall::debug(&format!(
+            "IdentityService: vfs_exists({}) -> op_id={}",
+            path, op_id
+        ));
+        
+        vfs_async::send_exists_request(path)?;
+        self.pending_vfs_ops.insert(op_id, pending_op);
+        Ok(())
+    }
+
+    /// Start async VFS readdir (list directory) and track the pending operation.
+    /// Uses VFS IPC instead of direct storage syscalls per Invariant 31.
+    pub fn start_vfs_readdir(
+        &mut self,
+        path: &str,
+        pending_op: PendingStorageOp,
+    ) -> Result<(), AppError> {
+        let op_id = self.next_vfs_op_id;
+        self.next_vfs_op_id += 1;
+        
+        syscall::debug(&format!(
+            "IdentityService: vfs_readdir({}) -> op_id={}",
+            path, op_id
+        ));
+        
+        vfs_async::send_readdir_request(path)?;
+        self.pending_vfs_ops.insert(op_id, pending_op);
+        Ok(())
+    }
+
+    /// Start async VFS mkdir and track the pending operation.
+    /// Uses VFS IPC instead of direct storage syscalls per Invariant 31.
+    pub fn start_vfs_mkdir(
+        &mut self,
+        path: &str,
+        create_parents: bool,
+        pending_op: PendingStorageOp,
+    ) -> Result<(), AppError> {
+        let op_id = self.next_vfs_op_id;
+        self.next_vfs_op_id += 1;
+        
+        syscall::debug(&format!(
+            "IdentityService: vfs_mkdir({}, create_parents={}) -> op_id={}",
+            path, create_parents, op_id
+        ));
+        
+        vfs_async::send_mkdir_request(path, create_parents)?;
+        self.pending_vfs_ops.insert(op_id, pending_op);
+        Ok(())
     }
 
     // =========================================================================
@@ -920,6 +1066,240 @@ impl IdentityService {
                 self.start_storage_delete(&key, next_op)
             }
         }
+    }
+
+    // =========================================================================
+    // VFS result handler (dispatches to per-response-type handlers)
+    // =========================================================================
+
+    /// Handle VFS IPC responses. Routes to specific handlers based on response type.
+    ///
+    /// VFS IPC doesn't use request IDs, so we process pending operations in FIFO order.
+    pub fn handle_vfs_result(&mut self, msg: &Message) -> Result<(), AppError> {
+        syscall::debug(&format!(
+            "IdentityService: handle_vfs_result tag=0x{:x}, data_len={}",
+            msg.tag, msg.data.len()
+        ));
+
+        match msg.tag {
+            vfs_msg::MSG_VFS_READ_RESPONSE => self.handle_vfs_read_response(msg),
+            vfs_msg::MSG_VFS_WRITE_RESPONSE => self.handle_vfs_write_response(msg),
+            vfs_msg::MSG_VFS_EXISTS_RESPONSE => self.handle_vfs_exists_response(msg),
+            vfs_msg::MSG_VFS_MKDIR_RESPONSE => self.handle_vfs_mkdir_response(msg),
+            vfs_msg::MSG_VFS_READDIR_RESPONSE => self.handle_vfs_readdir_response(msg),
+            vfs_msg::MSG_VFS_UNLINK_RESPONSE => self.handle_vfs_unlink_response(msg),
+            _ => {
+                syscall::debug(&format!(
+                    "IdentityService: Unhandled VFS response tag 0x{:x}",
+                    msg.tag
+                ));
+                Ok(())
+            }
+        }
+    }
+
+    /// Take the next pending VFS operation (FIFO order).
+    /// Returns None if no operations are pending.
+    fn take_next_pending_vfs_op(&mut self) -> Option<PendingStorageOp> {
+        // Get the smallest key (oldest operation)
+        let key = *self.pending_vfs_ops.keys().next()?;
+        self.pending_vfs_ops.remove(&key)
+    }
+
+    /// Handle VFS read response (MSG_VFS_READ_RESPONSE)
+    fn handle_vfs_read_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS read response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = vfs_async::parse_read_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_read_result(pending_op, result)
+    }
+
+    /// Handle VFS write response (MSG_VFS_WRITE_RESPONSE)
+    fn handle_vfs_write_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS write response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = vfs_async::parse_write_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_write_result(pending_op, result)
+    }
+
+    /// Handle VFS exists response (MSG_VFS_EXISTS_RESPONSE)
+    fn handle_vfs_exists_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS exists response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = vfs_async::parse_exists_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_exists_result(pending_op, result)
+    }
+
+    /// Handle VFS mkdir response (MSG_VFS_MKDIR_RESPONSE)
+    fn handle_vfs_mkdir_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS mkdir response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = vfs_async::parse_mkdir_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_mkdir_result(pending_op, result)
+    }
+
+    /// Handle VFS readdir response (MSG_VFS_READDIR_RESPONSE)
+    fn handle_vfs_readdir_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS readdir response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = vfs_async::parse_readdir_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_readdir_result(pending_op, result)
+    }
+
+    /// Handle VFS unlink response (MSG_VFS_UNLINK_RESPONSE)
+    fn handle_vfs_unlink_response(&mut self, msg: &Message) -> Result<(), AppError> {
+        let pending_op = match self.take_next_pending_vfs_op() {
+            Some(op) => op,
+            None => {
+                syscall::debug("IdentityService: VFS unlink response but no pending operation");
+                return Ok(());
+            }
+        };
+
+        // Parse VFS response
+        let result = vfs_async::parse_unlink_response(&msg.data);
+
+        // Dispatch based on operation type
+        self.dispatch_vfs_unlink_result(pending_op, result)
+    }
+
+    // =========================================================================
+    // VFS result dispatchers (placeholder - will be populated as handlers migrate)
+    // =========================================================================
+
+    /// Dispatch VFS read result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_read_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<alloc::vec::Vec<u8>, alloc::string::String>,
+    ) -> Result<(), AppError> {
+        // TODO: Implement as handlers are migrated from storage syscalls to VFS IPC
+        syscall::debug(&format!(
+            "IdentityService: dispatch_vfs_read_result for {:?}, success={}",
+            core::mem::discriminant(&op),
+            result.is_ok()
+        ));
+        Ok(())
+    }
+
+    /// Dispatch VFS write result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_write_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<(), alloc::string::String>,
+    ) -> Result<(), AppError> {
+        // TODO: Implement as handlers are migrated from storage syscalls to VFS IPC
+        syscall::debug(&format!(
+            "IdentityService: dispatch_vfs_write_result for {:?}, success={}",
+            core::mem::discriminant(&op),
+            result.is_ok()
+        ));
+        Ok(())
+    }
+
+    /// Dispatch VFS exists result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_exists_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<bool, alloc::string::String>,
+    ) -> Result<(), AppError> {
+        // TODO: Implement as handlers are migrated from storage syscalls to VFS IPC
+        syscall::debug(&format!(
+            "IdentityService: dispatch_vfs_exists_result for {:?}, result={:?}",
+            core::mem::discriminant(&op),
+            result
+        ));
+        Ok(())
+    }
+
+    /// Dispatch VFS mkdir result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_mkdir_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<(), alloc::string::String>,
+    ) -> Result<(), AppError> {
+        // TODO: Implement as handlers are migrated from storage syscalls to VFS IPC
+        syscall::debug(&format!(
+            "IdentityService: dispatch_vfs_mkdir_result for {:?}, success={}",
+            core::mem::discriminant(&op),
+            result.is_ok()
+        ));
+        Ok(())
+    }
+
+    /// Dispatch VFS readdir result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_readdir_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<alloc::vec::Vec<zos_vfs::types::DirEntry>, alloc::string::String>,
+    ) -> Result<(), AppError> {
+        // TODO: Implement as handlers are migrated from storage syscalls to VFS IPC
+        syscall::debug(&format!(
+            "IdentityService: dispatch_vfs_readdir_result for {:?}, success={}",
+            core::mem::discriminant(&op),
+            result.is_ok()
+        ));
+        Ok(())
+    }
+
+    /// Dispatch VFS unlink result to appropriate handler based on pending operation type.
+    fn dispatch_vfs_unlink_result(
+        &mut self,
+        op: PendingStorageOp,
+        result: Result<(), alloc::string::String>,
+    ) -> Result<(), AppError> {
+        // TODO: Implement as handlers are migrated from storage syscalls to VFS IPC
+        syscall::debug(&format!(
+            "IdentityService: dispatch_vfs_unlink_result for {:?}, success={}",
+            core::mem::discriminant(&op),
+            result.is_ok()
+        ));
+        Ok(())
     }
 
     // =========================================================================

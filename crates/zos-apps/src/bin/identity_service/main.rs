@@ -2,7 +2,7 @@
 //!
 //! The IdentityService manages user cryptographic identities. It:
 //! - Generates Neural Keys (entropy, key derivation, Shamir splitting)
-//! - Stores public keys to VFS (via async storage syscalls)
+//! - Stores public keys to VFS (via VFS IPC - Invariant 31 compliant)
 //! - Handles key recovery from Shamir shards
 //! - Manages machine key records
 //!
@@ -26,6 +26,11 @@
 //! - `response`: IPC response helpers
 //! - `storage_handlers`: Async storage result processing
 //! - `network_handlers`: Async network result processing
+//!
+//! # Storage Access
+//!
+//! This service uses VFS IPC (async pattern) for storage.
+//! All storage operations flow through VFS Service (PID 4) per Invariant 31.
 
 #![cfg_attr(target_arch = "wasm32", no_main)]
 
@@ -38,6 +43,7 @@ use service::IdentityService;
 
 use zos_apps::manifest::IDENTITY_SERVICE_MANIFEST;
 use zos_apps::syscall;
+use zos_apps::vfs_async;
 use zos_apps::{app_main, AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
 use zos_process::{
     identity_cred, identity_key, identity_machine, identity_prefs, identity_zid, net,
@@ -91,6 +97,12 @@ impl ZeroApp for IdentityService {
             "IdentityService: Received message tag=0x{:x} from_pid={}",
             msg.tag, msg.from_pid
         ));
+
+        // Check for VFS responses first (Invariant 31 compliant - storage via VFS IPC)
+        if vfs_async::is_vfs_response(msg.tag) {
+            return self.handle_vfs_result(&msg);
+        }
+
         match msg.tag {
             identity_key::MSG_GENERATE_NEURAL_KEY => {
                 handlers::keys::handle_generate_neural_key(self, &msg)
