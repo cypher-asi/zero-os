@@ -55,11 +55,6 @@ impl<H: HAL> KernelCore<H> {
                 tag,
                 data,
             } => self.handle_call(from_pid, endpoint_slot, tag, data, timestamp),
-            Syscall::Reply {
-                caller_pid,
-                tag,
-                data,
-            } => self.handle_reply(from_pid, caller_pid, tag, data, timestamp),
 
             // Capability syscalls
             Syscall::ListCaps => self.handle_list_caps(from_pid),
@@ -188,22 +183,6 @@ impl<H: HAL> KernelCore<H> {
             Err(e) => SyscallResult::Err(e),
         };
         (syscall_result, commits)
-    }
-
-    fn handle_reply(
-        &mut self,
-        from_pid: ProcessId,
-        caller_pid: ProcessId,
-        tag: u32,
-        data: Vec<u8>,
-        timestamp: u64,
-    ) -> (SyscallResult, Vec<Commit>) {
-        let result = self.send_to_process(from_pid, caller_pid, tag, data, timestamp);
-        let syscall_result = match result {
-            Ok(()) => SyscallResult::Ok(0),
-            Err(e) => SyscallResult::Err(e),
-        };
-        (syscall_result, vec![])
     }
 
     // ========================================================================

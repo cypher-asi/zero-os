@@ -153,6 +153,36 @@ pub mod console {
     pub const MSG_CONSOLE_INPUT: u32 = 0x0002;
 }
 
+// =============================================================================
+// App Protocol (0x2000 - 0x200F)
+// =============================================================================
+
+/// App protocol messages for Backend ↔ UI communication.
+///
+/// These messages are used by app backends (WASM) to communicate with
+/// their UI surfaces (React components).
+pub mod app {
+    /// App → UI: State update.
+    /// The payload contains a versioned envelope with app-specific state data.
+    pub const MSG_APP_STATE: u32 = 0x2000;
+
+    /// UI → App: User input event.
+    /// The payload contains user input (button presses, text input, etc).
+    pub const MSG_APP_INPUT: u32 = 0x2001;
+
+    /// UI → App: UI surface ready notification.
+    /// Sent when the React component has mounted and is ready to receive state.
+    pub const MSG_UI_READY: u32 = 0x2002;
+
+    /// App → UI: Request focus.
+    /// The app requests to be brought to the foreground.
+    pub const MSG_APP_FOCUS: u32 = 0x2003;
+
+    /// App → UI: Error notification.
+    /// The app reports an error to the UI for display.
+    pub const MSG_APP_ERROR: u32 = 0x2004;
+}
+
 // Re-export console constants at crate root for convenience
 pub use console::MSG_CONSOLE_INPUT;
 
@@ -491,14 +521,6 @@ pub mod identity_cred {
     pub const MSG_GET_CREDENTIALS: u32 = 0x7042;
     /// Get credentials response.
     pub const MSG_GET_CREDENTIALS_RESPONSE: u32 = 0x7043;
-    /// Verify email request.
-    /// DEPRECATED: With ZID integration, email verification is handled server-side.
-    #[deprecated(note = "ZID handles email verification server-side")]
-    pub const MSG_VERIFY_EMAIL: u32 = 0x7044;
-    /// Verify email response.
-    /// DEPRECATED: With ZID integration, email verification is handled server-side.
-    #[deprecated(note = "ZID handles email verification server-side")]
-    pub const MSG_VERIFY_EMAIL_RESPONSE: u32 = 0x7045;
     /// Unlink credential request.
     pub const MSG_UNLINK_CREDENTIAL: u32 = 0x7046;
     /// Unlink credential response.

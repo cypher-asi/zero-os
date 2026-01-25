@@ -46,6 +46,7 @@ pub mod crypto;
 pub mod error;
 pub mod ipc;
 pub mod keystore;
+pub mod serde_helpers;
 pub mod service;
 pub mod session;
 pub mod types;

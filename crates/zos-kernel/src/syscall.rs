@@ -87,12 +87,6 @@ pub enum Syscall {
         tag: u32,
         data: Vec<u8>,
     },
-    /// Reply to a call (SYS_REPLY 0x43)
-    Reply {
-        caller_pid: ProcessId,
-        tag: u32,
-        data: Vec<u8>,
-    },
     /// Kill a process (SYS_KILL 0x13 - requires Process capability)
     Kill { target_pid: ProcessId },
 }

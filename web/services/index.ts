@@ -83,4 +83,4 @@ export {
 } from './VfsStorageClient';
 
 // Identity utilities
-export { userIdToBigInt } from './identityUtils';
+export { userIdToBigInt, bytesToHex, u128ToHex } from './identityUtils';

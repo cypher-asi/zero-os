@@ -7,6 +7,7 @@ import {
   type LocalKeyStore as ServiceLocalKeyStore,
   VfsStorageClient,
   getIdentityKeyStorePath,
+  bytesToHex,
 } from '../../services';
 
 // =============================================================================
@@ -89,10 +90,6 @@ export interface UseNeuralKeyReturn {
 // =============================================================================
 // Response conversion helpers
 // =============================================================================
-
-function bytesToHex(bytes: number[]): string {
-  return bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 /**
  * Convert service response format to public API format

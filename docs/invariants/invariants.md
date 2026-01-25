@@ -547,7 +547,7 @@ The following are known violations in the current codebase that must be fixed to
 | ~~Kernel owns Axiom~~ | `zos-kernel/src/kernel.rs` | 1, 9 | **FIXED** | ~~System struct separates Axiom and KernelCore~~ |
 | ~~Direct `kernel.kill_process()`~~ | `zos-supervisor-web/src/supervisor/mod.rs` | 13, 16 | **FIXED** | ~~All kills route via `MSG_SUPERVISOR_KILL_PROCESS` (Init PID 1 exception documented)~~ |
 | `identity_service` direct storage syscalls | `zos-apps/src/bin/identity_service/service.rs` (lines 41, 66) | 31 | **OPEN** | Refactor to use VFS IPC protocol for all storage operations |
-| `time_service` direct storage syscalls | `zos-apps/src/bin/time_service.rs` (lines 162, 185) | 31 | **OPEN** | Refactor to use VFS IPC protocol for all storage operations |
+| ~~`time_service` direct storage syscalls~~ | `zos-apps/src/bin/time_service.rs` | 31 | **FIXED** | ~~Now uses VFS IPC via `vfs_async` module~~ |
 
 ### Architectural Changes
 
@@ -556,7 +556,7 @@ The following are known violations in the current codebase that must be fixed to
 - **Before**: `Kernel` struct owned `AxiomGateway` (inverted relationship)
 - **After**: `System<H>` struct holds both `Axiom` and `KernelCore` separately
 
-The old `Kernel` wrapper is deprecated and will be removed in a future version. All new code should use `System::new(hal)` instead of `Kernel::new(hal)`.
+The `System` struct is the canonical entry point for all kernel operations.
 
 **Direct KernelCore Access Violation**: Any code that calls `KernelCore` methods directly without going through `System.process_syscall()` violates the verification boundary. All syscalls must flow through Axiom to ensure proper audit logging and commit recording.
 
@@ -567,6 +567,8 @@ The old `Kernel` wrapper is deprecated and will be removed in a future version. 
 2. **`kernel.deliver_console_input()`**: Method removed. Console input now uses capability-checked IPC routed through Init via `MSG_SUPERVISOR_CONSOLE_INPUT (0x2001)`.
 
 3. **`kernel.deliver_supervisor_ipc()`**: Method removed. IPC delivery now routes through Init via `MSG_SUPERVISOR_IPC_DELIVERY (0x2003)`.
+
+4. **`time_service` direct storage syscalls**: Now uses VFS IPC via `vfs_async::send_read_request()` and `vfs_async::send_write_request()` per Invariant 31.
 
 ### Init (PID 1) Exception
 

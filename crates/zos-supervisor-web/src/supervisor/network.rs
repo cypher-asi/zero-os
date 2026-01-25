@@ -73,9 +73,7 @@ impl super::Supervisor {
     fn deliver_network_result(&mut self, pid: u64, payload: &[u8]) {
         // Route through Init for capability-checked delivery
         const INPUT_ENDPOINT_SLOT: u32 = 1;
-        // MSG_NET_RESULT = 0x9002
-        const MSG_NET_RESULT: u32 = 0x9002;
 
-        self.route_ipc_via_init(pid, INPUT_ENDPOINT_SLOT, MSG_NET_RESULT, payload);
+        self.route_ipc_via_init(pid, INPUT_ENDPOINT_SLOT, zos_ipc::net::MSG_NET_RESULT, payload);
     }
 }

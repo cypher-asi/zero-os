@@ -30,8 +30,8 @@ pub(in crate::system) fn get_syscall_rich_result<H: HAL>(
     timestamp: u64,
 ) -> (SyscallResult, Vec<u8>, Vec<CommitType>) {
     match syscall_num {
-        0x04 => format_caps_list(kernel, sender, result, timestamp),
-        0x05 => format_process_list(kernel, sender, result, timestamp),
+        0x35 => format_caps_list(kernel, sender, result, timestamp), // SYS_CAP_LIST
+        0x50 => format_process_list(kernel, sender, result, timestamp), // SYS_PS
         0x41 => format_receive_result(kernel, sender, args, result, timestamp),
         _ => default_rich_result(result),
     }

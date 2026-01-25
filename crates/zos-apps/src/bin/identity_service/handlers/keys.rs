@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 
 use zos_apps::identity::crypto::bytes_to_hex;
 use zos_identity::crypto::{
-    combine_shards, combine_shards_verified, derive_identity_signing_keypair, split_neural_key, 
+    combine_shards_verified, derive_identity_signing_keypair, split_neural_key, 
     KeyScheme as ZidKeyScheme, MachineKeyPair, NeuralKey, ZidMachineKeyCapabilities,
     ZidNeuralShard,
 };
@@ -226,6 +226,10 @@ pub fn continue_generate_after_exists_check(
     // We use a temporary identity_id for initial key derivation
     // This will be replaced when user enrolls with ZID server
     let temp_identity_id = Uuid::from_u128(user_id);
+    // The _identity_keypair is intentionally unused here - we only need the public key
+    // for storage in LocalKeyStore. The full keypair would only be needed for signing
+    // operations, which are performed elsewhere using the Neural Key shards to
+    // reconstruct the keypair on-demand (avoiding persistent private key storage).
     let (identity_signing, _identity_keypair) =
         match derive_identity_signing_keypair(&neural_key, &temp_identity_id) {
             Ok(keypair) => keypair,
@@ -233,15 +237,21 @@ pub fn continue_generate_after_exists_check(
                 return response::send_neural_key_error(
                     client_pid,
                     &cap_slots,
-                    KeyError::CryptoError(format!("Identity key derivation failed: {:?}", e)),
+                    KeyError::CryptoError(format!(
+                        "Identity key derivation failed during generation: {:?}",
+                        e
+                    )),
                 )
             }
         };
 
-    // Machine signing and encryption are derived separately when needed
-    // For now, we store placeholder bytes since machine keys are created separately
-    let machine_signing = [0u8; 32]; // Placeholder
-    let machine_encryption = [0u8; 32]; // Placeholder
+    // Machine signing and encryption keys are NOT stored in LocalKeyStore.
+    // They are derived on-demand via CreateMachineKey using Neural Key shards.
+    // Placeholder zeros are stored here because LocalKeyStore was originally designed
+    // to hold machine keys, but the current architecture derives them separately
+    // for each machine via MachineKeyRecord. See CreateMachineKey for actual derivation.
+    let machine_signing = [0u8; 32];
+    let machine_encryption = [0u8; 32];
 
     // Split Neural Key into 5 shards (3-of-5 threshold)
     let zid_shards = match split_neural_key(&neural_key) {
@@ -350,47 +360,94 @@ pub fn handle_recover_neural_key(
         }
     };
 
-    // Reconstruct Neural Key from shards
-    let neural_key = match combine_shards(&zid_shards) {
+    // SECURITY: Read the existing LocalKeyStore to get the stored identity public key
+    // for verification. This prevents attacks where arbitrary shards could be used
+    // to reconstruct an unauthorized identity.
+    let key_path = LocalKeyStore::storage_path(request.user_id);
+    syscall::debug(&format!(
+        "IdentityService: RecoverNeuralKey - reading existing identity from: content:{}",
+        key_path
+    ));
+    service.start_storage_read(
+        &format!("content:{}", key_path),
+        PendingStorageOp::ReadIdentityForRecovery {
+            client_pid: msg.from_pid,
+            user_id: request.user_id,
+            zid_shards,
+            cap_slots: msg.cap_slots.clone(),
+        },
+    )
+}
+
+/// Continue neural key recovery after reading the existing identity for verification.
+///
+/// SECURITY: This function uses `combine_shards_verified()` to ensure the reconstructed
+/// Neural Key matches the stored identity public key. This prevents attacks where
+/// arbitrary shards could be used to derive unauthorized machine keys.
+pub fn continue_recover_after_identity_read(
+    service: &mut IdentityService,
+    client_pid: u32,
+    user_id: u128,
+    zid_shards: Vec<ZidNeuralShard>,
+    stored_identity_pubkey: [u8; 32],
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    // SECURITY: Reconstruct Neural Key from shards WITH VERIFICATION against stored identity.
+    // This ensures the provided shards actually belong to this user's Neural Key.
+    let neural_key = match combine_shards_verified(&zid_shards, user_id, &stored_identity_pubkey) {
         Ok(key) => key,
         Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Neural Key recovery verification failed: {:?}",
+                e
+            ));
             return response::send_recover_key_error(
-                msg.from_pid,
-                &msg.cap_slots,
-                KeyError::InvalidShard(format!("Shard reconstruction failed: {:?}", e)),
-            )
+                client_pid,
+                &cap_slots,
+                e,
+            );
         }
     };
 
+    syscall::debug("IdentityService: Neural Key recovered and verified against stored identity");
+
     // Derive keys using proper zid-crypto functions
-    let temp_identity_id = Uuid::from_u128(request.user_id);
+    let temp_identity_id = Uuid::from_u128(user_id);
+    // The _identity_keypair is intentionally unused here - we only need the public key
+    // for verification and storage. The full keypair would only be needed for signing
+    // operations, which are performed elsewhere using the shards.
     let (identity_signing, _identity_keypair) =
         match derive_identity_signing_keypair(&neural_key, &temp_identity_id) {
             Ok(keypair) => keypair,
             Err(e) => {
                 return response::send_recover_key_error(
-                    msg.from_pid,
-                    &msg.cap_slots,
-                    KeyError::DerivationFailed,
+                    client_pid,
+                    &cap_slots,
+                    KeyError::CryptoError(format!(
+                        "Identity key derivation failed during recovery: {:?}",
+                        e
+                    )),
                 )
             }
         };
-    let machine_signing = [0u8; 32]; // Placeholder
-    let machine_encryption = [0u8; 32]; // Placeholder
+    // Machine signing/encryption are placeholders - actual machine keys are created
+    // separately via CreateMachineKey which derives them from the Neural Key
+    let machine_signing = [0u8; 32];
+    let machine_encryption = [0u8; 32];
 
     // Split the recovered neural key into new shards for backup
-    let zid_shards = match split_neural_key(&neural_key) {
+    let new_zid_shards = match split_neural_key(&neural_key) {
         Ok(shards) => shards,
         Err(e) => {
             return response::send_recover_key_error(
-                msg.from_pid,
-                &msg.cap_slots,
+                client_pid,
+                &cap_slots,
                 KeyError::CryptoError(format!("Shamir split failed: {:?}", e)),
             )
         }
     };
 
-    let new_shards: Vec<NeuralShard> = zid_shards
+    let new_shards: Vec<NeuralShard> = new_zid_shards
         .iter()
         .enumerate()
         .map(|(i, shard)| NeuralShard {
@@ -407,7 +464,7 @@ pub fn handle_recover_neural_key(
 
     let created_at = syscall::get_wallclock();
     let key_store = LocalKeyStore::new(
-        request.user_id,
+        user_id,
         identity_signing,
         machine_signing,
         machine_encryption,
@@ -419,22 +476,22 @@ pub fn handle_recover_neural_key(
         created_at,
     };
 
-    let key_path = LocalKeyStore::storage_path(request.user_id);
+    let key_path = LocalKeyStore::storage_path(user_id);
     match serde_json::to_vec(&key_store) {
         Ok(json_bytes) => service.start_storage_write(
             &format!("content:{}", key_path),
             &json_bytes.clone(),
             PendingStorageOp::WriteRecoveredKeyStoreContent {
-                client_pid: msg.from_pid,
-                user_id: request.user_id,
+                client_pid,
+                user_id,
                 result,
                 json_bytes,
-                cap_slots: msg.cap_slots.clone(),
+                cap_slots,
             },
         ),
         Err(e) => response::send_recover_key_error(
-            msg.from_pid,
-            &msg.cap_slots,
+            client_pid,
+            &cap_slots,
             KeyError::StorageError(format!("Serialization failed: {}", e)),
         ),
     }

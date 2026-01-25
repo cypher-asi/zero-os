@@ -74,9 +74,6 @@ pub use syscalls::storage::{
 // Re-export network syscalls
 pub use syscalls::network::network_fetch_async;
 
-// Re-export deprecated VFS syscalls
-#[allow(deprecated)]
-pub use syscalls::deprecated::{vfs_delete, vfs_exists, vfs_list, vfs_mkdir, vfs_read, vfs_write};
 
 // ============================================================================
 // IPC Message Constants (re-exported from zos-ipc)

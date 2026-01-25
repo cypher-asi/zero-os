@@ -1,7 +1,9 @@
 //! Core syscall wrappers for Zero OS
 
 extern crate alloc;
+#[cfg(target_arch = "wasm32")]
 use alloc::format;
+#[cfg(target_arch = "wasm32")]
 use alloc::string::ToString;
 use crate::error;
 // Import syscall numbers (re-exported from zos-ipc at crate root)
@@ -15,7 +17,6 @@ use crate::{
 use crate::types::{CapInfo, Permissions, ProcessInfo, ReceivedMessage};
 use alloc::vec::Vec;
 
-pub mod deprecated;
 pub mod network;
 pub mod storage;
 

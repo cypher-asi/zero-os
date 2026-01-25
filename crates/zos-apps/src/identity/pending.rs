@@ -62,6 +62,18 @@ pub enum PendingStorageOp {
     // =========================================================================
     // Neural Key recovery operations
     // =========================================================================
+    /// Read existing identity for recovery verification (SECURITY)
+    /// 
+    /// Before reconstructing a Neural Key from shards, we must read the stored
+    /// identity public key to verify the reconstruction matches. This prevents
+    /// attacks where arbitrary shards could be used to reconstruct unauthorized keys.
+    ReadIdentityForRecovery {
+        client_pid: u32,
+        user_id: u128,
+        /// The parsed shards to use for reconstruction after verification
+        zid_shards: Vec<zos_identity::crypto::ZidNeuralShard>,
+        cap_slots: Vec<u32>,
+    },
     /// Write recovered key store content (step 1 - then write inode)
     WriteRecoveredKeyStoreContent {
         client_pid: u32,

@@ -394,6 +394,8 @@ fn test_axiom_check_expired_capability() {
 /// Other processes should receive an error.
 #[test]
 fn test_sys_register_process_init_only() {
+    use zos_ipc::syscall::SYS_REGISTER_PROCESS;
+
     let hal = MockHal::new();
     let mut kernel = System::new(hal);
 
@@ -404,9 +406,6 @@ fn test_sys_register_process_init_only() {
     // Create a regular process (PID 2)
     let other_pid = kernel.register_process("other");
     assert_eq!(other_pid, ProcessId(2));
-
-    // SYS_REGISTER_PROCESS = 0x14
-    const SYS_REGISTER_PROCESS: u32 = 0x14;
 
     // Init (PID 1) should be able to register a new process
     let (result, _rich, _data) =
@@ -440,6 +439,8 @@ fn test_sys_register_process_init_only() {
 /// Other processes should receive an error.
 #[test]
 fn test_sys_create_endpoint_for_init_only() {
+    use zos_ipc::syscall::SYS_CREATE_ENDPOINT_FOR;
+
     let hal = MockHal::new();
     let mut kernel = System::new(hal);
 
@@ -454,9 +455,6 @@ fn test_sys_create_endpoint_for_init_only() {
     // Create another process (PID 3) that will try to abuse the syscall
     let attacker_pid = kernel.register_process("attacker");
     assert_eq!(attacker_pid, ProcessId(3));
-
-    // SYS_CREATE_ENDPOINT_FOR = 0x15
-    const SYS_CREATE_ENDPOINT_FOR: u32 = 0x15;
 
     // Init (PID 1) should be able to create an endpoint for another process
     let (result, _rich, _data) = kernel.process_syscall(

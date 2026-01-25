@@ -225,56 +225,6 @@ impl<H: HAL> KernelCore<H> {
         Ok(!endpoint.pending_messages.is_empty())
     }
 
-    /// Send a message to a process's first endpoint (for testing/supervisor use).
-    ///
-    /// **WARNING: This function BYPASSES capability checks.**
-    pub fn send_to_process(
-        &mut self,
-        from_pid: ProcessId,
-        to_pid: ProcessId,
-        tag: u32,
-        data: Vec<u8>,
-        timestamp: u64,
-    ) -> Result<(), KernelError> {
-        self.hal.debug_write(&alloc::format!(
-            "[kernel] SUPERVISOR_OVERRIDE: send_to_process bypassing capabilities \
-             (from PID {} to PID {})",
-            from_pid.0,
-            to_pid.0
-        ));
-
-        // Find an endpoint owned by the target process
-        let endpoint_id = self
-            .endpoints
-            .iter()
-            .find(|(_, ep)| ep.owner == to_pid)
-            .map(|(id, _)| *id)
-            .ok_or(KernelError::EndpointNotFound)?;
-
-        let data_len = data.len();
-
-        // Queue the message
-        let message = Message {
-            from: from_pid,
-            tag,
-            data,
-            transferred_caps: vec![],
-        };
-
-        self.queue_message(endpoint_id, message)?;
-        self.update_send_metrics(from_pid, endpoint_id, data_len, timestamp);
-
-        self.hal.debug_write(&alloc::format!(
-            "[kernel] Message sent from PID {} to PID {} (endpoint {}, tag 0x{:x}) [OVERRIDE]",
-            from_pid.0,
-            to_pid.0,
-            endpoint_id.0,
-            tag
-        ));
-
-        Ok(())
-    }
-
     // ========================================================================
     // Private helper methods
     // ========================================================================

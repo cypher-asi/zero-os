@@ -18,6 +18,12 @@
 //!
 //! This is proper capability-mediated IPC - no supervisor routing needed.
 //!
+//! # Timeout Handling
+//!
+//! All IPC calls have a default timeout of [`DEFAULT_IPC_TIMEOUT_MS`] (30 seconds).
+//! If the Identity Service doesn't respond within this time, a timeout error is returned.
+//! This prevents client processes from hanging indefinitely if the service is unresponsive.
+//!
 //! # Example
 //!
 //! ```ignore
@@ -37,6 +43,11 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+
+/// Default timeout for IPC calls in milliseconds (30 seconds).
+///
+/// This is generous enough for storage operations while preventing indefinite hangs.
+pub const DEFAULT_IPC_TIMEOUT_MS: u64 = 30_000;
 
 use crate::error::KeyError;
 use crate::ipc::{
@@ -279,10 +290,15 @@ impl IdentityClient {
         response.result
     }
 
-    /// Internal: Send IPC request and receive response.
+    /// Internal: Send IPC request and receive response with timeout.
     ///
     /// Uses send_with_caps to transfer the reply endpoint capability,
     /// enabling proper capability-mediated responses.
+    ///
+    /// # Timeout
+    ///
+    /// This function will timeout after [`DEFAULT_IPC_TIMEOUT_MS`] if no response
+    /// is received. This prevents client processes from hanging indefinitely.
     #[cfg(target_arch = "wasm32")]
     fn call<Req: serde::Serialize, Resp: serde::de::DeserializeOwned>(
         &self,
@@ -290,7 +306,7 @@ impl IdentityClient {
         response_tag: u32,
         request: &Req,
     ) -> Result<Resp, KeyError> {
-        use zos_process::{receive_blocking, send_with_caps};
+        use zos_process::{get_wallclock, receive, send_with_caps, yield_now};
 
         // Serialize request
         let data = serde_json::to_vec(request)
@@ -306,22 +322,36 @@ impl IdentityClient {
         )
         .map_err(|e| KeyError::StorageError(alloc::format!("Send error: {}", e)))?;
 
-        // Wait for response on our input endpoint
+        // Wait for response on our input endpoint with timeout
         // The identity service will send the response using the transferred cap
-        loop {
-            let msg = receive_blocking(self.input_endpoint);
+        let start_time = get_wallclock();
+        let deadline = start_time.saturating_add(DEFAULT_IPC_TIMEOUT_MS);
 
-            // Check if this is the response we're waiting for
-            if msg.tag == response_tag {
-                // Deserialize response
-                let resp: Resp = serde_json::from_slice(&msg.data).map_err(|e| {
-                    KeyError::StorageError(alloc::format!("Deserialize error: {}", e))
-                })?;
-                return Ok(resp);
+        loop {
+            // Check for timeout
+            let now = get_wallclock();
+            if now >= deadline {
+                return Err(KeyError::StorageError(alloc::format!(
+                    "IPC timeout: no response received within {}ms",
+                    DEFAULT_IPC_TIMEOUT_MS
+                )));
             }
 
-            // Not our response, continue waiting
-            // (In production, you'd want a timeout here)
+            // Try to receive (non-blocking)
+            if let Some(msg) = receive(self.input_endpoint) {
+                // Check if this is the response we're waiting for
+                if msg.tag == response_tag {
+                    // Deserialize response
+                    let resp: Resp = serde_json::from_slice(&msg.data).map_err(|e| {
+                        KeyError::StorageError(alloc::format!("Deserialize error: {}", e))
+                    })?;
+                    return Ok(resp);
+                }
+                // Not our response, continue waiting (other messages are dropped)
+            }
+
+            // Yield to allow other processes to run before checking again
+            yield_now();
         }
     }
 

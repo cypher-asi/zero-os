@@ -315,6 +315,52 @@ impl IdentityService {
                 result_type,
                 data,
             )),
+            PendingStorageOp::ReadIdentityForRecovery {
+                client_pid,
+                user_id,
+                zid_shards,
+                cap_slots,
+            } => {
+                // SECURITY: Parse the LocalKeyStore to get the stored identity public key
+                // for verification before reconstructing the Neural Key from shards.
+                syscall::debug(&format!(
+                    "IdentityService: ReadIdentityForRecovery result_type={}, data_len={}",
+                    result_type, data.len()
+                ));
+                if result_type != storage_result::READ_OK || data.is_empty() {
+                    syscall::debug(&format!(
+                        "IdentityService: Identity read for recovery failed - result_type={} (expected {}), data_empty={}",
+                        result_type, storage_result::READ_OK, data.is_empty()
+                    ));
+                    return response::send_recover_key_error(
+                        client_pid,
+                        &cap_slots,
+                        KeyError::IdentityKeyRequired,
+                    );
+                }
+                let key_store: LocalKeyStore = match serde_json::from_slice(data) {
+                    Ok(ks) => ks,
+                    Err(e) => {
+                        syscall::debug(&format!(
+                            "IdentityService: Failed to parse LocalKeyStore for recovery: {}",
+                            e
+                        ));
+                        return response::send_recover_key_error(
+                            client_pid,
+                            &cap_slots,
+                            KeyError::StorageError("Corrupted identity key store".into()),
+                        );
+                    }
+                };
+                keys::continue_recover_after_identity_read(
+                    self,
+                    client_pid,
+                    user_id,
+                    zid_shards,
+                    key_store.identity_signing_public_key,
+                    cap_slots,
+                )
+            }
             PendingStorageOp::WriteRecoveredKeyStoreContent {
                 client_pid,
                 user_id,

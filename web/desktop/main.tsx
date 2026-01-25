@@ -20,6 +20,133 @@ const BOOT_STEPS = {
   INIT_SPAWN: 100,
 };
 
+// Global cleanup state - accessible from beforeunload which fires before React unmount
+interface CleanupState {
+  supervisor: (Supervisor & { free?: () => void }) | null;
+  desktop: (DesktopController & { free?: () => void }) | null;
+  pollIntervalId: ReturnType<typeof setInterval> | null;
+  axiomIntervalId: ReturnType<typeof setInterval> | null;
+  cleaned: boolean;
+}
+
+const cleanupState: CleanupState = {
+  supervisor: null,
+  desktop: null,
+  pollIntervalId: null,
+  axiomIntervalId: null,
+  cleaned: false,
+};
+
+// Cleanup for page unload - only terminates workers, does NOT free WASM memory
+// (browser handles memory cleanup on unload, and .free() causes closure errors)
+function performUnloadCleanup() {
+  console.log('[main] Page unloading, terminating workers...');
+
+  // Clear intervals first to stop any callbacks
+  if (cleanupState.pollIntervalId !== null) {
+    clearInterval(cleanupState.pollIntervalId);
+    cleanupState.pollIntervalId = null;
+  }
+  if (cleanupState.axiomIntervalId !== null) {
+    clearInterval(cleanupState.axiomIntervalId);
+    cleanupState.axiomIntervalId = null;
+  }
+
+  // Kill all worker processes (terminates Web Workers)
+  if (cleanupState.supervisor) {
+    try {
+      cleanupState.supervisor.kill_all_processes();
+      console.log('[main] All processes killed');
+    } catch (e) {
+      console.warn('[main] Error killing processes:', e);
+    }
+  }
+
+  // Clear global references that hold supervisor
+  if (window.ZosStorage) {
+    try {
+      window.ZosStorage.initSupervisor(null as unknown as Supervisor);
+    } catch (e) {
+      // Ignore - page is unloading
+    }
+  }
+  if (window.ZosNetwork) {
+    try {
+      window.ZosNetwork.initSupervisor(null as unknown as Supervisor);
+    } catch (e) {
+      // Ignore - page is unloading
+    }
+  }
+}
+
+// Full cleanup for HMR/React unmount - can safely free WASM memory
+function performFullCleanup() {
+  if (cleanupState.cleaned) return;
+  cleanupState.cleaned = true;
+
+  console.log('[main] Performing full cleanup (HMR/unmount)...');
+
+  // Clear intervals first
+  if (cleanupState.pollIntervalId !== null) {
+    clearInterval(cleanupState.pollIntervalId);
+    cleanupState.pollIntervalId = null;
+  }
+  if (cleanupState.axiomIntervalId !== null) {
+    clearInterval(cleanupState.axiomIntervalId);
+    cleanupState.axiomIntervalId = null;
+  }
+
+  // Clear global references BEFORE freeing (they may hold callbacks)
+  if (window.ZosStorage) {
+    window.ZosStorage.initSupervisor(null as unknown as Supervisor);
+  }
+  if (window.ZosNetwork) {
+    window.ZosNetwork.initSupervisor(null as unknown as Supervisor);
+  }
+
+  // Kill all processes
+  if (cleanupState.supervisor) {
+    try {
+      cleanupState.supervisor.kill_all_processes();
+    } catch (e) {
+      console.warn('[main] Error killing processes:', e);
+    }
+
+    // For HMR, we can free WASM memory after a short delay to let pending operations complete
+    const supervisorToFree = cleanupState.supervisor;
+    const desktopToFree = cleanupState.desktop;
+    cleanupState.supervisor = null;
+    cleanupState.desktop = null;
+
+    // Delay .free() to allow pending async operations to complete
+    setTimeout(() => {
+      try {
+        if (supervisorToFree && typeof (supervisorToFree as { free?: () => void }).free === 'function') {
+          (supervisorToFree as { free: () => void }).free();
+          console.log('[main] Supervisor WASM memory freed');
+        }
+      } catch (e) {
+        console.warn('[main] Error freeing supervisor:', e);
+      }
+      try {
+        if (desktopToFree && typeof (desktopToFree as { free?: () => void }).free === 'function') {
+          (desktopToFree as { free: () => void }).free();
+          console.log('[main] Desktop WASM memory freed');
+        }
+      } catch (e) {
+        console.warn('[main] Error freeing desktop:', e);
+      }
+    }, 100);
+  }
+
+  console.log('[main] Cleanup complete');
+}
+
+// Register beforeunload handler at module level (runs before React unmount)
+// Only terminate workers - don't free WASM memory (causes closure errors)
+window.addEventListener('beforeunload', performUnloadCleanup);
+window.addEventListener('pagehide', performUnloadCleanup);
+
 interface BootState {
   progress: number;
   status: string;
@@ -35,6 +162,8 @@ function App() {
     status: 'Initializing...',
   });
   const initializingRef = useRef(false);
+  // Store cleanup function for access from useEffect cleanup
+  const cleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     // Prevent double initialization (React StrictMode runs effects twice)
@@ -176,32 +305,41 @@ function App() {
         updateProgress(BOOT_STEPS.INIT_SPAWN, 'Starting init process...');
         supervisor.spawn_init();
 
+        // Store references in global cleanup state for beforeunload access
+        cleanupState.supervisor = supervisor;
+        cleanupState.desktop = desktop;
+        cleanupState.cleaned = false;
+
         // Start main processing loop
         // Process syscalls from workers using SharedArrayBuffer + Atomics.
         // Workers make syscalls (including SYS_RECEIVE for IPC) which are processed here.
         //
         // Note: deliver_pending_messages() is DEPRECATED and intentionally not called.
         // See crates/zos-supervisor-web/src/supervisor/ipc.rs for details.
-        setInterval(() => {
+        cleanupState.pollIntervalId = setInterval(() => {
           supervisor.poll_syscalls();
           supervisor.process_worker_messages();
         }, 10);
 
         // Sync Axiom log periodically
-        setInterval(async () => {
+        cleanupState.axiomIntervalId = setInterval(async () => {
           await supervisor.sync_axiom_log();
         }, 2000);
 
-        // Clean up all processes when page unloads/reloads
-        window.addEventListener('beforeunload', () => {
-          console.log('[main] Page unloading, cleaning up all processes...');
-          supervisor.kill_all_processes();
-        });
+        // Context menu handler (stored locally, not needed in global cleanup)
+        const handleContextMenu = (e: Event) => {
+          e.preventDefault();
+        };
 
         // Disable browser right-click context menu
-        window.addEventListener('contextmenu', (e) => {
-          e.preventDefault();
-        });
+        window.addEventListener('contextmenu', handleContextMenu);
+
+        // Store cleanup function for useEffect cleanup and HMR
+        cleanupRef.current = () => {
+          console.log('[main] React cleanup triggered...');
+          window.removeEventListener('contextmenu', handleContextMenu);
+          performFullCleanup();
+        };
 
         // Boot complete - update state with supervisor and desktop
         setBootState({
@@ -217,6 +355,15 @@ function App() {
     }
 
     init();
+
+    // Cleanup function for React unmount (HMR, navigation, etc.)
+    return () => {
+      if (cleanupRef.current) {
+        cleanupRef.current();
+        cleanupRef.current = null;
+      }
+      initializingRef.current = false;
+    };
   }, []);
 
   // Show loading screen until boot is complete

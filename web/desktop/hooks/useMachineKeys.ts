@@ -17,6 +17,8 @@ import {
   convertLegacyCapabilities,
   VfsStorageClient,
   getMachineKeysDir,
+  bytesToHex,
+  u128ToHex,
 } from '../../services';
 
 // Re-export types from store for backward compatibility
@@ -59,11 +61,6 @@ export interface UseMachineKeysReturn {
 // =============================================================================
 // Response conversion helpers
 // =============================================================================
-
-function bytesToHex(bytes: number[] | string): string {
-  if (typeof bytes === 'string') return bytes;
-  return bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 /**
  * Convert service capabilities to public API format.
@@ -112,15 +109,8 @@ function convertMachineRecord(
   currentMachineId?: string
 ): import('../../stores').MachineKeyRecord {
   // machine_id comes as a number from JSON, convert to hex string
-  const machineIdHex =
-    typeof record.machine_id === 'number'
-      ? '0x' + record.machine_id.toString(16).padStart(32, '0')
-      : record.machine_id.toString();
-
-  const authorizedByHex =
-    typeof record.authorized_by === 'number'
-      ? '0x' + record.authorized_by.toString(16).padStart(32, '0')
-      : record.authorized_by.toString();
+  const machineIdHex = u128ToHex(record.machine_id);
+  const authorizedByHex = u128ToHex(record.authorized_by);
 
   return {
     machineId: machineIdHex,

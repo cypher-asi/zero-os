@@ -9,66 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CredentialError, KeyError, SessionError, UserError, ZidError};
 use crate::keystore::{KeyScheme, LocalKeyStore, MachineKeyCapabilities, MachineKeyRecord};
+use crate::serde_helpers::u128_hex_string;
 use crate::session::SessionId;
 use crate::types::{User, UserId, UserStatus};
-
-// ============================================================================
-// Serde helpers for u128 as hex string (for JavaScript interop)
-// ============================================================================
-
-/// Serde module for serializing/deserializing u128 as hex string (e.g., "0x123abc")
-/// Also accepts numbers for backward compatibility.
-mod u128_hex_string {
-    use alloc::format;
-    use core::fmt;
-    use serde::{self, de, Deserializer, Serializer};
-
-    pub fn serialize<S>(value: &u128, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&format!("0x{:032x}", value))
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<u128, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct U128Visitor;
-
-        impl<'de> de::Visitor<'de> for U128Visitor {
-            type Value = u128;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a hex string like '0x...' or a number")
-            }
-
-            fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                let s = s.trim_start_matches("0x").trim_start_matches("0X");
-                u128::from_str_radix(s, 16).map_err(de::Error::custom)
-            }
-
-            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(v as u128)
-            }
-
-            fn visit_u128<E>(self, v: u128) -> Result<Self::Value, E>
-            where
-                E: de::Error,
-            {
-                Ok(v)
-            }
-        }
-
-        deserializer.deserialize_any(U128Visitor)
-    }
-}
 
 // ============================================================================
 // User Service Request/Response Types

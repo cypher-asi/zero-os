@@ -32,22 +32,11 @@ pub use terminal::{
 };
 pub use wire::{decode_envelope, encode_envelope, Envelope, PROTOCOL_VERSION};
 
-/// Message tags for Backend ↔ UI communication
+/// Message tags for Backend ↔ UI communication.
+///
+/// Re-exported from zos-ipc for single source of truth (Invariant 32).
 pub mod tags {
-    /// App → UI: State update
-    pub const MSG_APP_STATE: u32 = 0x2000;
-
-    /// UI → App: User input event
-    pub const MSG_APP_INPUT: u32 = 0x2001;
-
-    /// UI → App: UI surface ready notification
-    pub const MSG_UI_READY: u32 = 0x2002;
-
-    /// App → UI: Request focus
-    pub const MSG_APP_FOCUS: u32 = 0x2003;
-
-    /// App → UI: Error notification
-    pub const MSG_APP_ERROR: u32 = 0x2004;
+    pub use zos_ipc::app::*;
 }
 
 /// Type tags for payload identification

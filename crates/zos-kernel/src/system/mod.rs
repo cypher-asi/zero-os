@@ -413,39 +413,6 @@ impl<H: HAL> System<H> {
     }
 
     // ========================================================================
-    // Deprecated APIs
-    // ========================================================================
-
-    /// Send a message to a process's first endpoint (for testing only).
-    ///
-    /// **DEPRECATED: This function BYPASSES capability checks.**
-    ///
-    /// This method violates the capability-based security model by allowing
-    /// messages to be sent without proper endpoint capabilities. It exists
-    /// only for legacy test compatibility (pingpong test).
-    ///
-    /// # Migration Path
-    ///
-    /// New code should:
-    /// 1. Use `create_endpoint()` to create endpoints
-    /// 2. Use `grant_capability()` to share endpoint access
-    /// 3. Use `ipc_send()` with the granted capability slot
-    #[deprecated(
-        note = "Use ipc_send with proper capabilities instead. See method docs for migration path."
-    )]
-    pub fn send_to_process(
-        &mut self,
-        from_pid: ProcessId,
-        to_pid: ProcessId,
-        tag: u32,
-        data: Vec<u8>,
-    ) -> Result<(), KernelError> {
-        let timestamp = self.uptime_nanos();
-        self.kernel
-            .send_to_process(from_pid, to_pid, tag, data, timestamp)
-    }
-
-    // ========================================================================
     // Syscall Handling (higher-level API)
     // ========================================================================
 
@@ -556,6 +523,7 @@ fn execute_syscall_kernel_fn<H: HAL>(
             execute_capability_syscall(core, syscall_num, sender, args, timestamp)
         }
         0x40 | 0x41 => execute_ipc_syscall(core, syscall_num, sender, args, data, timestamp),
+        0x50 => (0, Vec::new()), // SYS_PS - success, data formatted in metrics.rs
         0x70..=0x74 => execute_storage_syscall(core, syscall_num, sender, data),
         0x90 => execute_network_syscall(core, sender, data),
         _ => (-1, Vec::new()),
