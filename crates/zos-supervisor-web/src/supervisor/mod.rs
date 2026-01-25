@@ -49,20 +49,23 @@
 
 mod axiom_sync;
 mod boot;
+mod ipc;
+mod legacy;
 mod metrics;
+mod network;
 mod spawn;
+mod storage;
 
 use std::collections::HashMap;
 
 use zos_hal::HAL;
 use zos_kernel::{ProcessId, System};
 use wasm_bindgen::prelude::*;
-use js_sys;
 
 use crate::hal::WasmHal;
 use crate::pingpong::PingPongTestState;
 use crate::syscall;
-use crate::worker::{WasmProcessHandle, WorkerMessage, WorkerMessageType};
+use crate::worker::WasmProcessHandle;
 
 // Note: Console I/O uses capability-checked IPC.
 // - Console output: Uses SYS_CONSOLE_WRITE syscall (supervisor delivers to UI)
@@ -76,7 +79,7 @@ extern "C" {
 
 /// Decode a hex string to bytes
 fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, &'static str> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err("Invalid hex length");
     }
     (0..hex.len())
@@ -109,9 +112,6 @@ pub struct Supervisor {
     console_buffer: Vec<String>,
     /// State for automated ping-pong test
     pingpong_test: PingPongTestState,
-    /// Pending spawn completion (name -> callback to call when spawn completes)
-    #[allow(dead_code)]
-    pending_spawn_name: Option<String>,
     /// Last CommitLog sequence number persisted to IndexedDB
     last_persisted_axiom_seq: u64,
     /// Whether Axiom IndexedDB storage has been initialized
@@ -149,24 +149,6 @@ pub struct Supervisor {
     terminal_endpoint_slots: HashMap<u64, u32>,
 }
 
-// =============================================================================
-// Storage Constants (matching zos-process::storage_result)
-// =============================================================================
-
-/// Storage result types for MSG_STORAGE_RESULT IPC
-mod storage_const {
-    // Storage result type constants from zos-ipc
-    pub const STORAGE_READ_OK: u8 = zos_ipc::storage::result::READ_OK;
-    pub const STORAGE_WRITE_OK: u8 = zos_ipc::storage::result::WRITE_OK;
-    pub const STORAGE_NOT_FOUND: u8 = zos_ipc::storage::result::NOT_FOUND;
-    pub const STORAGE_ERROR: u8 = zos_ipc::storage::result::ERROR;
-    pub const STORAGE_LIST_OK: u8 = zos_ipc::storage::result::LIST_OK;
-    pub const STORAGE_EXISTS_OK: u8 = zos_ipc::storage::result::EXISTS_OK;
-    
-    /// MSG_STORAGE_RESULT tag from zos-ipc (the single source of truth)
-    pub const MSG_STORAGE_RESULT: u32 = zos_ipc::storage::MSG_STORAGE_RESULT;
-}
-
 #[wasm_bindgen]
 impl Supervisor {
     /// Create a new supervisor
@@ -186,7 +168,6 @@ impl Supervisor {
             spawn_callback: None,
             console_buffer: Vec::new(),
             pingpong_test: PingPongTestState::Idle,
-            pending_spawn_name: None,
             last_persisted_axiom_seq: 0,
             axiom_storage_ready: false,
             init_spawned: false,
@@ -346,43 +327,6 @@ impl Supervisor {
             }
         }
     }
-    
-    /// Route console input through Init (fallback when supervisor lacks capability)
-    fn route_console_input_via_init(&mut self, target_pid: u64, input: &str) {
-        let init_slot = match self.init_endpoint_slot {
-            Some(slot) => slot,
-            None => {
-                log("[supervisor] Cannot route console input: no Init capability");
-                return;
-            }
-        };
-        
-        // Build message for Init: [target_pid: u32, endpoint_slot: u32, data_len: u16, data: [u8]]
-        let mut payload = Vec::with_capacity(10 + input.len());
-        payload.extend_from_slice(&(target_pid as u32).to_le_bytes());
-        payload.extend_from_slice(&1u32.to_le_bytes()); // Terminal input slot
-        payload.extend_from_slice(&(input.len() as u16).to_le_bytes());
-        payload.extend_from_slice(input.as_bytes());
-        
-        let supervisor_pid = ProcessId(0);
-        use zos_ipc::supervisor::MSG_SUPERVISOR_CONSOLE_INPUT;
-        
-        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_CONSOLE_INPUT, payload) {
-            Ok(()) => {
-                log(&format!(
-                    "[supervisor] Routed {} bytes to PID {} via Init",
-                    input.len(),
-                    target_pid
-                ));
-            }
-            Err(e) => {
-                log(&format!(
-                    "[supervisor] Failed to route console input via Init: {:?}",
-                    e
-                ));
-            }
-        }
-    }
 
     /// Revoke/delete a capability from any process via PermissionManager
     ///
@@ -453,16 +397,6 @@ impl Supervisor {
         }
     }
     
-    /// Find the terminal process ID (returns first terminal found)
-    fn find_terminal_pid(&self) -> Option<ProcessId> {
-        for (pid, proc) in self.system.list_processes() {
-            if proc.name == "terminal" {
-                return Some(pid);
-            }
-        }
-        None
-    }
-
     /// Progress the ping-pong test state machine
     fn progress_pingpong_test(&mut self) {
         use crate::pingpong::{progress_pingpong_test, PingPongContext};
@@ -474,19 +408,10 @@ impl Supervisor {
                 let _ = callback.call1(&this, &arg);
             }
         };
-        let request_spawn = |t: &str, n: &str| {
-            if let Some(ref callback) = self.spawn_callback {
-                let this = JsValue::null();
-                let type_arg = JsValue::from_str(t);
-                let name_arg = JsValue::from_str(n);
-                let _ = callback.call2(&this, &type_arg, &name_arg);
-            }
-        };
-
         let mut ctx = PingPongContext {
             system: &mut self.system,
             write_console: &write_console,
-            request_spawn: &request_spawn,
+            init_endpoint_slot: self.init_endpoint_slot,
         };
 
         self.pingpong_test = progress_pingpong_test(&self.pingpong_test, &mut ctx);
@@ -628,6 +553,10 @@ impl Supervisor {
             syscall::handle_init_grant(&mut self.system, msg);
         } else if msg.starts_with("INIT:REVOKE:") {
             syscall::handle_init_revoke(&mut self.system, msg);
+        } else if let Some(rest) = msg.strip_prefix("INIT:KILL_OK:") {
+            self.handle_init_kill_ok(rest);
+        } else if let Some(rest) = msg.strip_prefix("INIT:KILL_FAIL:") {
+            self.handle_init_kill_fail(rest);
         } else if msg.starts_with("INIT:PERM_RESPONSE:") {
             log(&format!("[supervisor] Permission response: {}", msg));
         } else if msg.starts_with("INIT:PERM_LIST:") {
@@ -750,6 +679,48 @@ impl Supervisor {
         }
     }
 
+    /// Handle INIT:KILL_OK from Init.
+    ///
+    /// This is called when Init successfully kills a process via SYS_KILL.
+    /// After kernel-level cleanup is complete, we terminate the HAL worker.
+    ///
+    /// Format: "INIT:KILL_OK:{pid}"
+    fn handle_init_kill_ok(&mut self, pid_str: &str) {
+        let target_pid: u64 = match pid_str.parse() {
+            Ok(p) => p,
+            Err(_) => {
+                log(&format!("[supervisor] INIT:KILL_OK: invalid PID '{}'", pid_str));
+                return;
+            }
+        };
+
+        log(&format!(
+            "[supervisor] Init confirmed kill of PID {}, terminating HAL worker",
+            target_pid
+        ));
+
+        // Kernel process is dead, now cleanup the HAL worker
+        let handle = WasmProcessHandle::new(target_pid);
+        let _ = self.system.hal().kill_process(&handle);
+
+        // Cleanup supervisor state
+        self.cleanup_process_state(target_pid);
+    }
+
+    /// Handle INIT:KILL_FAIL from Init.
+    ///
+    /// This is called when Init fails to kill a process.
+    ///
+    /// Format: "INIT:KILL_FAIL:{pid}:{error_code}"
+    fn handle_init_kill_fail(&mut self, rest: &str) {
+        log(&format!(
+            "[supervisor] Init failed to kill process: {}",
+            rest
+        ));
+        // Process might already be dead or invalid PID
+        // No HAL cleanup needed since kernel kill failed
+    }
+
     /// Handle INIT:SPAWN: debug message.
     fn handle_debug_spawn(&mut self, service_name: &str) {
         log(&format!(
@@ -757,142 +728,6 @@ impl Supervisor {
             service_name
         ));
         self.request_spawn(service_name, service_name);
-    }
-
-    /// Handle SERVICE:RESPONSE: debug message.
-    ///
-    /// Format: {to_pid}:{tag_hex}:{hex_data}
-    /// Example: "0:00007055:7b22..."
-    fn handle_debug_service_response(&self, rest: &str) {
-        let parts: Vec<&str> = rest.splitn(3, ':').collect();
-        if parts.len() != 3 {
-            log(&format!("[supervisor] Malformed SERVICE:RESPONSE: {}", rest));
-            return;
-        }
-
-        let request_id = parts[1]; // tag hex is the request_id
-        let hex_data = parts[2];
-
-        // Invoke JS callback if registered
-        let Some(ref callback) = self.ipc_response_callback else {
-            log(&format!(
-                "[supervisor] SERVICE:RESPONSE received but no callback registered (request_id={})",
-                request_id
-            ));
-            return;
-        };
-
-        let bytes = match hex_to_bytes(hex_data) {
-            Ok(b) => b,
-            Err(_) => {
-                log(&format!(
-                    "[supervisor] SERVICE:RESPONSE invalid hex for request_id={}",
-                    request_id
-                ));
-                return;
-            }
-        };
-
-        let json = match String::from_utf8(bytes) {
-            Ok(j) => j,
-            Err(_) => {
-                log(&format!(
-                    "[supervisor] SERVICE:RESPONSE invalid UTF-8 for request_id={}",
-                    request_id
-                ));
-                return;
-            }
-        };
-
-        let this = JsValue::null();
-        let id_arg = JsValue::from_str(request_id);
-        let data_arg = JsValue::from_str(&json);
-        let _ = callback.call2(&this, &id_arg, &data_arg);
-        log(&format!(
-            "[supervisor] Invoked IPC callback for request_id={}",
-            request_id
-        ));
-    }
-
-    /// Handle VFS:RESPONSE: debug message.
-    ///
-    /// Format: {to_pid}:{tag_hex}:{hex_data}
-    /// Example: "4:00008013:7b22..."
-    /// Routes VFS responses back to the requesting process via Init.
-    fn handle_debug_vfs_response(&mut self, rest: &str) {
-        let parts: Vec<&str> = rest.splitn(3, ':').collect();
-        if parts.len() != 3 {
-            log(&format!("[supervisor] Malformed VFS:RESPONSE: {}", rest));
-            return;
-        }
-
-        let to_pid = match parts[0].parse::<u32>() {
-            Ok(p) => p,
-            Err(_) => {
-                log(&format!("[supervisor] VFS:RESPONSE invalid PID: {}", parts[0]));
-                return;
-            }
-        };
-
-        let tag = match u32::from_str_radix(parts[1], 16) {
-            Ok(t) => t,
-            Err(_) => {
-                log(&format!("[supervisor] VFS:RESPONSE invalid tag: {}", parts[1]));
-                return;
-            }
-        };
-
-        let data = match hex_to_bytes(parts[2]) {
-            Ok(d) => d,
-            Err(_) => {
-                log("[supervisor] VFS:RESPONSE invalid hex data");
-                return;
-            }
-        };
-
-        // Route response through Init for capability-checked delivery
-        // Use slot 4 (VFS_RESPONSE_SLOT) instead of slot 1 to avoid race conditions
-        // where the VFS client's blocking receive could consume other IPC messages.
-        const VFS_RESPONSE_SLOT: u32 = 4;
-        self.route_ipc_via_init(to_pid as u64, VFS_RESPONSE_SLOT, tag, &data);
-    }
-    
-    /// Route an IPC message through Init for capability-checked delivery
-    fn route_ipc_via_init(&mut self, target_pid: u64, endpoint_slot: u32, tag: u32, data: &[u8]) {
-        let init_slot = match self.init_endpoint_slot {
-            Some(slot) => slot,
-            None => {
-                log("[supervisor] Cannot route IPC: no Init capability");
-                return;
-            }
-        };
-        
-        use zos_ipc::supervisor::MSG_SUPERVISOR_IPC_DELIVERY;
-        
-        // Build message for Init: [target_pid: u32, endpoint_slot: u32, tag: u32, data_len: u16, data: [u8]]
-        let mut payload = Vec::with_capacity(14 + data.len());
-        payload.extend_from_slice(&(target_pid as u32).to_le_bytes());
-        payload.extend_from_slice(&endpoint_slot.to_le_bytes());
-        payload.extend_from_slice(&tag.to_le_bytes());
-        payload.extend_from_slice(&(data.len() as u16).to_le_bytes());
-        payload.extend_from_slice(data);
-        
-        let supervisor_pid = ProcessId(0);
-        
-        match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_IPC_DELIVERY, payload) {
-            Ok(()) => {
-                log(&format!(
-                    "[supervisor] Routed IPC to PID {} endpoint {} tag 0x{:x} via Init",
-                    target_pid, endpoint_slot, tag
-                ));
-            }
-            Err(e) => {
-                log(&format!(
-                    "[supervisor] Failed to route IPC via Init: {:?}",
-                    e
-                ));
-            }
-        }
     }
 
     /// Handle default debug message (console output).
@@ -918,9 +753,14 @@ impl Supervisor {
         let args4 = [exit_code, 0, 0, 0];
         let (result, _, _) = self.system.process_syscall(pid, 0x11, args4, &[]);
 
-        // Kill the worker process
-        let handle = WasmProcessHandle::new(pid.0);
-        let _ = self.system.hal().kill_process(&handle);
+        // Route kill request through Init (except for Init itself)
+        if pid.0 == 1 {
+            // Init cannot kill itself via IPC, use direct kill
+            self.kill_process_direct(pid);
+        } else {
+            // Route through Init for proper auditing
+            self.kill_process_via_init(pid);
+        }
 
         result as i32
     }
@@ -950,165 +790,6 @@ impl Supervisor {
         result as i32
     }
 
-    /// Process pending messages from Workers (legacy postMessage path)
-    #[wasm_bindgen]
-    pub fn process_worker_messages(&mut self) -> usize {
-        const MAX_MESSAGES_PER_BATCH: usize = 5000;
-
-        let incoming = self.system.hal().incoming_messages();
-        let messages: Vec<WorkerMessage> = {
-            if let Ok(mut queue) = incoming.lock() {
-                let take_count = queue.len().min(MAX_MESSAGES_PER_BATCH);
-                queue.drain(..take_count).collect()
-            } else {
-                return 0;
-            }
-        };
-
-        let count = messages.len();
-
-        for msg in messages {
-            match msg.msg_type {
-                WorkerMessageType::Ready { memory_size } => {
-                    self.system
-                        .hal()
-                        .update_process_memory(msg.pid, memory_size);
-                    log(&format!(
-                        "[supervisor] Worker {} ready, memory: {} bytes",
-                        msg.pid, memory_size
-                    ));
-                }
-                WorkerMessageType::Syscall { syscall_num, args } => {
-                    self.handle_worker_syscall(msg.pid, syscall_num, args, &msg.data);
-                }
-                WorkerMessageType::Error { ref message } => {
-                    log(&format!(
-                        "[supervisor] Worker {} error: {}",
-                        msg.pid, message
-                    ));
-                }
-                WorkerMessageType::Terminated => {
-                    log(&format!("[supervisor] Worker {} terminated", msg.pid));
-                    let pid = ProcessId(msg.pid);
-                    if self.system.get_process(pid).is_some() {
-                        // Route through Init for proper auditing
-                        self.cleanup_process_state(msg.pid);
-                        if msg.pid != 1 && self.init_endpoint_slot.is_some() {
-                            self.kill_process_via_init(pid);
-                        } else {
-                            self.kill_process_direct(pid);
-                        }
-                    }
-                }
-                WorkerMessageType::MemoryUpdate { memory_size } => {
-                    self.system
-                        .hal()
-                        .update_process_memory(msg.pid, memory_size);
-                    let pid = ProcessId(msg.pid);
-                    self.system.update_process_memory(pid, memory_size);
-                }
-                WorkerMessageType::Yield => {
-                    // Worker yielded - nothing to do
-                }
-            }
-        }
-
-        count
-    }
-
-    /// Handle a syscall from a Worker process (legacy postMessage path)
-    fn handle_worker_syscall(&mut self, pid: u64, syscall_num: u32, args: [u32; 3], data: &[u8]) {
-        use zos_kernel::{Syscall, SyscallResult};
-
-        let process_id = ProcessId(pid);
-
-        // Check if process exists in kernel
-        if self.system.get_process(process_id).is_none() {
-            log(&format!(
-                "[supervisor] Syscall from unknown process {}",
-                pid
-            ));
-            return;
-        }
-
-        // Parse syscall based on syscall_num (legacy numbering)
-        let result = match syscall_num {
-            0 => SyscallResult::Ok(0), // NOP
-            1 => {
-                // SYS_DEBUG
-                if let Ok(s) = std::str::from_utf8(data) {
-                    if let Some(service_name) = s.strip_prefix("INIT:SPAWN:") {
-                        log(&format!(
-                            "[supervisor] Init requesting spawn of '{}'",
-                            service_name
-                        ));
-                        self.request_spawn(service_name, service_name);
-                    } else if s.starts_with("INIT:GRANT:") {
-                        syscall::handle_init_grant(&mut self.system, s);
-                    } else if s.starts_with("INIT:REVOKE:") {
-                        syscall::handle_init_revoke(&mut self.system, s);
-                    } else if let Some(init_msg) = s.strip_prefix("INIT:") {
-                        log(&format!("[init] {}", init_msg));
-                    } else {
-                        log(&format!("[process {}] {}", pid, s));
-                    }
-                }
-                SyscallResult::Ok(0)
-            }
-            2 => self
-                .system
-                .handle_syscall(process_id, Syscall::CreateEndpoint),
-            3 => {
-                let slot = args[0];
-                let tag = args[1];
-                let syscall = Syscall::Send {
-                    endpoint_slot: slot,
-                    tag,
-                    data: data.to_vec(),
-                };
-                self.system.handle_syscall(process_id, syscall)
-            }
-            4 => {
-                let slot = args[0];
-                let syscall = Syscall::Receive {
-                    endpoint_slot: slot,
-                };
-                self.system.handle_syscall(process_id, syscall)
-            }
-            5 => self.system.handle_syscall(process_id, Syscall::ListCaps),
-            6 => self
-                .system
-                .handle_syscall(process_id, Syscall::ListProcesses),
-            7 => {
-                let exit_code = args[0] as i32;
-                log(&format!(
-                    "[supervisor] Process {} exiting with code {}",
-                    pid, exit_code
-                ));
-                // Route through Init for proper auditing
-                self.cleanup_process_state(pid);
-                if pid != 1 && self.init_endpoint_slot.is_some() {
-                    self.kill_process_via_init(process_id);
-                } else {
-                    self.kill_process_direct(process_id);
-                }
-                SyscallResult::Ok(0)
-            }
-            8 => self.system.handle_syscall(process_id, Syscall::GetTime),
-            9 => SyscallResult::Ok(0), // SYS_YIELD
-            _ => {
-                log(&format!(
-                    "[supervisor] Unknown syscall {} from process {}",
-                    syscall_num, pid
-                ));
-                SyscallResult::Err(zos_kernel::KernelError::PermissionDenied)
-            }
-        };
-
-        // Send result back to Worker
-        syscall::send_syscall_result(self.system.hal(), pid, result);
-    }
-
     /// Kill a process by PID.
     ///
     /// # Architecture: Kill Routing
@@ -1129,12 +810,13 @@ impl Supervisor {
         self.cleanup_process_state(pid);
         
         // Route through Init for non-Init processes
-        if pid != 1 && self.init_endpoint_slot.is_some() {
-            self.kill_process_via_init(process_id);
-        } else {
-            // Direct kill for Init or if Init isn't available (bootstrap)
+        if pid == 1 {
+            // Direct kill for Init only (Init cannot kill itself)
             self.kill_process_direct(process_id);
+            return;
         }
+
+        self.kill_process_via_init(process_id);
     }
     
     /// Route a kill request through Init via MSG_SUPERVISOR_KILL_PROCESS.
@@ -1146,7 +828,6 @@ impl Supervisor {
             Some(slot) => slot,
             None => {
                 log("[supervisor] Cannot route kill via Init: no Init capability");
-                self.kill_process_direct(target_pid);
                 return;
             }
         };
@@ -1160,35 +841,47 @@ impl Supervisor {
         match self.system.ipc_send(supervisor_pid, init_slot, MSG_SUPERVISOR_KILL_PROCESS, payload) {
             Ok(()) => {
                 log(&format!(
-                    "[supervisor] Sent kill request for PID {} to Init",
+                    "[supervisor] Sent kill request for PID {} to Init (awaiting INIT:KILL_OK)",
                     target_pid.0
                 ));
                 // Init will invoke SYS_KILL and notify supervisor via INIT:KILL_OK/FAIL
-                // We still need to kill the HAL worker
-                let handle = WasmProcessHandle::new(target_pid.0);
-                let _ = self.system.hal().kill_process(&handle);
+                // HAL worker cleanup happens in handle_init_kill_ok() after confirmation
             }
             Err(e) => {
                 log(&format!(
-                    "[supervisor] Failed to route kill via Init: {:?}, falling back to direct",
+                    "[supervisor] Failed to route kill via Init: {:?}",
                     e
                 ));
-                self.kill_process_direct(target_pid);
             }
         }
     }
     
-    /// Directly kill a process via kernel call (fallback/bootstrap).
+    /// Directly kill a process via kernel call (bootstrap-only exception).
     ///
-    /// Used when Init is not available (bootstrap) or for killing Init itself.
+    /// # Invariant Exception
+    ///
+    /// This method violates Invariant 13 & 16 (supervisor must not have direct
+    /// kernel access) but is permitted ONLY for:
+    ///
+    /// 1. **Init (PID 1) termination**: Init cannot kill itself via IPC
+    /// 2. **Bootstrap failures**: Before Init is fully spawned
+    ///
+    /// All other process kills MUST route through `kill_process_via_init()`.
+    ///
+    /// # Rationale
+    ///
+    /// - Init is the IPC routing hub, so it cannot route messages to itself
+    /// - During bootstrap, Init may not be ready to handle IPC
+    /// - This is an architectural necessity, not a design flaw
     fn kill_process_direct(&mut self, process_id: ProcessId) {
         log(&format!(
-            "[supervisor] Direct kill of PID {} (Init unavailable or bootstrap)",
+            "[supervisor] DIRECT KILL (bootstrap exception) PID {}",
             process_id.0
         ));
         self.system.kill_process(process_id);
         let handle = WasmProcessHandle::new(process_id.0);
         let _ = self.system.hal().kill_process(&handle);
+        self.cleanup_process_state(process_id.0);
     }
 
     /// Clean up supervisor state for a killed process
@@ -1202,6 +895,16 @@ impl Supervisor {
         if self.terminal_endpoint_slots.remove(&pid).is_some() {
             log(&format!("[supervisor] Cleaned up terminal endpoint slot for PID {}", pid));
         }
+    }
+
+    /// Find the terminal process ID (returns first terminal found)
+    fn find_terminal_pid(&self) -> Option<ProcessId> {
+        for (pid, proc) in self.system.list_processes() {
+            if proc.name == "terminal" {
+                return Some(pid);
+            }
+        }
+        None
     }
 
     /// Kill all processes.
@@ -1223,11 +926,7 @@ impl Supervisor {
         for pid in &pids {
             if pid.0 != 1 {
                 self.cleanup_process_state(pid.0);
-                if self.init_endpoint_slot.is_some() {
-                    self.kill_process_via_init(*pid);
-                } else {
-                    self.kill_process_direct(*pid);
-                }
+                self.kill_process_via_init(*pid);
             }
         }
         
@@ -1241,18 +940,72 @@ impl Supervisor {
     }
 
     // ==========================================================================
-    // Generic Service IPC API - Thin boundary layer for service communication
+    // Wasm-bindgen wrappers for storage callbacks
+    // ==========================================================================
+
+    /// Initialize the async storage system.
+    ///
+    /// This must be called by React after the supervisor is created to set up
+    /// the ZosStorage callbacks. ZosStorage needs a reference to the supervisor
+    /// to call notify_storage_* methods.
+    #[wasm_bindgen]
+    pub fn init_storage(&self) {
+        // ZosStorage.init is called from React with the supervisor reference
+        // This method exists for documentation purposes - actual init happens in JS
+        log("[supervisor] Storage system ready (init_storage called)");
+    }
+
+    /// Called by JavaScript when storage read completes successfully.
+    #[wasm_bindgen]
+    pub fn notify_storage_read_complete(&mut self, request_id: u32, data: &[u8]) {
+        self.notify_storage_read_complete_internal(request_id, data)
+    }
+
+    /// Called by JavaScript when storage read returns not found.
+    #[wasm_bindgen]
+    pub fn notify_storage_not_found(&mut self, request_id: u32) {
+        self.notify_storage_not_found_internal(request_id)
+    }
+
+    /// Called by JavaScript when storage write/delete completes successfully.
+    #[wasm_bindgen]
+    pub fn notify_storage_write_complete(&mut self, request_id: u32) {
+        self.notify_storage_write_complete_internal(request_id)
+    }
+
+    /// Called by JavaScript when storage list completes.
+    #[wasm_bindgen]
+    pub fn notify_storage_list_complete(&mut self, request_id: u32, keys_json: &str) {
+        self.notify_storage_list_complete_internal(request_id, keys_json)
+    }
+
+    /// Called by JavaScript when storage exists check completes.
+    #[wasm_bindgen]
+    pub fn notify_storage_exists_complete(&mut self, request_id: u32, exists: bool) {
+        self.notify_storage_exists_complete_internal(request_id, exists)
+    }
+
+    /// Called by JavaScript when storage operation fails.
+    #[wasm_bindgen]
+    pub fn notify_storage_error(&mut self, request_id: u32, error: &str) {
+        self.notify_storage_error_internal(request_id, error)
+    }
+
+    // ==========================================================================
+    // Wasm-bindgen wrappers for network callbacks
+    // ==========================================================================
+
+    /// Called by JavaScript ZosNetwork when a network fetch completes.
+    #[wasm_bindgen(js_name = "onNetworkResult")]
+    pub fn on_network_result(&mut self, request_id: u32, pid: u64, result: JsValue) {
+        self.on_network_result_internal(request_id, pid, result)
+    }
+
+    // ==========================================================================
+    // Wasm-bindgen wrappers for IPC methods
     // ==========================================================================
 
     /// Register a callback for IPC responses from services.
-    ///
-    /// This callback is invoked immediately when a SERVICE:RESPONSE debug message
-    /// is received from a service process. The callback receives:
-    /// - request_id: The response tag as hex string (e.g., "00007055")
-    /// - data: The JSON response data as a string
-    ///
-    /// This is event-based, not polling-based. The supervisor does NOT store
-    /// responses - it invokes the callback immediately when they arrive.
     #[wasm_bindgen]
     pub fn set_ipc_response_callback(&mut self, callback: js_sys::Function) {
         self.ipc_response_callback = Some(callback);
@@ -1260,21 +1013,6 @@ impl Supervisor {
     }
 
     /// Send an IPC message to a named service via capability-checked IPC.
-    ///
-    /// This method routes the message through Init for capability-checked delivery.
-    /// Init then forwards the message to the service.
-    ///
-    /// The request_id is the expected response tag as hex (response_tag = request_tag + 1).
-    /// When the service responds, the IPC response callback is invoked with this request_id.
-    ///
-    /// # Arguments
-    /// - service_name: Service name without "_service" suffix (e.g., "identity", "vfs")
-    /// - tag: Request message tag (e.g., 0x7054 for MSG_GENERATE_NEURAL_KEY)
-    /// - data: JSON request data as a string
-    ///
-    /// # Returns
-    /// - On success: request_id string (e.g., "00007055")
-    /// - On error: "error:..." string
     #[wasm_bindgen]
     pub fn send_service_ipc(&mut self, service_name: &str, tag: u32, data: &str) -> String {
         let pid = match self.find_service_pid(service_name) {
@@ -1328,285 +1066,15 @@ impl Supervisor {
         }
     }
 
-    /// Find a service process by name.
-    ///
-    /// Looks up "{service_name}_service" in the process list.
-    fn find_service_pid(&self, service_name: &str) -> Option<ProcessId> {
-        let expected_name = format!("{}_service", service_name);
-        for (pid, proc) in self.system.list_processes() {
-            if proc.name == expected_name {
-                return Some(pid);
-            }
-        }
-        None
-    }
-
     // ==========================================================================
-    // Storage Initialization
+    // Wasm-bindgen wrapper for legacy worker messages
     // ==========================================================================
 
-    /// Initialize the async storage system.
-    ///
-    /// This must be called by React after the supervisor is created to set up
-    /// the ZosStorage callbacks. ZosStorage needs a reference to the supervisor
-    /// to call notify_storage_* methods.
-    ///
-    /// # Arguments
-    /// * `supervisor` - Reference to this supervisor (passed as JsValue)
-    ///
-    /// # Example (React)
-    /// ```js
-    /// const supervisor = new Supervisor();
-    /// window.ZosStorage.init(supervisor);
-    /// ```
+    /// Process pending messages from Workers (legacy postMessage path)
     #[wasm_bindgen]
-    pub fn init_storage(&self) {
-        // ZosStorage.init is called from React with the supervisor reference
-        // This method exists for documentation purposes - actual init happens in JS
-        log("[supervisor] Storage system ready (init_storage called)");
+    pub fn process_worker_messages(&mut self) -> usize {
+        self.process_worker_messages_internal()
     }
-
-    // ==========================================================================
-    // Storage Result Callbacks (called by JavaScript when IndexedDB completes)
-    // ==========================================================================
-
-    /// Called by JavaScript when storage read completes successfully.
-    ///
-    /// # Arguments
-    /// * `request_id` - The request ID returned from storage_read_async
-    /// * `data` - The read data as bytes
-    #[wasm_bindgen]
-    pub fn notify_storage_read_complete(&mut self, request_id: u32, data: &[u8]) {
-        log(&format!(
-            "[supervisor] notify_storage_read_complete: request_id={}, len={}",
-            request_id, data.len()
-        ));
-        
-        // Look up which PID requested this
-        let pid = match self.system.hal().take_storage_request_pid(request_id) {
-            Some(p) => p,
-            None => {
-                log(&format!(
-                    "[supervisor] Unknown storage request_id: {}",
-                    request_id
-                ));
-                return;
-            }
-        };
-        
-        // Build MSG_STORAGE_RESULT payload
-        // Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
-        let mut payload = Vec::with_capacity(9 + data.len());
-        payload.extend_from_slice(&request_id.to_le_bytes());
-        payload.push(storage_const::STORAGE_READ_OK);
-        payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
-        payload.extend_from_slice(data);
-        
-        // Deliver to requesting process via Init
-        self.deliver_storage_result(pid, &payload);
-    }
-
-    /// Called by JavaScript when storage read returns not found.
-    #[wasm_bindgen]
-    pub fn notify_storage_not_found(&mut self, request_id: u32) {
-        log(&format!(
-            "[supervisor] notify_storage_not_found: request_id={}",
-            request_id
-        ));
-        
-        let pid = match self.system.hal().take_storage_request_pid(request_id) {
-            Some(p) => p,
-            None => return,
-        };
-        
-        // Build MSG_STORAGE_RESULT payload for NOT_FOUND
-        let mut payload = Vec::with_capacity(9);
-        payload.extend_from_slice(&request_id.to_le_bytes());
-        payload.push(storage_const::STORAGE_NOT_FOUND);
-        payload.extend_from_slice(&0u32.to_le_bytes());
-        
-        self.deliver_storage_result(pid, &payload);
-    }
-
-    /// Called by JavaScript when storage write/delete completes successfully.
-    #[wasm_bindgen]
-    pub fn notify_storage_write_complete(&mut self, request_id: u32) {
-        log(&format!(
-            "[supervisor] notify_storage_write_complete: request_id={}",
-            request_id
-        ));
-        
-        let pid = match self.system.hal().take_storage_request_pid(request_id) {
-            Some(p) => p,
-            None => return,
-        };
-        
-        // Build MSG_STORAGE_RESULT payload for WRITE_OK
-        let mut payload = Vec::with_capacity(9);
-        payload.extend_from_slice(&request_id.to_le_bytes());
-        payload.push(storage_const::STORAGE_WRITE_OK);
-        payload.extend_from_slice(&0u32.to_le_bytes());
-        
-        self.deliver_storage_result(pid, &payload);
-    }
-
-    /// Called by JavaScript when storage list completes.
-    ///
-    /// # Arguments
-    /// * `request_id` - The request ID
-    /// * `keys_json` - JSON array of key strings
-    #[wasm_bindgen]
-    pub fn notify_storage_list_complete(&mut self, request_id: u32, keys_json: &str) {
-        log(&format!(
-            "[supervisor] notify_storage_list_complete: request_id={}, len={}",
-            request_id, keys_json.len()
-        ));
-        
-        let pid = match self.system.hal().take_storage_request_pid(request_id) {
-            Some(p) => p,
-            None => return,
-        };
-        
-        let data = keys_json.as_bytes();
-        let mut payload = Vec::with_capacity(9 + data.len());
-        payload.extend_from_slice(&request_id.to_le_bytes());
-        payload.push(storage_const::STORAGE_LIST_OK);
-        payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
-        payload.extend_from_slice(data);
-        
-        self.deliver_storage_result(pid, &payload);
-    }
-
-    /// Called by JavaScript when storage exists check completes.
-    ///
-    /// # Arguments
-    /// * `request_id` - The request ID
-    /// * `exists` - Whether the key exists
-    #[wasm_bindgen]
-    pub fn notify_storage_exists_complete(&mut self, request_id: u32, exists: bool) {
-        log(&format!(
-            "[supervisor] notify_storage_exists_complete: request_id={}, exists={}",
-            request_id, exists
-        ));
-        
-        let pid = match self.system.hal().take_storage_request_pid(request_id) {
-            Some(p) => p,
-            None => return,
-        };
-        
-        let mut payload = Vec::with_capacity(10);
-        payload.extend_from_slice(&request_id.to_le_bytes());
-        payload.push(storage_const::STORAGE_EXISTS_OK);
-        payload.extend_from_slice(&1u32.to_le_bytes()); // data_len = 1
-        payload.push(if exists { 1 } else { 0 });
-        
-        self.deliver_storage_result(pid, &payload);
-    }
-
-    /// Called by JavaScript when storage operation fails.
-    #[wasm_bindgen]
-    pub fn notify_storage_error(&mut self, request_id: u32, error: &str) {
-        log(&format!(
-            "[supervisor] notify_storage_error: request_id={}, error={}",
-            request_id, error
-        ));
-        
-        let pid = match self.system.hal().take_storage_request_pid(request_id) {
-            Some(p) => p,
-            None => return,
-        };
-        
-        let error_bytes = error.as_bytes();
-        let mut payload = Vec::with_capacity(9 + error_bytes.len());
-        payload.extend_from_slice(&request_id.to_le_bytes());
-        payload.push(storage_const::STORAGE_ERROR);
-        payload.extend_from_slice(&(error_bytes.len() as u32).to_le_bytes());
-        payload.extend_from_slice(error_bytes);
-        
-        self.deliver_storage_result(pid, &payload);
-    }
-
-    /// Deliver a storage result to a process via IPC through Init.
-    fn deliver_storage_result(&mut self, pid: u64, payload: &[u8]) {
-        // Route through Init for capability-checked delivery
-        // Use slot 1 (INPUT_ENDPOINT_SLOT) for storage results to services.
-        // Services like IdentityService and VfsService use storage syscalls and
-        // receive all IPC on slot 1 via the app_main! framework.
-        // Note: VFS_RESPONSE_SLOT (4) is for VFS *client* responses, not storage syscalls.
-        const INPUT_ENDPOINT_SLOT: u32 = 1;
-        
-        self.route_ipc_via_init(pid, INPUT_ENDPOINT_SLOT, storage_const::MSG_STORAGE_RESULT, payload);
-    }
-
-    // =========================================================================
-    // Network HAL Callbacks (called from JavaScript ZosNetwork)
-    // =========================================================================
-
-    /// Called by JavaScript ZosNetwork when a network fetch completes.
-    ///
-    /// # Arguments
-    /// * `request_id` - The request ID returned from network_fetch_async
-    /// * `pid` - The process ID that made the request
-    /// * `result` - JSON object with result: { Ok: HttpResponse } or { Err: string }
-    #[wasm_bindgen(js_name = "onNetworkResult")]
-    pub fn on_network_result(&mut self, request_id: u32, pid: u64, result: JsValue) {
-        log(&format!(
-            "[supervisor] onNetworkResult: request_id={}, pid={}",
-            request_id, pid
-        ));
-
-        // Verify the PID matches and remove from pending
-        let expected_pid = match self.system.hal().take_network_request_pid(request_id) {
-            Some(p) => p,
-            None => {
-                log(&format!(
-                    "[supervisor] Unknown network request_id: {}",
-                    request_id
-                ));
-                return;
-            }
-        };
-
-        if expected_pid != pid {
-            log(&format!(
-                "[supervisor] Network request PID mismatch: expected {}, got {}",
-                expected_pid, pid
-            ));
-            return;
-        }
-
-        // Serialize the result to JSON bytes
-        let result_json = match js_sys::JSON::stringify(&result) {
-            Ok(s) => s.as_string().unwrap_or_default(),
-            Err(_) => {
-                log("[supervisor] Failed to stringify network result");
-                r#"{"result":{"Err":"Internal error"}}"#.to_string()
-            }
-        };
-
-        // Build MSG_NET_RESULT payload
-        // Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
-        let result_bytes = result_json.as_bytes();
-        let mut payload = Vec::with_capacity(9 + result_bytes.len());
-        payload.extend_from_slice(&request_id.to_le_bytes());
-        payload.push(0); // NET_OK - the actual result status is in the JSON
-        payload.extend_from_slice(&(result_bytes.len() as u32).to_le_bytes());
-        payload.extend_from_slice(result_bytes);
-
-        // Deliver to requesting process via Init
-        self.deliver_network_result(pid, &payload);
-    }
-
-    /// Deliver a network result to a process via IPC through Init.
-    fn deliver_network_result(&mut self, pid: u64, payload: &[u8]) {
-        // Route through Init for capability-checked delivery
-        const INPUT_ENDPOINT_SLOT: u32 = 1;
-        // MSG_NET_RESULT = 0x9002
-        const MSG_NET_RESULT: u32 = 0x9002;
-        
-        self.route_ipc_via_init(pid, INPUT_ENDPOINT_SLOT, MSG_NET_RESULT, payload);
-    }
-
 }
 
 impl Default for Supervisor {
