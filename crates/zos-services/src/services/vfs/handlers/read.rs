@@ -1,6 +1,12 @@
 //! Read operation handlers for VFS Service
 //!
 //! Handles: stat, exists, read, readdir operations
+//!
+//! # Safety Properties
+//!
+//! - **Success**: inode read successfully, permissions checked, data returned
+//! - **Acceptable partial failure**: None (read is atomic)
+//! - **Forbidden**: Returning data without permission check
 
 use alloc::format;
 use alloc::string::String;
@@ -19,7 +25,7 @@ use zos_vfs::VfsError;
 
 use super::super::{
     content_key, derive_permission_context, inode_key, result_type_name, validate_path,
-    ClientContext, InodeOpType, PendingOp, VfsService,
+    ClientContext, InodeOpType, PendingOp, ReaddirStage, VfsService,
 };
 
 impl VfsService {
@@ -77,9 +83,11 @@ impl VfsService {
     pub fn handle_exists(&mut self, _ctx: &AppContext, msg: &Message) -> Result<(), AppError> {
         let request: ExistsRequest = match serde_json::from_slice(&msg.data) {
             Ok(r) => r,
-            Err(_) => {
-                // For exists, invalid request means path doesn't exist
-                let response = ExistsResponse { exists: false };
+            Err(e) => {
+                // Rule 1: Parse errors must return InvalidRequest, not false
+                let response = ExistsResponse {
+                    result: Err(VfsError::InvalidRequest(format!("Failed to parse request: {}", e))),
+                };
                 return self.send_response_via_debug(
                     msg.from_pid,
                     vfs_msg::MSG_VFS_EXISTS_RESPONSE,
@@ -89,8 +97,10 @@ impl VfsService {
         };
 
         // Validate path - invalid paths don't exist
-        if validate_path(&request.path).is_err() {
-            let response = ExistsResponse { exists: false };
+        if let Err(reason) = validate_path(&request.path) {
+            let response = ExistsResponse {
+                result: Err(VfsError::InvalidPath(String::from(reason))),
+            };
             return self.send_response_via_debug(
                 msg.from_pid,
                 vfs_msg::MSG_VFS_EXISTS_RESPONSE,
@@ -192,13 +202,14 @@ impl VfsService {
         let perm_ctx = derive_permission_context(msg.from_pid, &request.path);
         let client_ctx = ClientContext::from_message(msg);
 
-        // List children
-        self.start_storage_list(
+        // First read directory inode to check permissions
+        self.start_storage_read(
             &inode_key(&request.path),
-            PendingOp::ListChildren {
+            PendingOp::ReaddirOp {
                 ctx: client_ctx,
                 path: request.path,
                 perm_ctx,
+                stage: ReaddirStage::ReadingInode,
             },
         )
     }
@@ -268,7 +279,7 @@ impl VfsService {
         result_type: u8,
     ) -> Result<(), AppError> {
         let exists = result_type == storage_result::READ_OK;
-        let response = ExistsResponse { exists };
+        let response = ExistsResponse { result: Ok(exists) };
         self.send_response(client_ctx, vfs_msg::MSG_VFS_EXISTS_RESPONSE, &response)
     }
 
@@ -349,66 +360,103 @@ impl VfsService {
     pub fn handle_content_result(
         &self,
         client_ctx: &ClientContext,
-        _path: &str,
+        path: &str,
         result_type: u8,
         data: &[u8],
     ) -> Result<(), AppError> {
-        let response = if result_type == storage_result::READ_OK {
-            ReadFileResponse {
-                result: Ok(data.to_vec()),
+        let response = match result_type {
+            storage_result::READ_OK => {
+                ReadFileResponse {
+                    result: Ok(data.to_vec()),
+                }
             }
-        } else if result_type == storage_result::NOT_FOUND {
-            // File exists but content is empty
-            ReadFileResponse {
-                result: Ok(Vec::new()),
+            storage_result::NOT_FOUND => {
+                // Rule 5: If inode exists but content is missing, this is a storage inconsistency
+                // not an empty file. Return an error to surface the corruption.
+                syscall::debug(&format!(
+                    "VfsService: CORRUPTION: Content missing for existing inode {}",
+                    path
+                ));
+                ReadFileResponse {
+                    result: Err(VfsError::StorageError(
+                        "Content missing for existing inode".into(),
+                    )),
+                }
             }
-        } else {
-            ReadFileResponse {
-                result: Err(VfsError::StorageError(
-                    String::from_utf8_lossy(data).to_string(),
-                )),
+            _ => {
+                syscall::debug(&format!(
+                    "VfsService: read {} content fetch failed: {} ({})",
+                    path,
+                    result_type,
+                    result_type_name(result_type)
+                ));
+                ReadFileResponse {
+                    result: Err(VfsError::StorageError(format!(
+                        "Content read failed: {} ({})",
+                        result_type,
+                        result_type_name(result_type)
+                    ))),
+                }
             }
         };
         self.send_response(client_ctx, vfs_msg::MSG_VFS_READ_RESPONSE, &response)
     }
 
     /// Handle list children result
+    ///
+    /// DEPRECATED: This is the old handler. New code should use ReaddirOp state machine
+    /// which properly checks permissions before listing.
     pub fn handle_list_children_result(
         &self,
         client_ctx: &ClientContext,
         result_type: u8,
         data: &[u8],
     ) -> Result<(), AppError> {
-        let response = if result_type == storage_result::LIST_OK {
-            // data is JSON array of keys
-            match serde_json::from_slice::<Vec<String>>(data) {
-                Ok(keys) => {
-                    // Convert keys to DirEntry (simplified - would need to fetch each inode)
-                    let entries: Vec<DirEntry> = keys
-                        .iter()
-                        .map(|path| {
-                            let name = path.rsplit('/').next().unwrap_or(path).to_string();
-                            DirEntry {
-                                name,
-                                path: path.clone(),
-                                is_directory: false, // Would need inode to know
-                                is_symlink: false,
-                                size: 0,
-                                modified_at: 0,
-                            }
-                        })
-                        .collect();
-                    ReaddirResponse {
-                        result: Ok(entries),
+        let response = match result_type {
+            storage_result::LIST_OK => {
+                // data is JSON array of keys
+                match serde_json::from_slice::<Vec<String>>(data) {
+                    Ok(keys) => {
+                        // Convert keys to DirEntry (simplified - would need to fetch each inode)
+                        let entries: Vec<DirEntry> = keys
+                            .iter()
+                            .map(|path| {
+                                let name = path.rsplit('/').next().unwrap_or(path).to_string();
+                                DirEntry {
+                                    name,
+                                    path: path.clone(),
+                                    is_directory: false, // Would need inode to know
+                                    is_symlink: false,
+                                    size: 0,
+                                    modified_at: 0,
+                                }
+                            })
+                            .collect();
+                        ReaddirResponse {
+                            result: Ok(entries),
+                        }
                     }
+                    Err(e) => ReaddirResponse {
+                        result: Err(VfsError::StorageError(e.to_string())),
+                    },
                 }
-                Err(e) => ReaddirResponse {
-                    result: Err(VfsError::StorageError(e.to_string())),
-                },
             }
-        } else {
-            ReaddirResponse {
-                result: Ok(Vec::new()), // Empty for errors/not found
+            storage_result::NOT_FOUND => {
+                // Rule 5: NOT_FOUND on list means directory doesn't exist or has no children
+                // Since we should have checked existence first via ReaddirOp, this is unexpected
+                ReaddirResponse {
+                    result: Err(VfsError::NotFound),
+                }
+            }
+            _ => {
+                // Rule 5: Return proper error for unexpected result types
+                ReaddirResponse {
+                    result: Err(VfsError::StorageError(format!(
+                        "List failed: {} ({})",
+                        result_type,
+                        result_type_name(result_type)
+                    ))),
+                }
             }
         };
         self.send_response(client_ctx, vfs_msg::MSG_VFS_READDIR_RESPONSE, &response)
@@ -421,12 +469,199 @@ impl VfsService {
         result_type: u8,
         data: &[u8],
     ) -> Result<(), AppError> {
-        let exists = if result_type == storage_result::EXISTS_OK {
-            !data.is_empty() && data[0] == 1
-        } else {
-            false
+        let response = match result_type {
+            storage_result::EXISTS_OK => {
+                let exists = !data.is_empty() && data[0] == 1;
+                ExistsResponse { result: Ok(exists) }
+            }
+            storage_result::NOT_FOUND => {
+                ExistsResponse { result: Ok(false) }
+            }
+            _ => {
+                ExistsResponse {
+                    result: Err(VfsError::StorageError(format!(
+                        "Exists check failed: unexpected result type {}",
+                        result_type
+                    ))),
+                }
+            }
         };
-        let response = ExistsResponse { exists };
         self.send_response(client_ctx, vfs_msg::MSG_VFS_EXISTS_RESPONSE, &response)
+    }
+
+    // =========================================================================
+    // Readdir State Machine
+    // =========================================================================
+
+    /// Handle readdir operation result (state machine)
+    ///
+    /// This handler implements the readdir state machine:
+    /// 1. ReadingInode: Read directory inode to check it exists and is a directory
+    /// 2. ListingChildren: Permission checked, list children
+    pub fn handle_readdir_op_result(
+        &mut self,
+        client_ctx: &ClientContext,
+        path: &str,
+        perm_ctx: &PermissionContext,
+        stage: ReaddirStage,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        match stage {
+            ReaddirStage::ReadingInode => {
+                self.handle_readdir_reading_inode(client_ctx, path, perm_ctx, result_type, data)
+            }
+            ReaddirStage::ListingChildren => {
+                self.handle_readdir_listing_children(client_ctx, result_type, data)
+            }
+        }
+    }
+
+    /// Stage 1: Read directory inode and check permissions
+    fn handle_readdir_reading_inode(
+        &mut self,
+        client_ctx: &ClientContext,
+        path: &str,
+        perm_ctx: &PermissionContext,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        // Handle result type strictly
+        match result_type {
+            storage_result::READ_OK => {
+                // Good - parse and validate
+            }
+            storage_result::NOT_FOUND => {
+                let response = ReaddirResponse {
+                    result: Err(VfsError::NotFound),
+                };
+                return self.send_response(client_ctx, vfs_msg::MSG_VFS_READDIR_RESPONSE, &response);
+            }
+            _ => {
+                syscall::debug(&format!(
+                    "VfsService: readdir {} inode read failed: {} ({})",
+                    path,
+                    result_type,
+                    result_type_name(result_type)
+                ));
+                let response = ReaddirResponse {
+                    result: Err(VfsError::StorageError(format!(
+                        "Inode read failed: {} ({})",
+                        result_type,
+                        result_type_name(result_type)
+                    ))),
+                };
+                return self.send_response(client_ctx, vfs_msg::MSG_VFS_READDIR_RESPONSE, &response);
+            }
+        }
+
+        // Parse inode - FAIL CLOSED on parse error
+        let inode = match serde_json::from_slice::<Inode>(data) {
+            Ok(inode) => inode,
+            Err(e) => {
+                syscall::debug(&format!(
+                    "VfsService: SECURITY: Failed to parse inode for readdir {}: {} (denying)",
+                    path, e
+                ));
+                let response = ReaddirResponse {
+                    result: Err(VfsError::StorageError(format!(
+                        "Inode corrupt or invalid: {}",
+                        e
+                    ))),
+                };
+                return self.send_response(client_ctx, vfs_msg::MSG_VFS_READDIR_RESPONSE, &response);
+            }
+        };
+
+        // SECURITY: Verify path is a directory
+        if !inode.is_directory() {
+            syscall::debug(&format!(
+                "VfsService: readdir {} failed - not a directory (type: {:?})",
+                path, inode.inode_type
+            ));
+            let response = ReaddirResponse {
+                result: Err(VfsError::NotADirectory),
+            };
+            return self.send_response(client_ctx, vfs_msg::MSG_VFS_READDIR_RESPONSE, &response);
+        }
+
+        // Check read permission on directory
+        if !check_read(&inode, perm_ctx) {
+            syscall::debug(&format!(
+                "VfsService: Permission denied for readdir {} (pid={})",
+                path, client_ctx.pid
+            ));
+            let response = ReaddirResponse {
+                result: Err(VfsError::PermissionDenied),
+            };
+            return self.send_response(client_ctx, vfs_msg::MSG_VFS_READDIR_RESPONSE, &response);
+        }
+
+        // Permission granted - list children
+        self.start_storage_list(
+            &inode_key(path),
+            PendingOp::ReaddirOp {
+                ctx: client_ctx.clone(),
+                path: path.to_string(),
+                perm_ctx: perm_ctx.clone(),
+                stage: ReaddirStage::ListingChildren,
+            },
+        )
+    }
+
+    /// Stage 2: Handle list children result
+    fn handle_readdir_listing_children(
+        &self,
+        client_ctx: &ClientContext,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        let response = match result_type {
+            storage_result::LIST_OK => {
+                // data is JSON array of keys
+                match serde_json::from_slice::<Vec<String>>(data) {
+                    Ok(keys) => {
+                        // Convert keys to DirEntry
+                        let entries: Vec<DirEntry> = keys
+                            .iter()
+                            .map(|path| {
+                                let name = path.rsplit('/').next().unwrap_or(path).to_string();
+                                DirEntry {
+                                    name,
+                                    path: path.clone(),
+                                    is_directory: false, // Would need inode to know
+                                    is_symlink: false,
+                                    size: 0,
+                                    modified_at: 0,
+                                }
+                            })
+                            .collect();
+                        ReaddirResponse {
+                            result: Ok(entries),
+                        }
+                    }
+                    Err(e) => ReaddirResponse {
+                        result: Err(VfsError::StorageError(e.to_string())),
+                    },
+                }
+            }
+            storage_result::NOT_FOUND => {
+                // No children (empty directory)
+                ReaddirResponse {
+                    result: Ok(Vec::new()),
+                }
+            }
+            _ => {
+                // Unexpected result type - return error
+                ReaddirResponse {
+                    result: Err(VfsError::StorageError(format!(
+                        "List failed: {} ({})",
+                        result_type,
+                        result_type_name(result_type)
+                    ))),
+                }
+            }
+        };
+        self.send_response(client_ctx, vfs_msg::MSG_VFS_READDIR_RESPONSE, &response)
     }
 }

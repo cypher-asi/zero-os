@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { createElement } from 'react';
-import { useIdentityState, type User } from '../../desktop/hooks/useIdentity';
+import { useIdentityState, type User } from '../../src/desktop/hooks/useIdentity';
 
 /**
  * End-to-End Identity and VFS Integration Test

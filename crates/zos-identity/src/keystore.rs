@@ -1,6 +1,26 @@
 //! Cryptographic key storage for the Identity layer.
 //!
 //! Provides types and operations for Zero-ID key management.
+//!
+//! # Safety Invariants (per zos-service.md Rule 0)
+//!
+//! ## Success Conditions
+//! - Key operations succeed only when:
+//!   1. All public keys are exactly 32 bytes (Ed25519/X25519)
+//!   2. User ID is valid (non-zero)
+//!   3. Key epoch is >= 1
+//!   4. Machine ID is unique within user scope
+//!
+//! ## Acceptable Partial Failure
+//! - Post-quantum keys (pq_signing_public_key, pq_encryption_public_key) may be None
+//! - Machine name may be None
+//! - Capabilities may be empty (defaults apply)
+//!
+//! ## Forbidden States
+//! - Zero-length public keys
+//! - Epoch of 0 (must start at 1)
+//! - Duplicate machine IDs for same user
+//! - MachineKeyRecord without authorized_by set
 
 use alloc::string::String;
 use alloc::vec;

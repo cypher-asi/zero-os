@@ -390,6 +390,8 @@ pub enum HalError {
     InvalidArgument,
     /// Storage operation failed
     StorageError,
+    /// Resource limit reached (e.g., too many pending requests)
+    ResourceExhausted,
 }
 
 /// Request ID for tracking async storage operations

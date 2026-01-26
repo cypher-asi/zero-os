@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { Supervisor } from '../../desktop/hooks/useSupervisor';
+import type { Supervisor } from '../../src/desktop/hooks/useSupervisor';
 
 export interface MockProcessData {
   pid: number;

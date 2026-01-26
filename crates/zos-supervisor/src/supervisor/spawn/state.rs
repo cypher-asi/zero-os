@@ -387,4 +387,139 @@ mod tests {
         assert_eq!(completed.len(), 1);
         assert_eq!(completed[0].proc_name, "calc");
     }
+
+    #[test]
+    fn test_spawn_failure() {
+        let mut spawn = PendingSpawn::new(1, "app".into(), "failing_app".into(), 1000);
+        
+        spawn.binary_received();
+        spawn.pid_assigned(99);
+        spawn.fail("Worker spawn error".into());
+        
+        assert!(spawn.state.is_terminal());
+        assert!(!spawn.state.is_success());
+        assert!(matches!(spawn.state, SpawnState::Failed { .. }));
+        
+        // PID should not be available after failure
+        assert!(spawn.state.pid().is_none());
+    }
+
+    #[test]
+    fn test_spawn_tracker_find_by_name() {
+        let mut tracker = SpawnTracker::new();
+        
+        tracker.start_spawn("app", "terminal", 1000);
+        tracker.start_spawn("app", "calculator", 2000);
+        
+        // Find by name
+        let terminal = tracker.find_by_name("terminal");
+        assert!(terminal.is_some());
+        assert_eq!(terminal.unwrap().proc_name, "terminal");
+        
+        // Non-existent
+        let missing = tracker.find_by_name("nonexistent");
+        assert!(missing.is_none());
+        
+        // Complete terminal and verify it's not found by name anymore
+        if let Some(spawn) = tracker.find_by_name_mut("terminal") {
+            spawn.pid_assigned(10);
+            spawn.endpoint_created(100);
+            spawn.caps_granted();
+        }
+        
+        // Terminal is now complete, should not be found (find_by_name excludes terminal states)
+        let terminal_after = tracker.find_by_name("terminal");
+        assert!(terminal_after.is_none());
+    }
+
+    #[test]
+    fn test_spawn_tracker_remove() {
+        let mut tracker = SpawnTracker::new();
+        
+        let id = tracker.start_spawn("app", "test", 1000);
+        assert_eq!(tracker.pending_count(), 1);
+        
+        let removed = tracker.remove(id);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().proc_name, "test");
+        assert_eq!(tracker.pending_count(), 0);
+        
+        // Double remove returns None
+        assert!(tracker.remove(id).is_none());
+    }
+
+    #[test]
+    fn test_spawn_tracker_request_id_uniqueness() {
+        let mut tracker = SpawnTracker::new();
+        
+        let id1 = tracker.start_spawn("app", "a", 1000);
+        let id2 = tracker.start_spawn("app", "b", 1000);
+        let id3 = tracker.start_spawn("app", "c", 1000);
+        
+        // All IDs should be unique
+        assert_ne!(id1, id2);
+        assert_ne!(id2, id3);
+        assert_ne!(id1, id3);
+    }
+
+    #[test]
+    fn test_terminal_state_timeout_immunity() {
+        let mut spawn = PendingSpawn::new(1, "app".into(), "test".into(), 1000);
+        
+        // Terminal state should not timeout
+        spawn.pid_assigned(42);
+        spawn.endpoint_created(100);
+        spawn.caps_granted();
+        
+        assert!(spawn.state.is_terminal());
+        assert!(!spawn.is_timed_out(100000, 5000)); // Even with huge time diff
+    }
+
+    #[test]
+    fn test_spawn_state_skip_transitions() {
+        let mut spawn = PendingSpawn::new(1, "app".into(), "fast".into(), 1000);
+        
+        // Skip directly from WaitingForBinary to WaitingForEndpoint (pid_assigned handles this)
+        spawn.pid_assigned(50);
+        assert!(matches!(spawn.state, SpawnState::WaitingForEndpoint { pid: 50 }));
+        
+        // binary_received() should be ignored after pid_assigned
+        spawn.binary_received();
+        assert!(matches!(spawn.state, SpawnState::WaitingForEndpoint { pid: 50 }));
+    }
+
+    #[test]
+    fn test_capability_grant() {
+        let grant = CapabilityGrant {
+            object_type: 1, // Endpoint
+            object_id: 42,
+            permissions: 0b111, // Read/Write/Execute
+        };
+        
+        let mut spawn = PendingSpawn::new(1, "app".into(), "test".into(), 1000);
+        spawn.expected_caps.push(grant.clone());
+        
+        assert_eq!(spawn.expected_caps.len(), 1);
+        assert_eq!(spawn.expected_caps[0].object_id, 42);
+    }
+
+    #[test]
+    fn test_check_timeouts_returns_only_timed_out() {
+        let mut tracker = SpawnTracker::with_timeout(5000);
+        
+        tracker.start_spawn("app", "fast", 1000);
+        tracker.start_spawn("app", "slow", 100); // Started earlier
+        
+        // At time 4000, neither should be timed out (5000ms timeout)
+        let timed_out = tracker.check_timeouts(4000);
+        assert!(timed_out.is_empty());
+        
+        // At time 6000, only 'slow' (started at 100) should be timed out
+        let timed_out = tracker.check_timeouts(6000);
+        assert_eq!(timed_out.len(), 1);
+        
+        // At time 7000, both should be timed out
+        let timed_out = tracker.check_timeouts(7000);
+        assert_eq!(timed_out.len(), 2);
+    }
 }

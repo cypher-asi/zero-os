@@ -4,6 +4,21 @@
 //! - Attaching email credentials (with ZID verification)
 //! - Unlinking credentials
 //! - Retrieving credential lists
+//!
+//! # Safety Invariants (per zos-service.md Rule 0)
+//!
+//! ## Success Conditions
+//! - Attach email: ZID verification succeeded, credential stored, response sent
+//! - Unlink: Credential found and removed from store, response sent
+//! - Get credentials: Credentials read (or empty list), response sent
+//!
+//! ## Acceptable Partial Failure
+//! - Network failure during ZID verification (returns error, no state change)
+//!
+//! ## Forbidden States
+//! - Storing credential without ZID verification
+//! - Silent fallthrough on parse errors (must return InvalidRequest)
+//! - Processing requests without authorization check
 
 use alloc::format;
 use alloc::string::String;
@@ -11,7 +26,7 @@ use alloc::vec::Vec;
 
 use super::super::pending::{PendingNetworkOp, PendingStorageOp, RequestContext};
 use super::super::response;
-use super::super::IdentityService;
+use super::super::{check_user_authorization, log_denial, AuthResult, IdentityService};
 use zos_apps::syscall;
 use zos_apps::{AppError, Message};
 use zos_identity::error::CredentialError;
@@ -24,16 +39,28 @@ use zos_network::HttpRequest;
 // =============================================================================
 
 pub fn handle_attach_email(service: &mut IdentityService, msg: &Message) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: AttachEmailRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
-        Err(_) => {
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse request: {}", e));
             return response::send_attach_email_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                CredentialError::InvalidFormat,
-            )
+                CredentialError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("attach_email", msg.from_pid, request.user_id);
+        return response::send_attach_email_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            CredentialError::Unauthorized,
+        );
+    }
 
     if !request.email.contains('@') || request.email.len() < 5 {
         return response::send_attach_email_error(
@@ -137,10 +164,28 @@ pub fn handle_get_credentials(
     service: &mut IdentityService,
     msg: &Message,
 ) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure (NOT empty list)
     let request: GetCredentialsRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
-        Err(_) => return response::send_get_credentials(msg.from_pid, &msg.cap_slots, vec![]),
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse request: {}", e));
+            return response::send_get_credentials_error(
+                msg.from_pid,
+                &msg.cap_slots,
+                CredentialError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
+        }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("get_credentials", msg.from_pid, request.user_id);
+        return response::send_get_credentials_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            CredentialError::Unauthorized,
+        );
+    }
 
     let cred_path = CredentialStore::storage_path(request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
@@ -158,16 +203,28 @@ pub fn handle_unlink_credential(
     service: &mut IdentityService,
     msg: &Message,
 ) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: UnlinkCredentialRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
-        Err(_) => {
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse request: {}", e));
             return response::send_unlink_credential_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                CredentialError::InvalidFormat,
-            )
+                CredentialError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("unlink_credential", msg.from_pid, request.user_id);
+        return response::send_unlink_credential_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            CredentialError::Unauthorized,
+        );
+    }
 
     let cred_path = CredentialStore::storage_path(request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());

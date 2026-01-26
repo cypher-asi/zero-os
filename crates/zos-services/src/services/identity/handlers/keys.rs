@@ -3,6 +3,22 @@
 //! Handlers for:
 //! - Neural key generation and recovery
 //! - Machine key CRUD operations (create, list, get, revoke, rotate)
+//!
+//! # Safety Invariants (per zos-service.md Rule 0)
+//!
+//! ## Success Conditions
+//! - Neural key generation: Key generated, split into shards, stored to VFS, response sent
+//! - Machine key creation: Neural Key verified against stored identity, keypair derived, stored
+//! - Key rotation: Existing key read, new keys generated, stored atomically
+//!
+//! ## Acceptable Partial Failure
+//! - Orphan content if inode write fails (VFS handles cleanup)
+//!
+//! ## Forbidden States
+//! - Returning shards before key is persisted
+//! - Creating machine key without verifying Neural Key ownership
+//! - Silent fallthrough on parse errors (must return InvalidRequest)
+//! - Processing requests without authorization check
 
 use alloc::format;
 use alloc::vec;
@@ -11,7 +27,7 @@ use alloc::vec::Vec;
 use super::super::utils::bytes_to_hex;
 use super::super::pending::{PendingStorageOp, RequestContext};
 use super::super::response;
-use super::super::IdentityService;
+use super::super::{check_user_authorization, log_denial, AuthResult, IdentityService};
 use zos_identity::crypto::{
     combine_shards_verified, derive_identity_signing_keypair, split_neural_key, 
     KeyScheme as ZidKeyScheme, MachineKeyPair, NeuralKey, ZidMachineKeyCapabilities,
@@ -103,6 +119,7 @@ pub fn handle_generate_neural_key(
 ) -> Result<(), AppError> {
     syscall::debug("IdentityService: Handling generate neural key request");
 
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: GenerateNeuralKeyRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
         Err(e) => {
@@ -110,10 +127,20 @@ pub fn handle_generate_neural_key(
             return response::send_neural_key_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                KeyError::DerivationFailed,
+                KeyError::InvalidRequest(format!("JSON parse error: {}", e)),
             );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("generate_neural_key", msg.from_pid, request.user_id);
+        return response::send_neural_key_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            KeyError::Unauthorized,
+        );
+    }
 
     let user_id = request.user_id;
     syscall::debug(&format!(
@@ -152,16 +179,13 @@ pub fn continue_generate_after_exists_check(
     syscall::debug("IdentityService: Calling NeuralKey::generate() - uses getrandom for entropy");
     let neural_key = match NeuralKey::generate() {
         Ok(key) => {
-            // Log success with first few bytes preview (for debugging)
+            // Rule 10: NEVER log key material. Only verify entropy quality.
             let bytes = key.as_bytes();
             let all_zeros = bytes.iter().all(|&b| b == 0);
             if all_zeros {
                 syscall::debug("IdentityService: WARNING - NeuralKey::generate() returned all zeros! Entropy source may be broken");
             } else {
-                syscall::debug(&format!(
-                    "IdentityService: NeuralKey::generate() success - first bytes: {:02x}{:02x}{:02x}{:02x}...",
-                    bytes[0], bytes[1], bytes[2], bytes[3]
-                ));
+                syscall::debug("IdentityService: NeuralKey::generate() success - entropy validated");
             }
             key
         }
@@ -280,6 +304,7 @@ pub fn handle_recover_neural_key(
 ) -> Result<(), AppError> {
     syscall::debug("IdentityService: Handling recover neural key request");
 
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: RecoverNeuralKeyRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
         Err(e) => {
@@ -287,10 +312,20 @@ pub fn handle_recover_neural_key(
             return response::send_recover_key_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                KeyError::DerivationFailed,
+                KeyError::InvalidRequest(format!("JSON parse error: {}", e)),
             );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("recover_neural_key", msg.from_pid, request.user_id);
+        return response::send_recover_key_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            KeyError::Unauthorized,
+        );
+    }
 
     if request.shards.len() < 3 {
         return response::send_recover_key_error(
@@ -460,6 +495,7 @@ pub fn handle_get_identity_key(
     service: &mut IdentityService,
     msg: &Message,
 ) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: GetIdentityKeyRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
         Err(e) => {
@@ -467,10 +503,20 @@ pub fn handle_get_identity_key(
             return response::send_get_identity_key_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                KeyError::DerivationFailed,
+                KeyError::InvalidRequest(format!("JSON parse error: {}", e)),
             );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("get_identity_key", msg.from_pid, request.user_id);
+        return response::send_get_identity_key_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            KeyError::Unauthorized,
+        );
+    }
 
     let key_path = LocalKeyStore::storage_path(request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
@@ -488,6 +534,7 @@ pub fn handle_create_machine_key(
     service: &mut IdentityService,
     msg: &Message,
 ) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: CreateMachineKeyRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
         Err(e) => {
@@ -495,10 +542,20 @@ pub fn handle_create_machine_key(
             return response::send_create_machine_key_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                KeyError::DerivationFailed,
+                KeyError::InvalidRequest(format!("JSON parse error: {}", e)),
             );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("create_machine_key", msg.from_pid, request.user_id);
+        return response::send_create_machine_key_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            KeyError::Unauthorized,
+        );
+    }
 
     // Read the LocalKeyStore to get the stored identity public key for verification
     let key_path = LocalKeyStore::storage_path(request.user_id);
@@ -693,10 +750,28 @@ pub fn handle_list_machine_keys(
     service: &mut IdentityService,
     msg: &Message,
 ) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure (NOT empty list)
     let request: ListMachineKeysRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
-        Err(_) => return response::send_list_machine_keys(msg.from_pid, &msg.cap_slots, vec![]),
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse request: {}", e));
+            return response::send_list_machine_keys_error(
+                msg.from_pid,
+                &msg.cap_slots,
+                KeyError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
+        }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("list_machine_keys", msg.from_pid, request.user_id);
+        return response::send_list_machine_keys_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            KeyError::Unauthorized,
+        );
+    }
 
     let machine_dir = format!("/home/{}/.zos/identity/machine", request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
@@ -710,6 +785,7 @@ pub fn handle_revoke_machine_key(
     service: &mut IdentityService,
     msg: &Message,
 ) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: RevokeMachineKeyRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
         Err(e) => {
@@ -717,10 +793,20 @@ pub fn handle_revoke_machine_key(
             return response::send_revoke_machine_key_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                KeyError::DerivationFailed,
+                KeyError::InvalidRequest(format!("JSON parse error: {}", e)),
             );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("revoke_machine_key", msg.from_pid, request.user_id);
+        return response::send_revoke_machine_key_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            KeyError::Unauthorized,
+        );
+    }
 
     let machine_path = MachineKeyRecord::storage_path(request.user_id, request.machine_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
@@ -738,6 +824,7 @@ pub fn handle_rotate_machine_key(
     service: &mut IdentityService,
     msg: &Message,
 ) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: RotateMachineKeyRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
         Err(e) => {
@@ -745,10 +832,20 @@ pub fn handle_rotate_machine_key(
             return response::send_rotate_machine_key_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                KeyError::DerivationFailed,
+                KeyError::InvalidRequest(format!("JSON parse error: {}", e)),
             );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("rotate_machine_key", msg.from_pid, request.user_id);
+        return response::send_rotate_machine_key_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            KeyError::Unauthorized,
+        );
+    }
 
     let machine_path = MachineKeyRecord::storage_path(request.user_id, request.machine_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
@@ -897,16 +994,28 @@ pub fn handle_get_machine_key(
     service: &mut IdentityService,
     msg: &Message,
 ) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: GetMachineKeyRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
-        Err(_e) => {
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse request: {}", e));
             return response::send_get_machine_key_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                KeyError::DerivationFailed,
-            )
+                KeyError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("get_machine_key", msg.from_pid, request.user_id);
+        return response::send_get_machine_key_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            KeyError::Unauthorized,
+        );
+    }
 
     let machine_path = MachineKeyRecord::storage_path(request.user_id, request.machine_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());

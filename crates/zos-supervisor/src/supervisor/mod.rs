@@ -71,6 +71,8 @@ use crate::pingpong::PingPongTestState;
 use crate::util::log;
 use crate::worker::WasmProcessHandle;
 
+use spawn::SpawnTracker;
+
 // Note: Console I/O uses capability-checked IPC.
 // - Console output: Uses SYS_CONSOLE_WRITE syscall (supervisor delivers to UI)
 // - Console input: Uses capability-checked ipc_send to terminal's input endpoint
@@ -132,6 +134,13 @@ pub struct Supervisor {
     ps_endpoint_slot: Option<u32>,
     /// Map of terminal PID to capability slot for that terminal's input endpoint
     terminal_endpoint_slots: HashMap<u64, u32>,
+
+    // ==========================================================================
+    // Spawn tracking for async spawn operations
+    // ==========================================================================
+    /// Tracks pending spawn operations for timeout detection and state correlation.
+    /// Used during transitional direct-spawn and required for future Init-driven spawn.
+    spawn_tracker: SpawnTracker,
 }
 
 #[wasm_bindgen]
@@ -164,6 +173,8 @@ impl Supervisor {
             init_endpoint_slot: None,
             ps_endpoint_slot: None,
             terminal_endpoint_slots: HashMap::new(),
+            // Spawn tracking for async operations
+            spawn_tracker: SpawnTracker::new(),
         }
     }
 
@@ -357,6 +368,9 @@ impl Supervisor {
 
         // Progress the ping-pong test state machine if running
         self.progress_pingpong_test();
+
+        // Check for spawn timeouts periodically
+        self.check_spawn_timeouts();
 
         count
     }

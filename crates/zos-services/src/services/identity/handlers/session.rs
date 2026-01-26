@@ -4,6 +4,22 @@
 //! - ZID machine login (challenge-response authentication)
 //! - ZID machine enrollment (register new identity)
 //! - Session persistence and token management
+//!
+//! # Safety Invariants (per zos-service.md Rule 0)
+//!
+//! ## Success Conditions
+//! - ZID login: Challenge signed, authentication succeeded, session stored, tokens returned
+//! - ZID enrollment: Identity created on server, chained login completed, tokens returned
+//!
+//! ## Acceptable Partial Failure
+//! - Session write failure after successful authentication (tokens still returned)
+//! - Machine key write failure during enrollment (session still usable)
+//!
+//! ## Forbidden States
+//! - Returning tokens before authentication completes
+//! - Storing session with invalid/expired tokens
+//! - Silent fallthrough on parse errors (must return InvalidRequest)
+//! - Processing requests without authorization check
 
 use alloc::format;
 use alloc::string::String;
@@ -17,7 +33,7 @@ use super::super::utils::{
 };
 use super::super::pending::{PendingNetworkOp, PendingStorageOp, RequestContext};
 use super::super::response;
-use super::super::IdentityService;
+use super::super::{check_user_authorization, log_denial, AuthResult, IdentityService};
 use zos_identity::crypto::NeuralKey;
 use zos_apps::syscall;
 use zos_apps::{AppError, Message};
@@ -33,16 +49,28 @@ use zos_network::HttpRequest;
 // =============================================================================
 
 pub fn handle_zid_login(service: &mut IdentityService, msg: &Message) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: ZidLoginRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
         Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse request: {}", e));
             return response::send_zid_login_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                ZidError::NetworkError(format!("Invalid request: {}", e)),
-            )
+                ZidError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("zid_login", msg.from_pid, request.user_id);
+        return response::send_zid_login_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            ZidError::Unauthorized,
+        );
+    }
 
     // Get machine directory to find any existing machine key
     let machine_dir = format!("/home/{}/.zos/identity/machine", request.user_id);
@@ -259,16 +287,28 @@ pub fn handle_zid_enroll_machine(
     service: &mut IdentityService,
     msg: &Message,
 ) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
     let request: ZidLoginRequest = match serde_json::from_slice(&msg.data) {
         Ok(r) => r,
         Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse request: {}", e));
             return response::send_zid_enroll_error(
                 msg.from_pid,
                 &msg.cap_slots,
-                ZidError::NetworkError(format!("Invalid request: {}", e)),
-            )
+                ZidError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
         }
     };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("zid_enroll_machine", msg.from_pid, request.user_id);
+        return response::send_zid_enroll_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            ZidError::Unauthorized,
+        );
+    }
 
     // Get machine directory to find any existing machine key
     let machine_dir = format!("/home/{}/.zos/identity/machine", request.user_id);

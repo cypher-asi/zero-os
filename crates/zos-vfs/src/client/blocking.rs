@@ -340,7 +340,7 @@ impl VfsClient {
             path: path.to_string(),
         };
         let response: ExistsResponse = self.call(vfs_msg::MSG_VFS_EXISTS, &request)?;
-        Ok(response.exists)
+        response.result
     }
 
     /// Check if path is a directory.

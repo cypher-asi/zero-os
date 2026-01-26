@@ -1,6 +1,12 @@
 //! Delete operation handlers for VFS Service
 //!
 //! Handles: rmdir, unlink operations
+//!
+//! # Safety Properties
+//!
+//! - **Success**: content deleted (if file), inode deleted
+//! - **Acceptable partial failure**: orphan content (content exists without inode)
+//! - **Forbidden**: inode deleted while content still referenced elsewhere
 
 use alloc::format;
 use alloc::string::String;
@@ -14,7 +20,7 @@ use zos_vfs::VfsError;
 
 use super::super::{
     content_key, derive_permission_context, inode_key, result_type_name, validate_path,
-    ClientContext, InodeOpType, PendingOp, VfsService,
+    ClientContext, InodeOpType, PendingOp, UnlinkStage, VfsService,
 };
 
 impl VfsService {
@@ -126,14 +132,14 @@ impl VfsService {
         let perm_ctx = derive_permission_context(msg.from_pid, &request.path);
         let client_ctx = ClientContext::from_message(msg);
 
-        // Check inode exists and is file
+        // Start the unlink state machine: first read inode to verify it's a file
         self.start_storage_read(
             &inode_key(&request.path),
-            PendingOp::GetInode {
+            PendingOp::UnlinkOp {
                 ctx: client_ctx,
                 path: request.path,
-                op_type: InodeOpType::Unlink,
                 perm_ctx,
+                stage: UnlinkStage::ReadingInode,
             },
         )
     }
@@ -343,8 +349,8 @@ impl VfsService {
 
     /// Handle delete content result
     ///
-    /// This is always an intermediate step - no response is sent.
-    /// The response is sent after the inode delete completes.
+    /// DEPRECATED: This is the old handler for concurrent deletes.
+    /// New code uses UnlinkOp state machine for sequential delete.
     pub fn handle_delete_content_result(
         &mut self,
         _path: &str,
@@ -352,5 +358,197 @@ impl VfsService {
     ) -> Result<(), AppError> {
         // Content delete is part of unlink - response sent after inode delete
         Ok(())
+    }
+
+    // =========================================================================
+    // Unlink State Machine (Rule 5, 7: Sequential delete)
+    // =========================================================================
+
+    /// Handle unlink operation result (state machine)
+    ///
+    /// This handler implements the sequential unlink state machine:
+    /// 1. ReadingInode: Verify it's a file and check permissions
+    /// 2. DeletingContent: Delete content (must complete before inode)
+    /// 3. DeletingInode: Delete inode (only after content delete succeeds)
+    pub fn handle_unlink_op_result(
+        &mut self,
+        client_ctx: &ClientContext,
+        path: &str,
+        perm_ctx: &PermissionContext,
+        stage: UnlinkStage,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        match stage {
+            UnlinkStage::ReadingInode => {
+                self.handle_unlink_reading_inode(client_ctx, path, perm_ctx, result_type, data)
+            }
+            UnlinkStage::DeletingContent => {
+                self.handle_unlink_deleting_content(client_ctx, path, perm_ctx, result_type)
+            }
+            UnlinkStage::DeletingInode => {
+                self.handle_unlink_deleting_inode(client_ctx, path, result_type)
+            }
+        }
+    }
+
+    /// Stage 1: Read inode to verify it's a file and check permissions
+    fn handle_unlink_reading_inode(
+        &mut self,
+        client_ctx: &ClientContext,
+        path: &str,
+        perm_ctx: &PermissionContext,
+        result_type: u8,
+        data: &[u8],
+    ) -> Result<(), AppError> {
+        // Handle result type strictly
+        match result_type {
+            storage_result::READ_OK => {
+                // Good - parse and validate
+            }
+            storage_result::NOT_FOUND => {
+                return self.send_unlink_error(client_ctx, VfsError::NotFound);
+            }
+            _ => {
+                syscall::debug(&format!(
+                    "VfsService: unlink {} inode read failed: {} ({})",
+                    path,
+                    result_type,
+                    result_type_name(result_type)
+                ));
+                return self.send_unlink_error(
+                    client_ctx,
+                    VfsError::StorageError(format!(
+                        "Inode read failed: {} ({})",
+                        result_type,
+                        result_type_name(result_type)
+                    )),
+                );
+            }
+        }
+
+        // Parse inode - FAIL CLOSED on parse error
+        let inode = match serde_json::from_slice::<Inode>(data) {
+            Ok(inode) => inode,
+            Err(e) => {
+                syscall::debug(&format!(
+                    "VfsService: unlink {} failed to parse inode (denying): {}",
+                    path, e
+                ));
+                return self.send_unlink_error(
+                    client_ctx,
+                    VfsError::StorageError(format!("Failed to parse inode: {}", e)),
+                );
+            }
+        };
+
+        // Verify it's a file
+        if !inode.is_file() {
+            return self.send_unlink_error(client_ctx, VfsError::NotAFile);
+        }
+
+        // Check write permission before deleting
+        if !check_write(&inode, perm_ctx) {
+            syscall::debug(&format!(
+                "VfsService: Permission denied for unlink {} (pid={})",
+                path, client_ctx.pid
+            ));
+            return self.send_unlink_error(client_ctx, VfsError::PermissionDenied);
+        }
+
+        // Permission granted - delete content FIRST (sequential, not concurrent)
+        // This ensures we don't have a dangling inode reference
+        self.start_storage_delete(
+            &content_key(path),
+            PendingOp::UnlinkOp {
+                ctx: client_ctx.clone(),
+                path: path.to_string(),
+                perm_ctx: perm_ctx.clone(),
+                stage: UnlinkStage::DeletingContent,
+            },
+        )
+    }
+
+    /// Stage 2: Content delete completed - now delete inode
+    fn handle_unlink_deleting_content(
+        &mut self,
+        client_ctx: &ClientContext,
+        path: &str,
+        perm_ctx: &PermissionContext,
+        result_type: u8,
+    ) -> Result<(), AppError> {
+        // Rule 5: Handle content delete result properly
+        match result_type {
+            storage_result::WRITE_OK => {
+                // Content deleted successfully - proceed to delete inode
+            }
+            storage_result::NOT_FOUND => {
+                // Content was already missing - this is acceptable, proceed to delete inode
+                // (orphaned inode scenario)
+                syscall::debug(&format!(
+                    "VfsService: unlink {} content was already missing, proceeding to delete inode",
+                    path
+                ));
+            }
+            _ => {
+                // Rule 5: Content delete failed - abort the operation
+                syscall::debug(&format!(
+                    "VfsService: unlink {} content delete failed: {} ({}) - aborting",
+                    path,
+                    result_type,
+                    result_type_name(result_type)
+                ));
+                return self.send_unlink_error(
+                    client_ctx,
+                    VfsError::StorageError(format!(
+                        "Content delete failed: {} ({})",
+                        result_type,
+                        result_type_name(result_type)
+                    )),
+                );
+            }
+        }
+
+        // Content handled - now delete inode
+        self.start_storage_delete(
+            &inode_key(path),
+            PendingOp::UnlinkOp {
+                ctx: client_ctx.clone(),
+                path: path.to_string(),
+                perm_ctx: perm_ctx.clone(),
+                stage: UnlinkStage::DeletingInode,
+            },
+        )
+    }
+
+    /// Stage 3: Inode delete completed - send response
+    fn handle_unlink_deleting_inode(
+        &mut self,
+        client_ctx: &ClientContext,
+        path: &str,
+        result_type: u8,
+    ) -> Result<(), AppError> {
+        if result_type != storage_result::WRITE_OK {
+            // Inode delete failed - content is now orphaned but that's acceptable
+            syscall::debug(&format!(
+                "VfsService: unlink {} inode delete failed: {} ({}) - content is orphaned",
+                path,
+                result_type,
+                result_type_name(result_type)
+            ));
+            return self.send_unlink_error(
+                client_ctx,
+                VfsError::StorageError(format!(
+                    "Inode delete failed: {} ({})",
+                    result_type,
+                    result_type_name(result_type)
+                )),
+            );
+        }
+
+        // Both content and inode deleted successfully
+        syscall::debug(&format!("VfsService: unlink {} completed successfully", path));
+        let response = UnlinkResponse { result: Ok(()) };
+        self.send_response(client_ctx, vfs_msg::MSG_VFS_UNLINK_RESPONSE, &response)
     }
 }

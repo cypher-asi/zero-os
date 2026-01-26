@@ -9,11 +9,11 @@ all: build
 # Build everything
 build: build-processes
 	@echo "Building supervisor WASM module..."
-	cd crates/zos-supervisor && wasm-pack build --target web --out-dir ../../web/pkg
+	cd crates/zos-supervisor && wasm-pack build --target web --out-dir ../../web/pkg/supervisor
 	@echo "Building desktop WASM module..."
 	cd crates/zos-desktop && wasm-pack build --target web --features wasm
-	mkdir -p web/pkg-desktop
-	cp -r crates/zos-desktop/pkg/* web/pkg-desktop/
+	mkdir -p web/pkg/desktop
+	cp -r crates/zos-desktop/pkg/* web/pkg/desktop/
 	@echo "Build complete!"
 
 # Build test process WASM binaries

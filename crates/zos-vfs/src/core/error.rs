@@ -125,6 +125,9 @@ pub enum VfsError {
 
     /// I/O error
     IoError(String),
+
+    /// Operation not supported
+    NotSupported(String),
 }
 
 impl VfsError {

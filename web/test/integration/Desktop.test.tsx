@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { createElement } from 'react';
-import { Desktop } from '../../components/Desktop/Desktop';
+import { Desktop } from '../../src/desktop/Desktop';
 import {
   createMockDesktopController,
   createMockDesktopControllerWithWindows,

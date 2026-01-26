@@ -1,6 +1,25 @@
 //! User types for the Identity layer.
 //!
 //! Defines the core user primitive and related types.
+//!
+//! # Safety Invariants (per zos-service.md Rule 0)
+//!
+//! ## Success Conditions
+//! - User operations succeed only when:
+//!   1. User ID is valid (non-zero, as 0 is reserved for system)
+//!   2. Display name is non-empty
+//!   3. User registry paths are canonical
+//!
+//! ## Acceptable Partial Failure
+//! - User preferences may use defaults if file is missing
+//! - Custom metadata fields may be empty
+//! - default_namespace_id may be 0 (will be assigned on first use)
+//!
+//! ## Forbidden States
+//! - User with id == 0 (reserved for system processes)
+//! - User with empty display_name
+//! - Duplicate user IDs in UserRegistry
+//! - User with created_at > last_active_at
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;

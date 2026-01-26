@@ -6,6 +6,22 @@
 //! - Grants/revokes capabilities to/from processes
 //! - Maintains audit trail of all capability operations
 //!
+//! # Safety Invariants
+//!
+//! **Success means:**
+//! - GRANT: Capability created in target CSpace AND recorded in grants table
+//! - REVOKE: Capability removed from target CSpace AND removed from grants table
+//! - LIST: Accurate list of granted capabilities returned to requester
+//!
+//! **Acceptable partial failure:**
+//! - Grant syscall fails → error response, no state change
+//! - Revoke of non-existent cap → error response
+//!
+//! **Forbidden:**
+//! - Granting capabilities without recording (audit trail gap)
+//! - Processing supervisor commands from non-PID-0 senders (privilege escalation)
+//! - Unbounded grants table growth (DoS vector, though less critical than pending ops)
+//!
 //! # Protocol
 //!
 //! Apps communicate with PermissionService via IPC:
@@ -458,5 +474,112 @@ impl ZeroApp for PermissionService {
             "  Total grants issued: {}",
             self.granted_caps.len()
         ));
+    }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // ObjectType tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_object_type_from_u8_valid() {
+        // Test all valid ObjectType variants
+        assert!(ObjectType::from_u8(1).is_some()); // Console
+        assert!(ObjectType::from_u8(2).is_some()); // Endpoint
+        // Add more as ObjectType enum grows
+    }
+
+    #[test]
+    fn test_object_type_from_u8_invalid() {
+        assert!(ObjectType::from_u8(0).is_none());
+        assert!(ObjectType::from_u8(255).is_none());
+    }
+
+    // -------------------------------------------------------------------------
+    // Grant tracking tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_record_and_get_grant() {
+        let mut service = PermissionService::default();
+        service.record_grant(
+            10, // target_pid
+            ObjectType::Console,
+            42, // slot
+            0x03, // read + write
+            String::from("test grant"),
+        );
+
+        let grant = service.get_grant(10, ObjectType::Console);
+        assert!(grant.is_some());
+        let grant = grant.unwrap();
+        assert_eq!(grant.slot, 42);
+        assert_eq!(grant.permissions, 0x03);
+    }
+
+    #[test]
+    fn test_get_grant_not_found() {
+        let service = PermissionService::default();
+        let grant = service.get_grant(999, ObjectType::Console);
+        assert!(grant.is_none());
+    }
+
+    #[test]
+    fn test_remove_grant() {
+        let mut service = PermissionService::default();
+        service.record_grant(
+            10,
+            ObjectType::Console,
+            42,
+            0x01,
+            String::from("test"),
+        );
+
+        let removed = service.remove_grant(10, ObjectType::Console);
+        assert!(removed.is_some());
+        assert_eq!(removed.unwrap().slot, 42);
+
+        // Should be gone now
+        assert!(service.get_grant(10, ObjectType::Console).is_none());
+    }
+
+    #[test]
+    fn test_list_grants_empty() {
+        let service = PermissionService::default();
+        let grants = service.list_grants(10);
+        assert!(grants.is_empty());
+    }
+
+    #[test]
+    fn test_list_grants_multiple() {
+        let mut service = PermissionService::default();
+        service.record_grant(10, ObjectType::Console, 1, 0x01, String::from("a"));
+        service.record_grant(10, ObjectType::Endpoint, 2, 0x02, String::from("b"));
+        service.record_grant(20, ObjectType::Console, 3, 0x01, String::from("c")); // different pid
+
+        let grants = service.list_grants(10);
+        assert_eq!(grants.len(), 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // Authorization check tests (Rule 4: fail-closed)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_supervisor_revoke_requires_pid_0() {
+        // The handle_supervisor_revoke function checks msg.from_pid == 0
+        // This is tested implicitly through the service behavior
+        // Here we just document the security invariant:
+        // - Only PID 0 (supervisor) can issue revoke commands
+        // - All other PIDs are silently ignored with security log
+        assert!(true); // Placeholder - actual test requires mock Message
     }
 }

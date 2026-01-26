@@ -1,0 +1,404 @@
+/**
+ * Identity Service IPC Client
+ *
+ * Client for Identity Service IPC communication.
+ * Uses the supervisor's generic IPC APIs to communicate with the identity
+ * service. All message construction and parsing is done in TypeScript.
+ */
+
+import {
+  MSG,
+  formatUserIdForRust,
+  type Supervisor,
+  type NeuralShard,
+  type NeuralKeyGenerated,
+  type LocalKeyStore,
+  type MachineKeyRecord,
+  type MachineKeyCapabilities,
+  type KeyScheme,
+  type LinkedCredential,
+  type CredentialType,
+  type ZidTokens,
+  type Result,
+  type GenerateNeuralKeyResponse,
+  type RecoverNeuralKeyResponse,
+  type GetIdentityKeyResponse,
+  type CreateMachineKeyResponse,
+  type ListMachineKeysResponse,
+  type RevokeMachineKeyResponse,
+  type RotateMachineKeyResponse,
+  type AttachEmailResponse,
+  type GetCredentialsResponse,
+  type UnlinkCredentialResponse,
+  type ZidLoginResponse,
+  type ZidEnrollMachineResponse,
+  type IdentityPreferences,
+  type GetIdentityPreferencesResponse,
+  type SetDefaultKeySchemeResponse,
+} from './types';
+
+import {
+  IdentityServiceError,
+  ServiceNotFoundError,
+  DeliveryFailedError,
+  parseServiceError,
+} from './errors';
+
+import {
+  ensureCallbackRegistered,
+  addRequestWithPromise,
+} from './pendingRequests';
+
+/**
+ * Client for Identity Service IPC communication.
+ *
+ * Uses the supervisor's generic IPC APIs to communicate with the identity
+ * service. All message construction and parsing is done in TypeScript.
+ */
+export class IdentityServiceClient {
+  private supervisor: Supervisor;
+  private timeoutMs: number;
+
+  constructor(supervisor: Supervisor, timeoutMs = 10000) {
+    this.supervisor = supervisor;
+    this.timeoutMs = timeoutMs;
+    ensureCallbackRegistered(supervisor);
+  }
+
+  /**
+   * Send a request to the identity service and wait for response.
+   *
+   * Uses a FIFO queue per response tag to handle concurrent requests of the
+   * same type. Responses are resolved in the order requests were sent.
+   *
+   * @throws {ServiceNotFoundError} If the identity service is not running
+   * @throws {DeliveryFailedError} If the message could not be delivered
+   * @throws {RequestTimeoutError} If the request times out
+   */
+  private async request<T>(tag: number, data: object): Promise<T> {
+    const requestJson = JSON.stringify(data);
+
+    // Send via supervisor's generic IPC API
+    // The returned requestId is the response tag hex (e.g., "00007055")
+    const tagHex = this.supervisor.send_service_ipc('identity', tag, requestJson);
+
+    // Check for immediate errors and throw typed errors
+    if (tagHex.startsWith('error:service_not_found:')) {
+      const serviceName = tagHex.replace('error:service_not_found:', '');
+      throw new ServiceNotFoundError(serviceName);
+    }
+    if (tagHex.startsWith('error:delivery_failed:')) {
+      const reason = tagHex.replace('error:delivery_failed:', '');
+      throw new DeliveryFailedError(reason);
+    }
+    if (tagHex.startsWith('error:')) {
+      throw new IdentityServiceError(tagHex);
+    }
+
+    // Use shared request queue to wait for response
+    return addRequestWithPromise<T>(tagHex, this.timeoutMs);
+  }
+
+  // ===========================================================================
+  // Neural Key Operations
+  // ===========================================================================
+
+  /**
+   * Generate a new Neural Key for a user.
+   *
+   * @param userId - User ID (as bigint or hex string)
+   * @returns NeuralKeyGenerated with shards and public identifiers
+   */
+  async generateNeuralKey(userId: bigint | string): Promise<NeuralKeyGenerated> {
+    const response = await this.request<GenerateNeuralKeyResponse>(MSG.GENERATE_NEURAL_KEY, {
+      user_id: formatUserIdForRust(userId),
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Recover a Neural Key from Shamir shards.
+   *
+   * @param userId - User ID (as bigint or hex string)
+   * @param shards - At least 3 Shamir shards
+   * @returns NeuralKeyGenerated with new shards and public identifiers
+   */
+  async recoverNeuralKey(
+    userId: bigint | string,
+    shards: NeuralShard[]
+  ): Promise<NeuralKeyGenerated> {
+    const response = await this.request<RecoverNeuralKeyResponse>(MSG.RECOVER_NEURAL_KEY, {
+      user_id: formatUserIdForRust(userId),
+      shards,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Get the stored identity key for a user.
+   *
+   * @param userId - User ID (as bigint or hex string)
+   * @returns LocalKeyStore if exists, null otherwise
+   */
+  async getIdentityKey(userId: bigint | string): Promise<LocalKeyStore | null> {
+    const response = await this.request<GetIdentityKeyResponse>(MSG.GET_IDENTITY_KEY, {
+      user_id: formatUserIdForRust(userId),
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  // ===========================================================================
+  // Machine Key Operations
+  // ===========================================================================
+
+  /**
+   * Create a new machine key record for a user.
+   *
+   * Machine keys are derived from the user's Neural Key using 3 Shamir shards.
+   *
+   * @param userId - User ID (as bigint)
+   * @param machineName - Human-readable machine name
+   * @param capabilities - Machine capabilities
+   * @param keyScheme - Key scheme to use (defaults to 'classical')
+   * @param shards - Neural shards for key derivation (at least 3 required)
+   * @returns The created MachineKeyRecord with derived keys
+   */
+  async createMachineKey(
+    userId: bigint | string,
+    machineName: string,
+    capabilities: MachineKeyCapabilities,
+    keyScheme?: KeyScheme,
+    shards?: NeuralShard[]
+  ): Promise<MachineKeyRecord> {
+    if (!shards || shards.length < 3) {
+      throw new IdentityServiceError('At least 3 Neural shards are required to create a machine key');
+    }
+    const response = await this.request<CreateMachineKeyResponse>(MSG.CREATE_MACHINE_KEY, {
+      user_id: formatUserIdForRust(userId),
+      machine_name: machineName,
+      capabilities,
+      key_scheme: keyScheme ?? 'classical',
+      shards,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * List all machine keys for a user.
+   *
+   * @param userId - User ID (as bigint)
+   * @returns Array of MachineKeyRecord
+   */
+  async listMachineKeys(userId: bigint | string): Promise<MachineKeyRecord[]> {
+    const response = await this.request<ListMachineKeysResponse>(MSG.LIST_MACHINE_KEYS, {
+      user_id: formatUserIdForRust(userId),
+    });
+    return response.machines || [];
+  }
+
+  /**
+   * Revoke/delete a machine key.
+   *
+   * @param userId - User ID (as bigint)
+   * @param machineId - Machine ID to revoke (as bigint)
+   */
+  async revokeMachineKey(userId: bigint | string, machineId: bigint): Promise<void> {
+    const response = await this.request<RevokeMachineKeyResponse>(MSG.REVOKE_MACHINE_KEY, {
+      user_id: formatUserIdForRust(userId),
+      machine_id: `0x${machineId.toString(16).padStart(32, '0')}`,
+    });
+    this.unwrapResult(response.result);
+  }
+
+  /**
+   * Rotate keys for a machine.
+   *
+   * The service generates new keys from entropy and increments epoch.
+   *
+   * @param userId - User ID (as bigint)
+   * @param machineId - Machine ID to rotate (as bigint)
+   * @returns Updated MachineKeyRecord with new keys and incremented epoch
+   */
+  async rotateMachineKey(userId: bigint | string, machineId: bigint): Promise<MachineKeyRecord> {
+    const response = await this.request<RotateMachineKeyResponse>(MSG.ROTATE_MACHINE_KEY, {
+      user_id: formatUserIdForRust(userId),
+      machine_id: `0x${machineId.toString(16).padStart(32, '0')}`,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  // ===========================================================================
+  // Credential Operations
+  // ===========================================================================
+
+  /**
+   * Attach an email address to a user's account via ZID API.
+   *
+   * This requires an active ZID session (access token from loginWithMachineKey).
+   * The password is sent to ZID server where it's hashed with Argon2id.
+   * Email is verified immediately by ZID - no separate verification step needed.
+   *
+   * @param userId - User ID (as bigint)
+   * @param email - Email address to attach
+   * @param password - Password for the ZID account (12+ characters)
+   * @param accessToken - JWT access token from ZID login
+   * @param zidEndpoint - ZID API endpoint (e.g., "https://api.zero-id.io")
+   * @throws {CredentialAlreadyLinkedError} If email is already registered
+   * @throws {InvalidCredentialFormatError} If email format is invalid
+   * @throws {StorageError} If password doesn't meet requirements
+   */
+  async attachEmail(
+    userId: bigint | string,
+    email: string,
+    password: string,
+    accessToken: string,
+    zidEndpoint: string
+  ): Promise<void> {
+    const response = await this.request<AttachEmailResponse>(MSG.ATTACH_EMAIL, {
+      user_id: formatUserIdForRust(userId),
+      email,
+      password,
+      access_token: accessToken,
+      zid_endpoint: zidEndpoint,
+    });
+    this.unwrapResult(response.result);
+  }
+
+  /**
+   * @deprecated ZID handles email verification server-side.
+   * This method is no longer functional and will throw an error.
+   */
+  async verifyEmail(_userId: bigint | string, _email: string, _code: string): Promise<void> {
+    throw new IdentityServiceError(
+      'Email verification is deprecated. Use ZID login + attachEmail instead.'
+    );
+  }
+
+  /**
+   * Get all linked credentials for a user.
+   *
+   * @param userId - User ID (as bigint)
+   * @returns Array of LinkedCredential
+   */
+  async getCredentials(userId: bigint | string): Promise<LinkedCredential[]> {
+    const response = await this.request<GetCredentialsResponse>(MSG.GET_CREDENTIALS, {
+      user_id: formatUserIdForRust(userId),
+    });
+    return response.credentials || [];
+  }
+
+  /**
+   * Unlink a credential by type.
+   *
+   * @param userId - User ID (as bigint)
+   * @param credentialType - Type of credential to unlink ('Email', 'Phone', etc.)
+   */
+  async unlinkCredential(userId: bigint | string, credentialType: CredentialType): Promise<void> {
+    const response = await this.request<UnlinkCredentialResponse>(MSG.UNLINK_CREDENTIAL, {
+      user_id: formatUserIdForRust(userId),
+      credential_type: credentialType,
+    });
+    this.unwrapResult(response.result);
+  }
+
+  // ===========================================================================
+  // ZID Auth Operations
+  // ===========================================================================
+
+  /**
+   * Login to ZERO-ID using machine key challenge-response.
+   *
+   * This initiates the challenge-response authentication flow:
+   * 1. Identity service reads machine key from VFS
+   * 2. Requests challenge from ZID server
+   * 3. Signs challenge with machine key
+   * 4. Submits signed challenge for verification
+   * 5. Returns tokens on success
+   *
+   * @param userId - User ID (as bigint)
+   * @param zidEndpoint - ZID API endpoint (e.g., "https://api.zero-id.io")
+   * @returns ZidTokens containing access and refresh tokens
+   * @throws {ZidMachineKeyNotFoundError} If no machine key exists for the user
+   * @throws {ZidAuthenticationFailedError} If authentication fails
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async loginWithMachineKey(userId: bigint | string, zidEndpoint: string): Promise<ZidTokens> {
+    const response = await this.request<ZidLoginResponse>(MSG.ZID_LOGIN, {
+      user_id: formatUserIdForRust(userId),
+      zid_endpoint: zidEndpoint,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Enroll/register this machine with ZERO-ID server.
+   *
+   * This registers a new identity with the ZID server:
+   * 1. Identity service reads machine key from VFS
+   * 2. Posts to /v1/identity with machine's public key
+   * 3. Creates identity + first machine on ZID server
+   * 4. Returns tokens on success (auto-login after enrollment)
+   *
+   * Use this when:
+   * - First time connecting a machine to ZID
+   * - Machine key login fails with "Machine not registered"
+   *
+   * @param userId - User ID (as bigint)
+   * @param zidEndpoint - ZID API endpoint (e.g., "https://api.zero-id.io")
+   * @returns ZidTokens containing access and refresh tokens
+   * @throws {ZidMachineKeyNotFoundError} If no machine key exists for the user
+   * @throws {ZidEnrollmentFailedError} If enrollment fails
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async enrollMachine(userId: bigint | string, zidEndpoint: string): Promise<ZidTokens> {
+    const response = await this.request<ZidEnrollMachineResponse>(MSG.ZID_ENROLL_MACHINE, {
+      user_id: formatUserIdForRust(userId),
+      zid_endpoint: zidEndpoint,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  // ===========================================================================
+  // Identity Preferences
+  // ===========================================================================
+
+  /**
+   * Get identity preferences from VFS
+   * @param userId - User ID
+   * @returns IdentityPreferences containing default key scheme
+   */
+  async getIdentityPreferences(userId: bigint | string): Promise<IdentityPreferences> {
+    const response = await this.request<GetIdentityPreferencesResponse>(
+      MSG.GET_IDENTITY_PREFERENCES,
+      { user_id: formatUserIdForRust(userId) }
+    );
+    return response.preferences;
+  }
+
+  /**
+   * Set default key scheme preference in VFS
+   * @param userId - User ID
+   * @param keyScheme - Key scheme to set as default
+   */
+  async setDefaultKeyScheme(userId: bigint | string, keyScheme: KeyScheme): Promise<void> {
+    const response = await this.request<SetDefaultKeySchemeResponse>(MSG.SET_DEFAULT_KEY_SCHEME, {
+      user_id: formatUserIdForRust(userId),
+      key_scheme: keyScheme,
+    });
+    this.unwrapResult(response.result);
+  }
+
+  // ===========================================================================
+  // Helpers
+  // ===========================================================================
+
+  /**
+   * Unwrap a Result<T> type, throwing typed error on failure.
+   */
+  private unwrapResult<T>(result: Result<T>): T {
+    if ('Err' in result) {
+      throw parseServiceError(result.Err);
+    }
+    return result.Ok;
+  }
+}

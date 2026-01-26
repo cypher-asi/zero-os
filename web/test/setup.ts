@@ -7,6 +7,28 @@ afterEach(() => {
   cleanup();
 });
 
+// Mock Web Worker global scope for worker tests
+if (typeof self === 'undefined') {
+  (globalThis as unknown as { self: typeof globalThis }).self = globalThis;
+}
+
+// Mock crypto.getRandomValues for tests if not available
+if (!globalThis.crypto) {
+  globalThis.crypto = {
+    getRandomValues: <T extends ArrayBufferView | null>(array: T): T => {
+      if (array && 'length' in array) {
+        const view = array as unknown as Uint8Array;
+        for (let i = 0; i < view.length; i++) {
+          view[i] = Math.floor(Math.random() * 256);
+        }
+      }
+      return array;
+    },
+    subtle: {} as SubtleCrypto,
+    randomUUID: () => 'test-uuid-1234-5678-9012-abcdef123456',
+  } as Crypto;
+}
+
 // Mock window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

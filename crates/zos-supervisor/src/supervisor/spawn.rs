@@ -51,9 +51,10 @@
 mod capabilities;
 mod state;
 
-pub use state::{PendingSpawn, SpawnState};
+pub use state::{PendingSpawn, SpawnState, SpawnTracker};
 
 use wasm_bindgen::prelude::*;
+use zos_hal::HAL;
 use zos_kernel::ProcessId;
 
 use super::{log, Supervisor};
@@ -84,6 +85,13 @@ impl Supervisor {
     /// 3. Spawn worker with that PID
     ///
     /// This requires async coordination which is tracked for future work.
+    ///
+    /// # Spawn Tracking
+    ///
+    /// Uses SpawnTracker to track spawn operations for:
+    /// - Timeout detection (spawns that take too long)
+    /// - State correlation (matching responses to requests)
+    /// - Cleanup of completed/failed spawns
     #[wasm_bindgen]
     pub fn complete_spawn(&mut self, name: &str, wasm_binary: &[u8]) -> u64 {
         log(&format!(
@@ -92,7 +100,21 @@ impl Supervisor {
             wasm_binary.len()
         ));
 
+        // Start tracking this spawn operation
+        let current_time = self.system.hal().wallclock_ms();
+        let request_id = self.spawn_tracker.start_spawn("app", name, current_time);
+
+        // Mark binary as received (transitioning from WaitingForBinary to WaitingForPid)
+        if let Some(spawn) = self.spawn_tracker.get_mut(request_id) {
+            spawn.binary_received();
+        }
+
         let process_pid = self.register_process_for_spawn(name);
+
+        // Update spawn state with assigned PID
+        if let Some(spawn) = self.spawn_tracker.get_mut(request_id) {
+            spawn.pid_assigned(process_pid.0);
+        }
 
         match self.spawn_worker_for_process(process_pid, name, wasm_binary) {
             Ok(handle) => {
@@ -104,6 +126,17 @@ impl Supervisor {
                 // Track init spawn and grant capabilities
                 self.setup_process_capabilities(process_pid, name);
 
+                // Mark spawn as ready (all capabilities granted)
+                if let Some(spawn) = self.spawn_tracker.get_mut(request_id) {
+                    // Note: endpoint_created() and caps_granted() are called here for completeness
+                    // In the future Init-driven flow, these would be called as responses arrive
+                    spawn.endpoint_created(0); // Placeholder endpoint ID
+                    spawn.caps_granted();
+                }
+
+                // Clean up completed spawns periodically
+                let _ = self.spawn_tracker.cleanup_completed();
+
                 // Check if this is part of an automated pingpong test
                 let pid = process_pid.0;
                 self.on_process_spawned(name, pid);
@@ -113,8 +146,35 @@ impl Supervisor {
             Err(e) => {
                 self.write_console(&format!("Error spawning {}: {:?}\n", name, e));
                 log(&format!("[supervisor] Failed to spawn {}: {:?}", name, e));
+
+                // Mark spawn as failed
+                if let Some(spawn) = self.spawn_tracker.get_mut(request_id) {
+                    spawn.fail(format!("Worker spawn failed: {:?}", e));
+                }
+
                 self.cleanup_failed_spawn(process_pid, name);
                 0
+            }
+        }
+    }
+
+    /// Check for timed-out spawn operations and clean them up.
+    ///
+    /// This should be called periodically (e.g., from poll_syscalls) to detect
+    /// and handle spawn operations that have been pending for too long.
+    pub(crate) fn check_spawn_timeouts(&mut self) {
+        let current_time = self.system.hal().wallclock_ms();
+        let timed_out = self.spawn_tracker.timeout_spawns(current_time);
+
+        for spawn in timed_out {
+            log(&format!(
+                "[supervisor] Spawn timed out: {} (request_id={}, state={:?})",
+                spawn.proc_name, spawn.request_id, spawn.state
+            ));
+
+            // If we have a PID, clean up the failed process
+            if let Some(pid) = spawn.state.pid() {
+                self.cleanup_failed_spawn(ProcessId(pid), &spawn.proc_name);
             }
         }
     }

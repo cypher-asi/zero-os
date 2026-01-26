@@ -30,7 +30,7 @@ function Build-WebModules {
         # Build zos-supervisor
         Write-Host "Building zos-supervisor..."
         Push-Location "$ProjectRoot\crates\zos-supervisor"
-        wasm-pack build --target web --out-dir ../../web/pkg
+        wasm-pack build --target web --out-dir ../../web/pkg/supervisor
         if ($LASTEXITCODE -ne 0) { throw "zos-supervisor build failed" }
         Pop-Location
         
@@ -42,11 +42,11 @@ function Build-WebModules {
         Pop-Location
         
         # Copy desktop pkg to web folder
-        Write-Host "Copying zos-desktop to web/pkg-desktop..."
-        if (-not (Test-Path "$ProjectRoot\web\pkg-desktop")) {
-            New-Item -ItemType Directory -Path "$ProjectRoot\web\pkg-desktop" | Out-Null
+        Write-Host "Copying zos-desktop to web/pkg/desktop..."
+        if (-not (Test-Path "$ProjectRoot\web\pkg\desktop")) {
+            New-Item -ItemType Directory -Path "$ProjectRoot\web\pkg\desktop" -Force | Out-Null
         }
-        Copy-Item -Recurse -Force "$ProjectRoot\crates\zos-desktop\pkg\*" "$ProjectRoot\web\pkg-desktop\"
+        Copy-Item -Recurse -Force "$ProjectRoot\crates\zos-desktop\pkg\*" "$ProjectRoot\web\pkg\desktop\"
         
         Write-Host "Web modules built successfully!" -ForegroundColor Green
     }
@@ -171,7 +171,6 @@ function Clean-Build {
     Push-Location $ProjectRoot
     cargo clean
     Remove-Item -Recurse -Force "$ProjectRoot\web\pkg" -ErrorAction SilentlyContinue
-    Remove-Item -Recurse -Force "$ProjectRoot\web\pkg-desktop" -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force "$ProjectRoot\web\processes" -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force "$ProjectRoot\crates\zos-desktop\pkg" -ErrorAction SilentlyContinue
     Pop-Location

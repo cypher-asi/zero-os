@@ -1,0 +1,91 @@
+import { useEffect, useRef } from 'react';
+import { useWindowActions } from '../../hooks/useWindows';
+import { useSupervisor } from '../../hooks/useSupervisor';
+import { Menu, type MenuItem } from '@cypher-asi/zui';
+import { AppWindow, Calculator, Clock, Terminal, FolderOpen, Settings, Power } from 'lucide-react';
+import styles from './BeginMenu.module.css';
+
+interface BeginMenuProps {
+  onClose: () => void;
+  containerRef?: React.RefObject<HTMLDivElement>;
+}
+
+// Programs submenu items (alphabetically sorted)
+const PROGRAM_ITEMS: MenuItem[] = [
+  { id: 'calculator', label: 'Calculator', icon: <Calculator size={14} /> },
+  { id: 'clock', label: 'Clock', icon: <Clock size={14} /> },
+];
+
+// Main menu structure
+const MENU_ITEMS: MenuItem[] = [
+  {
+    id: 'programs',
+    label: 'Programs',
+    icon: <AppWindow size={14} />,
+    children: PROGRAM_ITEMS,
+  },
+  { id: 'terminal', label: 'Terminal', icon: <Terminal size={14} /> },
+  { id: 'files', label: 'Files', icon: <FolderOpen size={14} /> },
+  { id: 'settings', label: 'Settings', icon: <Settings size={14} /> },
+  { type: 'separator' },
+  { id: 'shutdown', label: 'Shutdown', icon: <Power size={14} /> },
+];
+
+export function BeginMenu({ onClose, containerRef }: BeginMenuProps) {
+  const { launchApp, launchTerminal } = useWindowActions();
+  const supervisor = useSupervisor();
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      // Ignore clicks inside the menu
+      if (menuRef.current && menuRef.current.contains(target)) {
+        return;
+      }
+      // Ignore clicks on the container (includes the toggle button)
+      if (containerRef?.current && containerRef.current.contains(target)) {
+        return;
+      }
+      onClose();
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [onClose, containerRef]);
+
+  const handleSelect = async (id: string) => {
+    // Skip parent menu items (submenus)
+    if (id === 'programs') return;
+
+    if (id === 'shutdown') {
+      onClose();
+      if (supervisor) {
+        supervisor.send_input('shutdown');
+      }
+    } else if (id === 'terminal') {
+      // Terminal uses special spawn-and-link flow
+      onClose();
+      await launchTerminal();
+    } else {
+      launchApp(id);
+      onClose();
+    }
+  };
+
+  return (
+    <div ref={menuRef} className={styles.menuWrapper}>
+      <Menu
+        title="ZERO OS"
+        items={MENU_ITEMS}
+        onChange={handleSelect}
+        variant="glass"
+        border="future"
+        rounded="md"
+        width={200}
+      />
+    </div>
+  );
+}

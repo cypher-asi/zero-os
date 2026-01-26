@@ -5,6 +5,21 @@
 //! - Stores user timezone preferences
 //! - Persists settings via VFS service IPC (async pattern)
 //!
+//! # Safety Invariants
+//!
+//! **Success means:**
+//! - GET: Settings returned to client (from cache or storage)
+//! - SET: Settings written to storage AND cache updated AND success response sent
+//!
+//! **Acceptable partial failure:**
+//! - Storage read fails → return default settings (fail-open for read-only)
+//! - Cache may be stale if storage write succeeds but cache update fails
+//!
+//! **Forbidden:**
+//! - Returning success for SET before storage write completes
+//! - Allowing unauthorized processes to modify system time settings
+//! - Unbounded pending operations (DoS vector)
+//!
 //! # Protocol
 //!
 //! Apps communicate with TimeService via IPC:
@@ -50,7 +65,7 @@ fn default_timezone() -> String {
 }
 
 /// Time settings that can be persisted
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct TimeSettings {
     /// Use 24-hour time format (false = 12-hour with AM/PM)
     #[serde(default)]
@@ -58,6 +73,15 @@ pub struct TimeSettings {
     /// Timezone identifier (e.g., "America/New_York", "UTC")
     #[serde(default = "default_timezone")]
     pub timezone: String,
+}
+
+impl Default for TimeSettings {
+    fn default() -> Self {
+        Self {
+            time_format_24h: false,
+            timezone: default_timezone(),
+        }
+    }
 }
 
 impl TimeSettings {
@@ -122,6 +146,20 @@ enum OpType {
 
 use alloc::collections::BTreeMap;
 
+// =============================================================================
+// Permission Constants
+// =============================================================================
+
+/// Maximum number of pending VFS operations (DoS protection per Rule 11)
+const MAX_PENDING_OPS: usize = 32;
+
+/// System service PIDs that are trusted for time settings operations.
+/// - PID 0: Supervisor
+/// - PID 1: Init
+/// - PID 2: Permission Service  
+/// - PID 3: Desktop/Settings UI
+const TRUSTED_PIDS_FOR_TIME_SETTINGS: &[u32] = &[0, 1, 2, 3];
+
 /// TimeService - manages time display settings
 pub struct TimeService {
     /// Whether we have registered with init
@@ -181,6 +219,41 @@ impl TimeService {
             None
         }
     }
+
+    /// Check if caller is authorized to read time settings.
+    /// GET operations are open to all processes (read-only, non-sensitive).
+    fn check_get_permission(&self, _from_pid: u32) -> bool {
+        // Time settings are non-sensitive, allow all reads
+        true
+    }
+
+    /// Check if caller is authorized to modify time settings.
+    /// SET operations are restricted to trusted system services (fail-closed per Rule 4).
+    fn check_set_permission(&self, from_pid: u32) -> bool {
+        let allowed = TRUSTED_PIDS_FOR_TIME_SETTINGS.contains(&from_pid);
+        if !allowed {
+            syscall::debug(&format!(
+                "TimeService: SECURITY - SET denied for PID {} (not in trusted list)",
+                from_pid
+            ));
+        }
+        allowed
+    }
+
+    /// Check and enforce pending operation limits (DoS protection per Rule 11).
+    /// Returns true if a new operation can be accepted.
+    fn check_pending_limit(&self) -> bool {
+        if self.pending_ops.len() >= MAX_PENDING_OPS {
+            syscall::debug(&format!(
+                "TimeService: Pending operation limit reached ({}/{})",
+                self.pending_ops.len(),
+                MAX_PENDING_OPS
+            ));
+            false
+        } else {
+            true
+        }
+    }
 }
 
 impl TimeService {
@@ -233,7 +306,19 @@ impl TimeService {
         _ctx: &AppContext,
         msg: &Message,
     ) -> Result<(), AppError> {
-        syscall::debug("TimeService: Handling get time settings request");
+        syscall::debug(&format!(
+            "TimeService: Handling get time settings request from PID {}",
+            msg.from_pid
+        ));
+
+        // Permission check (Rule 4: fail-closed)
+        if !self.check_get_permission(msg.from_pid) {
+            return self.send_error_response(
+                msg.from_pid,
+                &msg.cap_slots,
+                "Permission denied: GET_TIME_SETTINGS requires time capability",
+            );
+        }
 
         // If settings are loaded, return immediately from cache
         if self.settings_loaded {
@@ -242,6 +327,15 @@ impl TimeService {
                 &msg.cap_slots,
                 &self.settings,
                 time_msg::MSG_GET_TIME_SETTINGS_RESPONSE,
+            );
+        }
+
+        // DoS protection: check pending operation limit (Rule 11)
+        if !self.check_pending_limit() {
+            return self.send_error_response(
+                msg.from_pid,
+                &msg.cap_slots,
+                "Service busy: pending operation limit reached",
             );
         }
 
@@ -261,18 +355,43 @@ impl TimeService {
         _ctx: &AppContext,
         msg: &Message,
     ) -> Result<(), AppError> {
-        syscall::debug("TimeService: Handling set time settings request");
+        syscall::debug(&format!(
+            "TimeService: Handling set time settings request from PID {}",
+            msg.from_pid
+        ));
+
+        // Permission check (Rule 4: fail-closed)
+        if !self.check_set_permission(msg.from_pid) {
+            return self.send_error_response(
+                msg.from_pid,
+                &msg.cap_slots,
+                "Permission denied: SET_TIME_SETTINGS requires system privilege",
+            );
+        }
+
+        // DoS protection: check pending operation limit (Rule 11)
+        if !self.check_pending_limit() {
+            return self.send_error_response(
+                msg.from_pid,
+                &msg.cap_slots,
+                "Service busy: pending operation limit reached",
+            );
+        }
 
         // Parse the settings from the request
         let new_settings = match TimeSettings::from_json(&msg.data) {
             Some(s) => s,
             None => {
-                syscall::debug("TimeService: Failed to parse settings from request");
-                // Send error response
+                syscall::debug(&format!(
+                    "TimeService: Failed to parse settings JSON from PID {} (len={})",
+                    msg.from_pid,
+                    msg.data.len()
+                ));
+                // Send error response with context (Rule 9)
                 return self.send_error_response(
                     msg.from_pid,
                     &msg.cap_slots,
-                    "Invalid settings format",
+                    "Invalid settings format: JSON parse failed",
                 );
             }
         };
@@ -416,7 +535,12 @@ impl TimeService {
                     }
                     Err(e) => {
                         syscall::debug(&format!("TimeService: VFS write failed: {}", e));
-                        self.send_error_response(client_pid, &cap_slots, "Write failed")
+                        // Rule 9: Include operation context in error
+                        self.send_error_response(
+                            client_pid,
+                            &cap_slots,
+                            &format!("VFS write failed for {}: {}", TimeSettings::storage_path(), e),
+                        )
                     }
                 }
             }
@@ -566,5 +690,132 @@ impl ZeroApp for TimeService {
 
     fn shutdown(&mut self, _ctx: &AppContext) {
         syscall::debug("TimeService: shutting down");
+    }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // TimeSettings tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_time_settings_default() {
+        let settings = TimeSettings::default();
+        assert!(!settings.time_format_24h);
+        assert_eq!(settings.timezone, "UTC");
+    }
+
+    #[test]
+    fn test_time_settings_json_round_trip() {
+        let settings = TimeSettings {
+            time_format_24h: true,
+            timezone: String::from("America/New_York"),
+        };
+        let json = settings.to_json();
+        let parsed = TimeSettings::from_json(&json).expect("should parse");
+        assert_eq!(parsed.time_format_24h, true);
+        assert_eq!(parsed.timezone, "America/New_York");
+    }
+
+    #[test]
+    fn test_time_settings_from_invalid_json() {
+        let result = TimeSettings::from_json(b"not valid json");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_time_settings_from_empty_json_uses_defaults() {
+        let result = TimeSettings::from_json(b"{}").expect("should parse empty object");
+        assert!(!result.time_format_24h); // default
+        assert_eq!(result.timezone, "UTC"); // default
+    }
+
+    // -------------------------------------------------------------------------
+    // Permission check tests (Rule 4: fail-closed)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_get_permission_allows_all() {
+        let service = TimeService::default();
+        // GET is open to all - non-sensitive read operation
+        assert!(service.check_get_permission(0)); // supervisor
+        assert!(service.check_get_permission(1)); // init
+        assert!(service.check_get_permission(100)); // untrusted process
+        assert!(service.check_get_permission(9999)); // any process
+    }
+
+    #[test]
+    fn test_set_permission_trusted_pids() {
+        let service = TimeService::default();
+        // SET requires trusted PIDs
+        for &pid in TRUSTED_PIDS_FOR_TIME_SETTINGS {
+            assert!(
+                service.check_set_permission(pid),
+                "PID {} should be trusted for SET",
+                pid
+            );
+        }
+    }
+
+    #[test]
+    fn test_set_permission_denies_untrusted() {
+        let service = TimeService::default();
+        // Untrusted PIDs should be denied
+        assert!(!service.check_set_permission(100));
+        assert!(!service.check_set_permission(9999));
+    }
+
+    // -------------------------------------------------------------------------
+    // DoS protection tests (Rule 11: pending-op limits)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_pending_limit_allows_under_max() {
+        let service = TimeService::default();
+        assert!(service.check_pending_limit());
+    }
+
+    #[test]
+    fn test_pending_limit_denies_at_max() {
+        let mut service = TimeService::default();
+        // Fill up to the limit
+        for i in 0..MAX_PENDING_OPS {
+            service.pending_ops.insert(
+                i as u32,
+                (PendingOp::InitialLoad, OpType::Read),
+            );
+        }
+        assert!(!service.check_pending_limit());
+    }
+
+    // -------------------------------------------------------------------------
+    // Request ID allocation tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_request_id_allocation() {
+        let mut service = TimeService::default();
+        let id1 = service.alloc_request_id();
+        let id2 = service.alloc_request_id();
+        assert_ne!(id1, id2);
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
+    }
+
+    #[test]
+    fn test_request_id_skips_zero() {
+        let mut service = TimeService::default();
+        service.next_request_id = u32::MAX;
+        let id = service.alloc_request_id();
+        assert_eq!(id, u32::MAX);
+        let next = service.alloc_request_id();
+        assert_eq!(next, 1); // Skipped 0
     }
 }

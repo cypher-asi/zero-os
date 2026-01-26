@@ -10,11 +10,13 @@ members = [
     "crates/zos-init",
     "crates/zos-ipc",
     "crates/zos-kernel",
+    "crates/zos-kernel-core",
     "crates/zos-network",
     "crates/zos-process",
     "crates/zos-services",
     "crates/zos-system-procs",
     "crates/zos-supervisor",
+    "crates/zos-unsafe-primitives",
     "crates/zos-vfs",
     "tools/dev-server",
 ]
@@ -36,10 +38,12 @@ zos-identity = { path = "crates/zos-identity" }
 zos-init = { path = "crates/zos-init" }
 zos-ipc = { path = "crates/zos-ipc" }
 zos-kernel = { path = "crates/zos-kernel" }
+zos-kernel-core = { path = "crates/zos-kernel-core" }
 zos-network = { path = "crates/zos-network" }
 zos-process = { path = "crates/zos-process" }
 zos-services = { path = "crates/zos-services" }
 zos-system-procs = { path = "crates/zos-system-procs" }
+zos-unsafe-primitives = { path = "crates/zos-unsafe-primitives" }
 zos-vfs = { path = "crates/zos-vfs" }
 
 # External dependencies

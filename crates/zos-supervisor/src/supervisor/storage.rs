@@ -4,6 +4,23 @@
 //! and the WASM processes. The supervisor receives notifications from JavaScript
 //! when IndexedDB operations complete and delivers the results to the requesting
 //! processes via IPC through Init.
+//!
+//! # Safety Invariants
+//!
+//! ## Success Criteria
+//! - Storage result delivered to requesting process via Init-routed IPC
+//! - Request ID correctly correlated with original requesting PID
+//! - Payload format matches MSG_STORAGE_RESULT specification
+//!
+//! ## Acceptable Partial Failures
+//! - Unknown request_id: Logged as error, no result delivered (orphaned response)
+//! - Process terminated before result: Logged, IPC delivery may fail gracefully
+//! - Init not available: Logged, result delivery fails but system continues
+//!
+//! ## Forbidden States
+//! - Result delivered to wrong PID (request_id correlation must be exact)
+//! - Silent failures without logging (all failures must be logged)
+//! - Payload corruption (data must match what JavaScript provided)
 
 use zos_hal::HAL;
 
@@ -70,7 +87,13 @@ impl super::Supervisor {
 
         let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
-            None => return,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown storage request_id {} in not_found handler (orphaned response)",
+                    request_id
+                ));
+                return;
+            }
         };
 
         // Build MSG_STORAGE_RESULT payload for NOT_FOUND
@@ -91,7 +114,13 @@ impl super::Supervisor {
 
         let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
-            None => return,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown storage request_id {} in write_complete handler (orphaned response)",
+                    request_id
+                ));
+                return;
+            }
         };
 
         // Build MSG_STORAGE_RESULT payload for WRITE_OK
@@ -117,7 +146,13 @@ impl super::Supervisor {
 
         let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
-            None => return,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown storage request_id {} in list_complete handler (orphaned response)",
+                    request_id
+                ));
+                return;
+            }
         };
 
         let data = keys_json.as_bytes();
@@ -143,7 +178,13 @@ impl super::Supervisor {
 
         let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
-            None => return,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown storage request_id {} in exists_complete handler (orphaned response)",
+                    request_id
+                ));
+                return;
+            }
         };
 
         let mut payload = Vec::with_capacity(10);
@@ -164,7 +205,13 @@ impl super::Supervisor {
 
         let pid = match self.system.hal().take_storage_request_pid(request_id) {
             Some(p) => p,
-            None => return,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown storage request_id {} in error handler (orphaned response, error was: {})",
+                    request_id, error
+                ));
+                return;
+            }
         };
 
         let error_bytes = error.as_bytes();
@@ -190,5 +237,215 @@ impl super::Supervisor {
             storage_const::MSG_STORAGE_RESULT,
             payload,
         );
+    }
+}
+
+// =============================================================================
+// Payload Building Helpers (testable without WASM)
+// =============================================================================
+
+/// Build a storage read result payload.
+///
+/// Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+pub(crate) fn build_storage_read_payload(request_id: u32, data: &[u8]) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(9 + data.len());
+    payload.extend_from_slice(&request_id.to_le_bytes());
+    payload.push(storage_const::STORAGE_READ_OK);
+    payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    payload.extend_from_slice(data);
+    payload
+}
+
+/// Build a storage write result payload.
+///
+/// Format: [request_id: u32, result_type: u8, data_len: u32]
+pub(crate) fn build_storage_write_payload(request_id: u32) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(9);
+    payload.extend_from_slice(&request_id.to_le_bytes());
+    payload.push(storage_const::STORAGE_WRITE_OK);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    payload
+}
+
+/// Build a storage not found result payload.
+///
+/// Format: [request_id: u32, result_type: u8, data_len: u32]
+pub(crate) fn build_storage_not_found_payload(request_id: u32) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(9);
+    payload.extend_from_slice(&request_id.to_le_bytes());
+    payload.push(storage_const::STORAGE_NOT_FOUND);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    payload
+}
+
+/// Build a storage list result payload.
+///
+/// Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+pub(crate) fn build_storage_list_payload(request_id: u32, keys_json: &str) -> Vec<u8> {
+    let data = keys_json.as_bytes();
+    let mut payload = Vec::with_capacity(9 + data.len());
+    payload.extend_from_slice(&request_id.to_le_bytes());
+    payload.push(storage_const::STORAGE_LIST_OK);
+    payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
+    payload.extend_from_slice(data);
+    payload
+}
+
+/// Build a storage exists result payload.
+///
+/// Format: [request_id: u32, result_type: u8, data_len: u32, exists: u8]
+pub(crate) fn build_storage_exists_payload(request_id: u32, exists: bool) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(10);
+    payload.extend_from_slice(&request_id.to_le_bytes());
+    payload.push(storage_const::STORAGE_EXISTS_OK);
+    payload.extend_from_slice(&1u32.to_le_bytes()); // data_len = 1
+    payload.push(if exists { 1 } else { 0 });
+    payload
+}
+
+/// Build a storage error result payload.
+///
+/// Format: [request_id: u32, result_type: u8, data_len: u32, error: [u8]]
+pub(crate) fn build_storage_error_payload(request_id: u32, error: &str) -> Vec<u8> {
+    let error_bytes = error.as_bytes();
+    let mut payload = Vec::with_capacity(9 + error_bytes.len());
+    payload.extend_from_slice(&request_id.to_le_bytes());
+    payload.push(storage_const::STORAGE_ERROR);
+    payload.extend_from_slice(&(error_bytes.len() as u32).to_le_bytes());
+    payload.extend_from_slice(error_bytes);
+    payload
+}
+
+/// Parse a storage result payload header.
+///
+/// Returns (request_id, result_type, data_len) or None if invalid.
+pub(crate) fn parse_storage_result_header(payload: &[u8]) -> Option<(u32, u8, u32)> {
+    if payload.len() < 9 {
+        return None;
+    }
+    let request_id = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]);
+    let result_type = payload[4];
+    let data_len = u32::from_le_bytes([payload[5], payload[6], payload[7], payload[8]]);
+    Some((request_id, result_type, data_len))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_storage_read_payload_format() {
+        let payload = build_storage_read_payload(42, b"hello world");
+        
+        // Header: 4 bytes request_id + 1 byte type + 4 bytes data_len = 9 bytes
+        assert_eq!(payload.len(), 9 + 11); // 9 header + 11 data bytes
+        
+        let (req_id, result_type, data_len) = parse_storage_result_header(&payload).unwrap();
+        assert_eq!(req_id, 42);
+        assert_eq!(result_type, storage_const::STORAGE_READ_OK);
+        assert_eq!(data_len, 11);
+        assert_eq!(&payload[9..], b"hello world");
+    }
+
+    #[test]
+    fn test_storage_write_payload_format() {
+        let payload = build_storage_write_payload(123);
+        
+        assert_eq!(payload.len(), 9);
+        
+        let (req_id, result_type, data_len) = parse_storage_result_header(&payload).unwrap();
+        assert_eq!(req_id, 123);
+        assert_eq!(result_type, storage_const::STORAGE_WRITE_OK);
+        assert_eq!(data_len, 0);
+    }
+
+    #[test]
+    fn test_storage_not_found_payload_format() {
+        let payload = build_storage_not_found_payload(999);
+        
+        assert_eq!(payload.len(), 9);
+        
+        let (req_id, result_type, data_len) = parse_storage_result_header(&payload).unwrap();
+        assert_eq!(req_id, 999);
+        assert_eq!(result_type, storage_const::STORAGE_NOT_FOUND);
+        assert_eq!(data_len, 0);
+    }
+
+    #[test]
+    fn test_storage_list_payload_format() {
+        let keys = r#"["key1","key2","key3"]"#;
+        let payload = build_storage_list_payload(55, keys);
+        
+        let (req_id, result_type, data_len) = parse_storage_result_header(&payload).unwrap();
+        assert_eq!(req_id, 55);
+        assert_eq!(result_type, storage_const::STORAGE_LIST_OK);
+        assert_eq!(data_len as usize, keys.len());
+        assert_eq!(&payload[9..], keys.as_bytes());
+    }
+
+    #[test]
+    fn test_storage_exists_payload_format() {
+        let payload_true = build_storage_exists_payload(1, true);
+        let payload_false = build_storage_exists_payload(2, false);
+        
+        assert_eq!(payload_true.len(), 10);
+        assert_eq!(payload_false.len(), 10);
+        
+        let (req_id, result_type, data_len) = parse_storage_result_header(&payload_true).unwrap();
+        assert_eq!(req_id, 1);
+        assert_eq!(result_type, storage_const::STORAGE_EXISTS_OK);
+        assert_eq!(data_len, 1);
+        assert_eq!(payload_true[9], 1); // true = 1
+        
+        let (req_id, result_type, data_len) = parse_storage_result_header(&payload_false).unwrap();
+        assert_eq!(req_id, 2);
+        assert_eq!(result_type, storage_const::STORAGE_EXISTS_OK);
+        assert_eq!(data_len, 1);
+        assert_eq!(payload_false[9], 0); // false = 0
+    }
+
+    #[test]
+    fn test_storage_error_payload_format() {
+        let error = "File not found";
+        let payload = build_storage_error_payload(77, error);
+        
+        let (req_id, result_type, data_len) = parse_storage_result_header(&payload).unwrap();
+        assert_eq!(req_id, 77);
+        assert_eq!(result_type, storage_const::STORAGE_ERROR);
+        assert_eq!(data_len as usize, error.len());
+        assert_eq!(&payload[9..], error.as_bytes());
+    }
+
+    #[test]
+    fn test_parse_invalid_payload() {
+        // Too short
+        assert!(parse_storage_result_header(&[]).is_none());
+        assert!(parse_storage_result_header(&[1, 2, 3, 4, 5, 6, 7, 8]).is_none());
+        
+        // Exactly minimum valid length
+        assert!(parse_storage_result_header(&[0, 0, 0, 0, 0, 0, 0, 0, 0]).is_some());
+    }
+
+    #[test]
+    fn test_storage_read_empty_data() {
+        let payload = build_storage_read_payload(100, &[]);
+        
+        let (req_id, result_type, data_len) = parse_storage_result_header(&payload).unwrap();
+        assert_eq!(req_id, 100);
+        assert_eq!(result_type, storage_const::STORAGE_READ_OK);
+        assert_eq!(data_len, 0);
+        assert_eq!(payload.len(), 9); // Just the header
+    }
+
+    #[test]
+    fn test_storage_constants_match_zos_ipc() {
+        // Verify our constants match the canonical zos-ipc values
+        assert_eq!(storage_const::STORAGE_READ_OK, zos_ipc::storage::result::READ_OK);
+        assert_eq!(storage_const::STORAGE_WRITE_OK, zos_ipc::storage::result::WRITE_OK);
+        assert_eq!(storage_const::STORAGE_NOT_FOUND, zos_ipc::storage::result::NOT_FOUND);
+        assert_eq!(storage_const::STORAGE_ERROR, zos_ipc::storage::result::ERROR);
+        assert_eq!(storage_const::STORAGE_LIST_OK, zos_ipc::storage::result::LIST_OK);
+        assert_eq!(storage_const::STORAGE_EXISTS_OK, zos_ipc::storage::result::EXISTS_OK);
+        assert_eq!(storage_const::MSG_STORAGE_RESULT, zos_ipc::storage::MSG_STORAGE_RESULT);
     }
 }

@@ -15,7 +15,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
-        desktop: resolve(__dirname, 'desktop/index.html'),
+        desktop: resolve(__dirname, 'src/desktop/index.html'),
       },
     },
   },
@@ -34,14 +34,13 @@ export default defineConfig({
   optimizeDeps: {
     // Exclude wasm-bindgen generated files from optimization
     // Also exclude npm-linked packages so Vite uses the linked source
-    exclude: ['./pkg/zos_supervisor_web.js', './pkg-desktop/zos_desktop.js', '@cypher-asi/zui'],
+    exclude: ['./pkg/supervisor/zos_supervisor_web.js', './pkg/desktop/zos_desktop.js', '@cypher-asi/zui'],
   },
   resolve: {
     alias: {
-      '@': resolve(__dirname, '.'),
-      '@desktop': resolve(__dirname, 'desktop'),
-      '@components': resolve(__dirname, 'components'),
-      '@apps': resolve(__dirname, 'apps'),
+      '@': resolve(__dirname, 'src'),
+      '@desktop': resolve(__dirname, 'src/desktop'),
+      '@apps': resolve(__dirname, 'src/apps'),
     },
   },
 });

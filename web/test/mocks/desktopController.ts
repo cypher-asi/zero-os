@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { DesktopController } from '../../desktop/hooks/useSupervisor';
+import type { DesktopController } from '../../src/desktop/hooks/useSupervisor';
 
 export interface MockWindowData {
   id: number;

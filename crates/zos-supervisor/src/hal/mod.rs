@@ -2,6 +2,14 @@
 //!
 //! This module provides the Hardware Abstraction Layer for running Zero OS
 //! in a web browser using Web Workers for process isolation.
+//!
+//! # Resource Limits
+//!
+//! To prevent unbounded memory growth from pending async operations:
+//! - `MAX_PENDING_STORAGE_REQUESTS`: Maximum concurrent storage operations (1000)
+//! - `MAX_PENDING_NETWORK_REQUESTS`: Maximum concurrent network operations (100)
+//!
+//! When limits are reached, new operations fail with `HalError::ResourceExhausted`.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -15,6 +23,14 @@ use crate::worker::{self, PendingSyscall, WasmProcessHandle, WorkerMessage, Work
 mod network;
 mod process;
 mod storage;
+
+/// Maximum number of pending storage requests to prevent unbounded growth.
+/// This is generous but prevents DoS from runaway processes.
+const MAX_PENDING_STORAGE_REQUESTS: usize = 1000;
+
+/// Maximum number of pending network requests to prevent unbounded growth.
+/// Network requests are heavier, so limit is lower than storage.
+const MAX_PENDING_NETWORK_REQUESTS: usize = 100;
 
 /// WASM HAL implementation
 ///
@@ -61,18 +77,58 @@ impl WasmHal {
         self.next_network_request_id.fetch_add(1, Ordering::SeqCst)
     }
 
-    /// Record a pending storage request
-    fn record_pending_request(&self, request_id: StorageRequestId, pid: u64) {
+    /// Record a pending storage request with bounded limit enforcement.
+    ///
+    /// Returns true if the request was recorded, false if the limit was reached.
+    fn record_pending_request(&self, request_id: StorageRequestId, pid: u64) -> bool {
         if let Ok(mut pending) = self.pending_storage_requests.lock() {
+            if pending.len() >= MAX_PENDING_STORAGE_REQUESTS {
+                log(&format!(
+                    "[wasm-hal] ERROR: Pending storage request limit reached ({}) - rejecting request_id={} from PID {}",
+                    MAX_PENDING_STORAGE_REQUESTS, request_id, pid
+                ));
+                return false;
+            }
             pending.insert(request_id, pid);
+            true
+        } else {
+            false
         }
     }
 
-    /// Record a pending network request
-    fn record_pending_network_request(&self, request_id: u32, pid: u64) {
+    /// Record a pending network request with bounded limit enforcement.
+    ///
+    /// Returns true if the request was recorded, false if the limit was reached.
+    fn record_pending_network_request(&self, request_id: u32, pid: u64) -> bool {
         if let Ok(mut pending) = self.pending_network_requests.lock() {
+            if pending.len() >= MAX_PENDING_NETWORK_REQUESTS {
+                log(&format!(
+                    "[wasm-hal] ERROR: Pending network request limit reached ({}) - rejecting request_id={} from PID {}",
+                    MAX_PENDING_NETWORK_REQUESTS, request_id, pid
+                ));
+                return false;
+            }
             pending.insert(request_id, pid);
+            true
+        } else {
+            false
         }
+    }
+
+    /// Get the current count of pending storage requests.
+    pub fn pending_storage_count(&self) -> usize {
+        self.pending_storage_requests
+            .lock()
+            .map(|p| p.len())
+            .unwrap_or(0)
+    }
+
+    /// Get the current count of pending network requests.
+    pub fn pending_network_count(&self) -> usize {
+        self.pending_network_requests
+            .lock()
+            .map(|p| p.len())
+            .unwrap_or(0)
     }
 
     /// Get a clone of the incoming messages queue Arc

@@ -5,6 +5,22 @@
 //! - Performs HTTP fetch operations via async syscalls (routed through supervisor)
 //! - Responds with MSG_NET_RESPONSE messages
 //!
+//! # Safety Invariants
+//!
+//! **Success means:**
+//! - HTTP request completed (success or HTTP error) AND response delivered to client
+//! - Request-response correlation maintained via syscall_request_id
+//!
+//! **Acceptable partial failure:**
+//! - Network timeout → error response to client
+//! - HTTP error status → forwarded to client as-is
+//!
+//! **Forbidden:**
+//! - Allowing unauthorized processes to make network requests
+//! - Unbounded pending operations (DoS vector)
+//! - Orphan pending ops (client response never sent)
+//! - Mismatched request-response correlation
+//!
 //! # Architecture
 //!
 //! Network operations are event-driven using push-based async network:
@@ -67,19 +83,21 @@ use alloc::vec::Vec;
 use crate::manifests::NETWORK_SERVICE_MANIFEST;
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
+use zos_network::result as net_result;
 use zos_process::net;
 
 // =============================================================================
-// Network Result Types (matches zos-ipc::net)
+// Permission & Limit Constants
 // =============================================================================
 
-mod net_result {
-    /// Request succeeded, response body follows
-    pub const NET_OK: u8 = 0;
-    /// Request failed with error
-    #[allow(dead_code)]
-    pub const NET_ERROR: u8 = 1;
-}
+/// Maximum number of pending network operations (DoS protection per Rule 11)
+const MAX_PENDING_OPS: usize = 64;
+
+/// System service PIDs that are always allowed network access.
+/// - PID 0: Supervisor
+/// - PID 1: Init
+/// - PID 7: Identity Service (needs network for auth flows)
+const TRUSTED_PIDS_FOR_NETWORK: &[u32] = &[0, 1, 7];
 
 // =============================================================================
 // Pending Network Operations
@@ -119,6 +137,33 @@ impl Default for NetworkService {
 }
 
 impl NetworkService {
+    /// Check if caller is authorized to make network requests (Rule 4: fail-closed).
+    fn check_network_permission(&self, from_pid: u32) -> bool {
+        let allowed = TRUSTED_PIDS_FOR_NETWORK.contains(&from_pid);
+        if !allowed {
+            syscall::debug(&format!(
+                "NetworkService: SECURITY - Network request denied for PID {} (not in trusted list)",
+                from_pid
+            ));
+        }
+        allowed
+    }
+
+    /// Check and enforce pending operation limits (DoS protection per Rule 11).
+    /// Returns true if a new operation can be accepted.
+    fn check_pending_limit(&self) -> bool {
+        if self.pending_ops.len() >= MAX_PENDING_OPS {
+            syscall::debug(&format!(
+                "NetworkService: Pending operation limit reached ({}/{})",
+                self.pending_ops.len(),
+                MAX_PENDING_OPS
+            ));
+            false
+        } else {
+            true
+        }
+    }
+
     /// Handle MSG_NET_REQUEST - perform HTTP fetch
     fn handle_net_request(&mut self, _ctx: &AppContext, msg: &Message) -> Result<(), AppError> {
         // Parse the request
@@ -130,10 +175,27 @@ impl NetworkService {
             request_json.len()
         ));
 
-        // Extract client request ID from the request if present
-        // For simplicity, we generate our own tracking ID
+        // Extract client request ID early for error responses
         let client_request_id = self.next_request_id;
         self.next_request_id += 1;
+
+        // Permission check (Rule 4: fail-closed)
+        if !self.check_network_permission(msg.from_pid) {
+            return self.send_error_response(
+                msg.from_pid,
+                client_request_id,
+                "Permission denied: MSG_NET_REQUEST requires network capability",
+            );
+        }
+
+        // DoS protection: check pending operation limit (Rule 11)
+        if !self.check_pending_limit() {
+            return self.send_error_response(
+                msg.from_pid,
+                client_request_id,
+                "Service busy: pending network operation limit reached",
+            );
+        }
 
         // Start async network fetch via syscall
         match syscall::network_fetch_async(request_json) {
@@ -156,14 +218,14 @@ impl NetworkService {
             }
             Err(e) => {
                 syscall::debug(&format!(
-                    "NetworkService: network_fetch_async failed: {}",
+                    "NetworkService: network_fetch_async syscall failed: {}",
                     e
                 ));
-                // Send error response immediately
+                // Send error response with context (Rule 9)
                 self.send_error_response(
                     msg.from_pid,
                     client_request_id,
-                    "Failed to start network operation",
+                    &format!("Network syscall failed: SYS_NETWORK_FETCH returned {}", e),
                 )
             }
         }
@@ -174,7 +236,10 @@ impl NetworkService {
         // Parse network result
         // Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
         if msg.data.len() < 9 {
-            syscall::debug("NetworkService: net result too short");
+            syscall::debug(&format!(
+                "NetworkService: MSG_NET_RESULT payload too short (got {} bytes, need 9)",
+                msg.data.len()
+            ));
             return Ok(());
         }
 
@@ -332,5 +397,81 @@ impl ZeroApp for NetworkService {
 
     fn shutdown(&mut self, _ctx: &AppContext) {
         syscall::debug("NetworkService: shutting down");
+    }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -------------------------------------------------------------------------
+    // Permission check tests (Rule 4: fail-closed)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_network_permission_trusted_pids() {
+        let service = NetworkService::default();
+        // Trusted PIDs should be allowed
+        for &pid in TRUSTED_PIDS_FOR_NETWORK {
+            assert!(
+                service.check_network_permission(pid),
+                "PID {} should be trusted for network",
+                pid
+            );
+        }
+    }
+
+    #[test]
+    fn test_network_permission_denies_untrusted() {
+        let service = NetworkService::default();
+        // Untrusted PIDs should be denied
+        assert!(!service.check_network_permission(100));
+        assert!(!service.check_network_permission(2)); // Permission service
+        assert!(!service.check_network_permission(3)); // Desktop
+        assert!(!service.check_network_permission(9999));
+    }
+
+    // -------------------------------------------------------------------------
+    // DoS protection tests (Rule 11: pending-op limits)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_pending_limit_allows_under_max() {
+        let service = NetworkService::default();
+        assert!(service.check_pending_limit());
+    }
+
+    #[test]
+    fn test_pending_limit_denies_at_max() {
+        let mut service = NetworkService::default();
+        // Fill up to the limit
+        for i in 0..MAX_PENDING_OPS {
+            service.pending_ops.insert(
+                i as u32,
+                PendingRequest {
+                    client_pid: 1,
+                    client_request_id: i as u32,
+                },
+            );
+        }
+        assert!(!service.check_pending_limit());
+    }
+
+    // -------------------------------------------------------------------------
+    // Request ID allocation tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_request_id_increments() {
+        let mut service = NetworkService::default();
+        let id1 = service.next_request_id;
+        service.next_request_id += 1;
+        let id2 = service.next_request_id;
+        assert_eq!(id1, 1);
+        assert_eq!(id2, 2);
     }
 }

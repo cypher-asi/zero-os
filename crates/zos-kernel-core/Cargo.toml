@@ -1,0 +1,23 @@
+[package]
+name = "zos-kernel-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pure state machine core for Zero OS kernel - verification target"
+
+[lib]
+crate-type = ["lib"]
+
+[features]
+default = []
+kani = []
+std = []  # Optional std for testing
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[dependencies]
+serde = { workspace = true }
+
+[dev-dependencies]

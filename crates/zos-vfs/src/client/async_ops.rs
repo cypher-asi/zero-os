@@ -183,7 +183,7 @@ pub fn parse_write_response(data: &[u8]) -> Result<(), String> {
 /// Returns `Ok(exists)` where `exists` is true if path exists.
 pub fn parse_exists_response(data: &[u8]) -> Result<bool, String> {
     match serde_json::from_slice::<ExistsResponse>(data) {
-        Ok(response) => Ok(response.exists),
+        Ok(response) => response.result.map_err(|e| format!("{:?}", e)),
         Err(e) => Err(format!("Parse error: {}", e)),
     }
 }

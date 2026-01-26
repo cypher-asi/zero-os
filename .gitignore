@@ -23,7 +23,6 @@ web/dist/
 
 # wasm-pack output (built on demand)
 web/pkg/
-web/pkg-desktop/
 
 # Environment files
 .env

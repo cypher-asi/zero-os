@@ -4,6 +4,25 @@
 //! (fetch API) and WASM processes. The supervisor receives notifications from
 //! JavaScript when network operations complete and delivers the results to the
 //! requesting processes via IPC through Init.
+//!
+//! # Safety Invariants
+//!
+//! ## Success Criteria
+//! - Network result delivered to requesting process via Init-routed IPC
+//! - Request ID correctly correlated with original requesting PID
+//! - PID verification ensures result goes to correct process (defense-in-depth)
+//! - Payload format matches MSG_NET_RESULT specification
+//!
+//! ## Acceptable Partial Failures
+//! - Unknown request_id: Logged as error, no result delivered (orphaned response)
+//! - PID mismatch: Logged as error, result discarded (prevents cross-process leaks)
+//! - JSON serialization failure: Returns generic error result to process
+//! - Process terminated before result: Logged, IPC delivery may fail gracefully
+//!
+//! ## Forbidden States
+//! - Result delivered to wrong PID (both request_id and PID verification required)
+//! - Silent failures without logging (all failures must be logged)
+//! - Raw JavaScript error details leaked to process (sanitize to "Internal error")
 
 use wasm_bindgen::prelude::*;
 use zos_hal::HAL;

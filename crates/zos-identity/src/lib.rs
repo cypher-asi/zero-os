@@ -8,6 +8,24 @@
 //! - **Service**: User and session service traits and implementations
 //! - **IPC**: Inter-process communication protocol for identity operations
 //!
+//! # Safety Invariants (per zos-service.md Rule 0)
+//!
+//! ## Success Conditions
+//! - User data operations succeed only when:
+//!   1. User ID is valid and non-zero
+//!   2. All cryptographic material passes validation
+//!   3. Storage paths are canonical and within allowed directories
+//!
+//! ## Acceptable Partial Failure
+//! - Optional fields (display name, machine name) can be empty strings
+//! - Missing preferences files default to safe values
+//!
+//! ## Forbidden States
+//! - UserId of 0 (reserved for system)
+//! - Empty signing/encryption keys (must be 32 bytes for Ed25519/X25519)
+//! - Path traversal outside user home directory
+//! - Storing unvalidated user input in paths
+//!
 //! # Design Principles
 //!
 //! 1. **Offline-first**: Local authentication works without network
@@ -46,6 +64,7 @@ pub mod crypto;
 pub mod error;
 pub mod ipc;
 pub mod keystore;
+pub mod paths;
 pub mod serde_helpers;
 pub mod service;
 pub mod session;

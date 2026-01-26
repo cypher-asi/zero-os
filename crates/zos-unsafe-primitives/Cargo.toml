@@ -1,0 +1,25 @@
+[package]
+name = "zos-unsafe-primitives"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Consolidated unsafe code for Zero OS - isolated TCB for auditing"
+
+[lib]
+crate-type = ["lib"]
+
+[features]
+default = []
+kani = []
+std = []
+loom = ["dep:loom"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[dependencies]
+loom = { version = "0.7", optional = true }
+
+[dev-dependencies]
+loom = "0.7"

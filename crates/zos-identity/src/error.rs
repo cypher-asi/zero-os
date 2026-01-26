@@ -38,6 +38,10 @@ pub enum SessionError {
 /// Errors from key operations.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum KeyError {
+    /// Caller is not authorized to perform this operation
+    Unauthorized,
+    /// Invalid request format (JSON parse error, missing fields)
+    InvalidRequest(String),
     /// User not found
     UserNotFound,
     /// Keys not found
@@ -69,6 +73,10 @@ pub enum KeyError {
 /// Errors from credential operations.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CredentialError {
+    /// Caller is not authorized to perform this operation
+    Unauthorized,
+    /// Invalid request format (JSON parse error, missing fields)
+    InvalidRequest(String),
     /// Credential already linked
     AlreadyLinked,
     /// Invalid credential format
@@ -91,6 +99,10 @@ pub enum CredentialError {
 /// attachment flows with the ZERO-ID remote server.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ZidError {
+    /// Caller is not authorized to perform this operation
+    Unauthorized,
+    /// Invalid request format (JSON parse error, missing fields)
+    InvalidRequest(String),
     /// Network error during API call
     NetworkError(String),
     /// Authentication failed (invalid signature, unknown machine)

@@ -1,6 +1,24 @@
 //! Storage operations for WASM HAL
 //!
 //! This module handles async storage operations via IndexedDB and the JavaScript ZosStorage API.
+//!
+//! # Safety Invariants
+//!
+//! ## Success Criteria
+//! - Async storage operations return a unique request_id for correlation
+//! - Request ID is recorded with requesting PID before JavaScript call
+//! - JavaScript ZosStorage API is invoked with correct parameters
+//! - Bootstrap storage operations return correct data from ZosStorage cache
+//!
+//! ## Acceptable Partial Failures
+//! - ZosStorage unavailable: Logged, operation returns without starting
+//! - Lock contention on pending_storage_requests: Operation may not be recorded
+//! - Bootstrap storage not initialized: Returns NotSupported error
+//!
+//! ## Forbidden States
+//! - Request ID reuse before completion (monotonically increasing counter)
+//! - PID not recorded before async operation starts (must record first)
+//! - Data truncation without explicit length limits (use bounded buffers)
 
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -146,7 +164,9 @@ impl WasmHal {
     /// Start an async storage read operation
     pub fn do_storage_read_async(&self, pid: u64, key: &str) -> Result<StorageRequestId, HalError> {
         let request_id = self.next_request_id();
-        self.record_pending_request(request_id, pid);
+        if !self.record_pending_request(request_id, pid) {
+            return Err(HalError::ResourceExhausted);
+        }
 
         log(&format!(
             "[wasm-hal] storage_read_async: request_id={}, pid={}, key={}",
@@ -167,7 +187,9 @@ impl WasmHal {
         value: &[u8],
     ) -> Result<StorageRequestId, HalError> {
         let request_id = self.next_request_id();
-        self.record_pending_request(request_id, pid);
+        if !self.record_pending_request(request_id, pid) {
+            return Err(HalError::ResourceExhausted);
+        }
 
         log(&format!(
             "[wasm-hal] storage_write_async: request_id={}, pid={}, key={}, len={}",
@@ -190,7 +212,9 @@ impl WasmHal {
         key: &str,
     ) -> Result<StorageRequestId, HalError> {
         let request_id = self.next_request_id();
-        self.record_pending_request(request_id, pid);
+        if !self.record_pending_request(request_id, pid) {
+            return Err(HalError::ResourceExhausted);
+        }
 
         log(&format!(
             "[wasm-hal] storage_delete_async: request_id={}, pid={}, key={}",
@@ -210,7 +234,9 @@ impl WasmHal {
         prefix: &str,
     ) -> Result<StorageRequestId, HalError> {
         let request_id = self.next_request_id();
-        self.record_pending_request(request_id, pid);
+        if !self.record_pending_request(request_id, pid) {
+            return Err(HalError::ResourceExhausted);
+        }
 
         log(&format!(
             "[wasm-hal] storage_list_async: request_id={}, pid={}, prefix={}",
@@ -230,7 +256,9 @@ impl WasmHal {
         key: &str,
     ) -> Result<StorageRequestId, HalError> {
         let request_id = self.next_request_id();
-        self.record_pending_request(request_id, pid);
+        if !self.record_pending_request(request_id, pid) {
+            return Err(HalError::ResourceExhausted);
+        }
 
         log(&format!(
             "[wasm-hal] storage_exists_async: request_id={}, pid={}, key={}",

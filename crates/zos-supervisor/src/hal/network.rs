@@ -83,7 +83,9 @@ impl WasmHal {
         request: &[u8],
     ) -> Result<NetworkRequestId, HalError> {
         let request_id = self.next_network_request_id();
-        self.record_pending_network_request(request_id, pid);
+        if !self.record_pending_network_request(request_id, pid) {
+            return Err(HalError::ResourceExhausted);
+        }
 
         // Convert request bytes to JSON string
         let request_json = match std::str::from_utf8(request) {

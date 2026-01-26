@@ -1,6 +1,26 @@
 //! Session management types for the Identity layer.
 //!
 //! Sessions represent authenticated user contexts in ZOS.
+//!
+//! # Safety Invariants (per zos-service.md Rule 0)
+//!
+//! ## Success Conditions
+//! - Session operations succeed only when:
+//!   1. Session ID is unique (non-zero)
+//!   2. User ID and Machine ID are valid
+//!   3. expires_at > created_at
+//!   4. Session is not expired at operation time
+//!
+//! ## Acceptable Partial Failure
+//! - Session metadata (IP, user agent, location) may be None
+//! - Remote auth state may be None for local-only sessions
+//! - Process list may be empty
+//!
+//! ## Forbidden States
+//! - Session with expires_at <= created_at
+//! - Active session with is_expired() returning true
+//! - Session with user_id == 0
+//! - Duplicate session IDs
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;

@@ -17,11 +17,10 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"],
-      "@desktop/*": ["desktop/*"],
-      "@components/*": ["components/*"],
-      "@apps/*": ["apps/*"]
+      "@/*": ["src/*"],
+      "@desktop/*": ["src/desktop/*"],
+      "@apps/*": ["src/apps/*"]
     }
   },
-  "include": ["desktop", "components", "apps", "styles", "*.ts", "*.tsx"]
+  "include": ["src", "test", "*.ts", "*.tsx"]
 }

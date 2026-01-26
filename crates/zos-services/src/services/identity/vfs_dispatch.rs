@@ -457,12 +457,31 @@ impl IdentityService {
                     ),
                 }
             }
-            _ => {
+            // Rule 5: Explicitly enumerate all remaining pending operation types
+            // These operations don't expect a read response - if we get here, it's a logic error
+            PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CheckKeyExists { ctx, .. } |
+            PendingStorageOp::WriteKeyStore { ctx, .. } |
+            PendingStorageOp::WriteRecoveredKeyStore { ctx, .. } |
+            PendingStorageOp::WriteMachineKey { ctx, .. } |
+            PendingStorageOp::ListMachineKeys { ctx, .. } |
+            PendingStorageOp::DeleteMachineKey { ctx, .. } |
+            PendingStorageOp::WriteRotatedMachineKey { ctx, .. } |
+            PendingStorageOp::WriteUnlinkedCredential { ctx, .. } |
+            PendingStorageOp::WriteEmailCredential { ctx, .. } |
+            PendingStorageOp::WriteZidSession { ctx, .. } |
+            PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
+            PendingStorageOp::WritePreferences { ctx, .. } => {
+                // Rule 5: These operations should NOT receive a read response
+                // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
-                    "IdentityService: Unhandled VFS read result for {:?}",
-                    core::mem::discriminant(&op)
+                    "IdentityService: STATE_MACHINE_ERROR - unexpected VFS read result for non-read op, client_pid={}",
+                    ctx.client_pid
                 ));
-                Ok(())
+                Err(AppError::Internal(
+                    "State machine error: unexpected VFS read result for non-read operation".into()
+                ))
             }
         }
     }
@@ -477,60 +496,91 @@ impl IdentityService {
             PendingStorageOp::WriteKeyStore {
                 ctx, result: key_result, ..
             } => {
-                if result.is_ok() {
-                    syscall::debug("IdentityService: Neural key stored successfully via VFS");
-                    response::send_neural_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
-                } else {
-                    syscall::debug("IdentityService: Neural key write failed");
-                    response::send_neural_key_error(
-                        ctx.client_pid,
-                        &ctx.cap_slots,
-                        KeyError::StorageError("VFS write failed".into()),
-                    )
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: Neural key stored successfully via VFS");
+                        response::send_neural_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WriteKeyStore failed - op=write_neural_key, error={}",
+                            e
+                        ));
+                        response::send_neural_key_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            KeyError::StorageError(format!("VFS write failed for neural key: {}", e)),
+                        )
+                    }
                 }
             }
             PendingStorageOp::WriteRecoveredKeyStore {
                 ctx, result: key_result, ..
             } => {
-                if result.is_ok() {
-                    syscall::debug("IdentityService: Recovered key stored successfully via VFS");
-                    response::send_recover_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
-                } else {
-                    response::send_recover_key_error(
-                        ctx.client_pid,
-                        &ctx.cap_slots,
-                        KeyError::StorageError("VFS write failed".into()),
-                    )
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: Recovered key stored successfully via VFS");
+                        response::send_recover_key_success(ctx.client_pid, &ctx.cap_slots, key_result)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WriteRecoveredKeyStore failed - op=recover_neural_key, error={}",
+                            e
+                        ));
+                        response::send_recover_key_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            KeyError::StorageError(format!("VFS write failed for recovered key: {}", e)),
+                        )
+                    }
                 }
             }
             PendingStorageOp::WriteMachineKey { ctx, record, .. } => {
-                if result.is_ok() {
-                    syscall::debug(&format!(
-                        "IdentityService: Machine key {:032x} stored successfully via VFS",
-                        record.machine_id
-                    ));
-                    response::send_create_machine_key_success(ctx.client_pid, &ctx.cap_slots, record)
-                } else {
-                    response::send_create_machine_key_error(
-                        ctx.client_pid,
-                        &ctx.cap_slots,
-                        KeyError::StorageError("VFS write failed".into()),
-                    )
+                match result {
+                    Ok(()) => {
+                        syscall::debug(&format!(
+                            "IdentityService: Machine key {:032x} stored successfully via VFS",
+                            record.machine_id
+                        ));
+                        response::send_create_machine_key_success(ctx.client_pid, &ctx.cap_slots, record)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WriteMachineKey failed - op=create_machine_key, machine_id={:032x}, error={}",
+                            record.machine_id, e
+                        ));
+                        response::send_create_machine_key_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            KeyError::StorageError(format!("VFS write failed for machine key: {}", e)),
+                        )
+                    }
                 }
             }
             PendingStorageOp::WriteRotatedMachineKey { ctx, record, .. } => {
-                if result.is_ok() {
-                    syscall::debug(&format!(
-                        "IdentityService: Rotated machine key {:032x} stored successfully via VFS",
-                        record.machine_id
-                    ));
-                    response::send_rotate_machine_key_success(ctx.client_pid, &ctx.cap_slots, record)
-                } else {
-                    response::send_rotate_machine_key_error(
-                        ctx.client_pid,
-                        &ctx.cap_slots,
-                        KeyError::StorageError("VFS write failed".into()),
-                    )
+                match result {
+                    Ok(()) => {
+                        syscall::debug(&format!(
+                            "IdentityService: Rotated machine key {:032x} stored successfully via VFS",
+                            record.machine_id
+                        ));
+                        response::send_rotate_machine_key_success(ctx.client_pid, &ctx.cap_slots, record)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WriteRotatedMachineKey failed - op=rotate_machine_key, machine_id={:032x}, error={}",
+                            record.machine_id, e
+                        ));
+                        response::send_rotate_machine_key_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            KeyError::StorageError(format!("VFS write failed for rotated key: {}", e)),
+                        )
+                    }
                 }
             }
             PendingStorageOp::WriteEmailCredential { ctx, .. } => {
@@ -546,97 +596,209 @@ impl IdentityService {
                 }
             }
             PendingStorageOp::WriteUnlinkedCredential { ctx, .. } => {
-                if result.is_ok() {
-                    syscall::debug("IdentityService: Credential unlinked successfully via VFS");
-                    response::send_unlink_credential_success(ctx.client_pid, &ctx.cap_slots)
-                } else {
-                    response::send_unlink_credential_error(
-                        ctx.client_pid,
-                        &ctx.cap_slots,
-                        CredentialError::StorageError("VFS write failed".into()),
-                    )
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: Credential unlinked successfully via VFS");
+                        response::send_unlink_credential_success(ctx.client_pid, &ctx.cap_slots)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WriteUnlinkedCredential failed - op=unlink_credential, error={}",
+                            e
+                        ));
+                        response::send_unlink_credential_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            CredentialError::StorageError(format!("VFS write failed for unlink: {}", e)),
+                        )
+                    }
                 }
             }
             PendingStorageOp::WriteZidSession { ctx, tokens, .. } => {
-                if result.is_ok() {
-                    syscall::debug("IdentityService: ZID session stored successfully via VFS");
-                    response::send_zid_login_success(ctx.client_pid, &ctx.cap_slots, tokens)
-                } else {
-                    response::send_zid_login_error(
-                        ctx.client_pid,
-                        &ctx.cap_slots,
-                        zos_identity::error::ZidError::AuthenticationFailed,
-                    )
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: ZID session stored successfully via VFS");
+                        response::send_zid_login_success(ctx.client_pid, &ctx.cap_slots, tokens)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WriteZidSession failed - op=zid_login, error={}",
+                            e
+                        ));
+                        // Still return success with tokens since authentication succeeded,
+                        // only session persistence failed (acceptable partial failure per Rule 0)
+                        syscall::debug("IdentityService: Session write failed but auth succeeded - returning tokens anyway");
+                        response::send_zid_login_success(ctx.client_pid, &ctx.cap_slots, tokens)
+                    }
                 }
             }
             PendingStorageOp::WriteZidEnrollSession { ctx, tokens, .. } => {
-                if result.is_ok() {
-                    syscall::debug("IdentityService: ZID enroll session stored successfully via VFS");
-                    response::send_zid_enroll_success(ctx.client_pid, &ctx.cap_slots, tokens)
-                } else {
-                    response::send_zid_enroll_error(
-                        ctx.client_pid,
-                        &ctx.cap_slots,
-                        zos_identity::error::ZidError::EnrollmentFailed("Session write failed".into()),
-                    )
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: ZID enroll session stored successfully via VFS");
+                        response::send_zid_enroll_success(ctx.client_pid, &ctx.cap_slots, tokens)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WriteZidEnrollSession failed - op=zid_enroll, error={}",
+                            e
+                        ));
+                        // Still return success with tokens since enrollment/auth succeeded,
+                        // only session persistence failed (acceptable partial failure per Rule 0)
+                        syscall::debug("IdentityService: Enroll session write failed but auth succeeded - returning tokens anyway");
+                        response::send_zid_enroll_success(ctx.client_pid, &ctx.cap_slots, tokens)
+                    }
                 }
             }
             PendingStorageOp::WritePreferences { ctx, .. } => {
-                if result.is_ok() {
-                    syscall::debug("IdentityService: Preferences stored successfully via VFS");
-                    let resp = zos_identity::ipc::SetDefaultKeySchemeResponse { result: Ok(()) };
-                    response::send_set_default_key_scheme_response(ctx.client_pid, &ctx.cap_slots, resp)
-                } else {
-                    response::send_set_default_key_scheme_error(
-                        ctx.client_pid,
-                        &ctx.cap_slots,
-                        KeyError::StorageError("VFS write failed".into()),
-                    )
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: Preferences stored successfully via VFS");
+                        let resp = zos_identity::ipc::SetDefaultKeySchemeResponse { result: Ok(()) };
+                        response::send_set_default_key_scheme_response(ctx.client_pid, &ctx.cap_slots, resp)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WritePreferences failed - op=set_default_key_scheme, error={}",
+                            e
+                        ));
+                        response::send_set_default_key_scheme_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            KeyError::StorageError(format!("VFS write failed for preferences: {}", e)),
+                        )
+                    }
                 }
             }
-            _ => {
+            // Rule 5: Explicitly enumerate all remaining pending operation types
+            // These operations don't expect a write response - if we get here, it's a logic error
+            PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CheckKeyExists { ctx, .. } |
+            PendingStorageOp::GetIdentityKey { ctx } |
+            PendingStorageOp::ReadIdentityForRecovery { ctx, .. } |
+            PendingStorageOp::ReadIdentityForMachine { ctx, .. } |
+            PendingStorageOp::ListMachineKeys { ctx, .. } |
+            PendingStorageOp::ReadMachineKey { ctx, .. } |
+            PendingStorageOp::DeleteMachineKey { ctx, .. } |
+            PendingStorageOp::ReadMachineForRotate { ctx, .. } |
+            PendingStorageOp::ReadSingleMachineKey { ctx } |
+            PendingStorageOp::ReadCredentialsForAttach { ctx, .. } |
+            PendingStorageOp::GetCredentials { ctx } |
+            PendingStorageOp::ReadCredentialsForUnlink { ctx, .. } |
+            PendingStorageOp::ReadMachineKeyForZidLogin { ctx, .. } |
+            PendingStorageOp::ReadMachineKeyForZidEnroll { ctx, .. } |
+            PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } => {
+                // Rule 5: These operations should NOT receive a write response
+                // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
-                    "IdentityService: Unhandled VFS write result for {:?}",
-                    core::mem::discriminant(&op)
+                    "IdentityService: STATE_MACHINE_ERROR - unexpected VFS write result for non-write op, client_pid={}",
+                    ctx.client_pid
                 ));
-                Ok(())
+                Err(AppError::Internal(
+                    "State machine error: unexpected VFS write result for non-write operation".into()
+                ))
             }
         }
     }
 
     /// Dispatch VFS exists result to appropriate handler based on pending operation type.
+    ///
+    /// # Rule 5 Compliance
+    /// Errors are handled explicitly - we do NOT use unwrap_or to silently swallow errors.
     fn dispatch_vfs_exists_result(
         &mut self,
         op: PendingStorageOp,
         result: Result<bool, alloc::string::String>,
     ) -> Result<(), AppError> {
-        let exists = result.unwrap_or(false);
-
         match op {
             PendingStorageOp::CheckIdentityDirectory { ctx, user_id } => {
-                keys::continue_generate_after_directory_check(
-                    self,
-                    ctx.client_pid,
-                    user_id,
-                    exists,
-                    ctx.cap_slots,
-                )
+                // Rule 5: Handle errors explicitly, don't swallow them
+                match result {
+                    Ok(exists) => keys::continue_generate_after_directory_check(
+                        self,
+                        ctx.client_pid,
+                        user_id,
+                        exists,
+                        ctx.cap_slots,
+                    ),
+                    Err(e) => {
+                        syscall::debug(&format!(
+                            "IdentityService: VFS exists check failed for identity directory: {}",
+                            e
+                        ));
+                        response::send_neural_key_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            KeyError::StorageError(format!("Directory check failed: {}", e)),
+                        )
+                    }
+                }
             }
             PendingStorageOp::CheckKeyExists { ctx, user_id } => {
-                keys::continue_generate_after_exists_check(
-                    self,
-                    ctx.client_pid,
-                    user_id,
-                    exists,
-                    ctx.cap_slots,
-                )
+                // Rule 5: Handle errors explicitly, don't swallow them
+                match result {
+                    Ok(exists) => keys::continue_generate_after_exists_check(
+                        self,
+                        ctx.client_pid,
+                        user_id,
+                        exists,
+                        ctx.cap_slots,
+                    ),
+                    Err(e) => {
+                        syscall::debug(&format!(
+                            "IdentityService: VFS exists check failed for key file: {}",
+                            e
+                        ));
+                        response::send_neural_key_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            KeyError::StorageError(format!("Key exists check failed: {}", e)),
+                        )
+                    }
+                }
             }
-            _ => {
+            // Rule 5: Explicitly enumerate all remaining pending operation types
+            // These operations don't expect an exists response - if we get here, it's a logic error
+            PendingStorageOp::CreateIdentityDirectory { ctx, .. } |
+            PendingStorageOp::WriteKeyStore { ctx, .. } |
+            PendingStorageOp::GetIdentityKey { ctx } |
+            PendingStorageOp::ReadIdentityForRecovery { ctx, .. } |
+            PendingStorageOp::WriteRecoveredKeyStore { ctx, .. } |
+            PendingStorageOp::ReadIdentityForMachine { ctx, .. } |
+            PendingStorageOp::WriteMachineKey { ctx, .. } |
+            PendingStorageOp::ListMachineKeys { ctx, .. } |
+            PendingStorageOp::ReadMachineKey { ctx, .. } |
+            PendingStorageOp::DeleteMachineKey { ctx, .. } |
+            PendingStorageOp::ReadMachineForRotate { ctx, .. } |
+            PendingStorageOp::WriteRotatedMachineKey { ctx, .. } |
+            PendingStorageOp::ReadSingleMachineKey { ctx } |
+            PendingStorageOp::ReadCredentialsForAttach { ctx, .. } |
+            PendingStorageOp::GetCredentials { ctx } |
+            PendingStorageOp::ReadCredentialsForUnlink { ctx, .. } |
+            PendingStorageOp::WriteUnlinkedCredential { ctx, .. } |
+            PendingStorageOp::WriteEmailCredential { ctx, .. } |
+            PendingStorageOp::ReadMachineKeyForZidLogin { ctx, .. } |
+            PendingStorageOp::WriteZidSession { ctx, .. } |
+            PendingStorageOp::ReadMachineKeyForZidEnroll { ctx, .. } |
+            PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
+            PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
+            PendingStorageOp::WritePreferences { ctx, .. } => {
+                // Rule 5: These operations should NOT receive an exists response
+                // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
-                    "IdentityService: Unhandled VFS exists result for {:?}",
-                    core::mem::discriminant(&op)
+                    "IdentityService: STATE_MACHINE_ERROR - unexpected VFS exists result for non-exists op, client_pid={}",
+                    ctx.client_pid
                 ));
-                Ok(())
+                Err(AppError::Internal(
+                    "State machine error: unexpected VFS exists result for non-exists operation".into()
+                ))
             }
         }
     }
@@ -671,12 +833,43 @@ impl IdentityService {
                     )
                 }
             }
-            _ => {
+            // Rule 5: Explicitly enumerate all remaining pending operation types
+            // These operations don't expect a mkdir response - if we get here, it's a logic error
+            PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CheckKeyExists { ctx, .. } |
+            PendingStorageOp::WriteKeyStore { ctx, .. } |
+            PendingStorageOp::GetIdentityKey { ctx } |
+            PendingStorageOp::ReadIdentityForRecovery { ctx, .. } |
+            PendingStorageOp::WriteRecoveredKeyStore { ctx, .. } |
+            PendingStorageOp::ReadIdentityForMachine { ctx, .. } |
+            PendingStorageOp::WriteMachineKey { ctx, .. } |
+            PendingStorageOp::ListMachineKeys { ctx, .. } |
+            PendingStorageOp::ReadMachineKey { ctx, .. } |
+            PendingStorageOp::DeleteMachineKey { ctx, .. } |
+            PendingStorageOp::ReadMachineForRotate { ctx, .. } |
+            PendingStorageOp::WriteRotatedMachineKey { ctx, .. } |
+            PendingStorageOp::ReadSingleMachineKey { ctx } |
+            PendingStorageOp::ReadCredentialsForAttach { ctx, .. } |
+            PendingStorageOp::GetCredentials { ctx } |
+            PendingStorageOp::ReadCredentialsForUnlink { ctx, .. } |
+            PendingStorageOp::WriteUnlinkedCredential { ctx, .. } |
+            PendingStorageOp::WriteEmailCredential { ctx, .. } |
+            PendingStorageOp::ReadMachineKeyForZidLogin { ctx, .. } |
+            PendingStorageOp::WriteZidSession { ctx, .. } |
+            PendingStorageOp::ReadMachineKeyForZidEnroll { ctx, .. } |
+            PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
+            PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
+            PendingStorageOp::WritePreferences { ctx, .. } => {
+                // Rule 5: These operations should NOT receive a mkdir response
+                // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
-                    "IdentityService: Unhandled VFS mkdir result for {:?}",
-                    core::mem::discriminant(&op)
+                    "IdentityService: STATE_MACHINE_ERROR - unexpected VFS mkdir result for non-mkdir op, client_pid={}",
+                    ctx.client_pid
                 ));
-                Ok(())
+                Err(AppError::Internal(
+                    "State machine error: unexpected VFS mkdir result for non-mkdir operation".into()
+                ))
             }
         }
     }
@@ -770,12 +963,41 @@ impl IdentityService {
                     zos_identity::error::ZidError::MachineKeyNotFound,
                 ),
             },
-            _ => {
+            // Rule 5: Explicitly enumerate all remaining pending operation types
+            // These operations don't expect a readdir response - if we get here, it's a logic error
+            PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CheckKeyExists { ctx, .. } |
+            PendingStorageOp::WriteKeyStore { ctx, .. } |
+            PendingStorageOp::GetIdentityKey { ctx } |
+            PendingStorageOp::ReadIdentityForRecovery { ctx, .. } |
+            PendingStorageOp::WriteRecoveredKeyStore { ctx, .. } |
+            PendingStorageOp::ReadIdentityForMachine { ctx, .. } |
+            PendingStorageOp::WriteMachineKey { ctx, .. } |
+            PendingStorageOp::ReadMachineKey { ctx, .. } |
+            PendingStorageOp::DeleteMachineKey { ctx, .. } |
+            PendingStorageOp::ReadMachineForRotate { ctx, .. } |
+            PendingStorageOp::WriteRotatedMachineKey { ctx, .. } |
+            PendingStorageOp::ReadSingleMachineKey { ctx } |
+            PendingStorageOp::ReadCredentialsForAttach { ctx, .. } |
+            PendingStorageOp::GetCredentials { ctx } |
+            PendingStorageOp::ReadCredentialsForUnlink { ctx, .. } |
+            PendingStorageOp::WriteUnlinkedCredential { ctx, .. } |
+            PendingStorageOp::WriteEmailCredential { ctx, .. } |
+            PendingStorageOp::WriteZidSession { ctx, .. } |
+            PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
+            PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
+            PendingStorageOp::WritePreferences { ctx, .. } => {
+                // Rule 5: These operations should NOT receive a readdir response
+                // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
-                    "IdentityService: Unhandled VFS readdir result for {:?}",
-                    core::mem::discriminant(&op)
+                    "IdentityService: STATE_MACHINE_ERROR - unexpected VFS readdir result for non-readdir op, client_pid={}",
+                    ctx.client_pid
                 ));
-                Ok(())
+                Err(AppError::Internal(
+                    "State machine error: unexpected VFS readdir result for non-readdir operation".into()
+                ))
             }
         }
     }
@@ -799,12 +1021,43 @@ impl IdentityService {
                     )
                 }
             }
-            _ => {
+            // Rule 5: Explicitly enumerate all remaining pending operation types
+            // These operations don't expect an unlink response - if we get here, it's a logic error
+            PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CreateIdentityDirectory { ctx, .. } |
+            PendingStorageOp::CheckKeyExists { ctx, .. } |
+            PendingStorageOp::WriteKeyStore { ctx, .. } |
+            PendingStorageOp::GetIdentityKey { ctx } |
+            PendingStorageOp::ReadIdentityForRecovery { ctx, .. } |
+            PendingStorageOp::WriteRecoveredKeyStore { ctx, .. } |
+            PendingStorageOp::ReadIdentityForMachine { ctx, .. } |
+            PendingStorageOp::WriteMachineKey { ctx, .. } |
+            PendingStorageOp::ListMachineKeys { ctx, .. } |
+            PendingStorageOp::ReadMachineKey { ctx, .. } |
+            PendingStorageOp::ReadMachineForRotate { ctx, .. } |
+            PendingStorageOp::WriteRotatedMachineKey { ctx, .. } |
+            PendingStorageOp::ReadSingleMachineKey { ctx } |
+            PendingStorageOp::ReadCredentialsForAttach { ctx, .. } |
+            PendingStorageOp::GetCredentials { ctx } |
+            PendingStorageOp::ReadCredentialsForUnlink { ctx, .. } |
+            PendingStorageOp::WriteUnlinkedCredential { ctx, .. } |
+            PendingStorageOp::WriteEmailCredential { ctx, .. } |
+            PendingStorageOp::ReadMachineKeyForZidLogin { ctx, .. } |
+            PendingStorageOp::WriteZidSession { ctx, .. } |
+            PendingStorageOp::ReadMachineKeyForZidEnroll { ctx, .. } |
+            PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
+            PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
+            PendingStorageOp::WritePreferences { ctx, .. } => {
+                // Rule 5: These operations should NOT receive an unlink response
+                // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(
-                    "IdentityService: Unhandled VFS unlink result for {:?}",
-                    core::mem::discriminant(&op)
+                    "IdentityService: STATE_MACHINE_ERROR - unexpected VFS unlink result for non-unlink op, client_pid={}",
+                    ctx.client_pid
                 ));
-                Ok(())
+                Err(AppError::Internal(
+                    "State machine error: unexpected VFS unlink result for non-unlink operation".into()
+                ))
             }
         }
     }

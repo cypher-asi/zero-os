@@ -72,7 +72,7 @@ export default tseslint.config(
       '*.config.ts',
       'vite.config.ts',
       'pkg/**',
-      'pkg-desktop/**',
+      'pkg/**',
       'public/**',
     ],
   }

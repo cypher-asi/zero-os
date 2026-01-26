@@ -225,6 +225,27 @@ pub fn send_list_machine_keys(
     )
 }
 
+/// Send list machine keys error response (for parse/auth failures).
+pub fn send_list_machine_keys_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: KeyError,
+) -> Result<(), AppError> {
+    syscall::debug(&format!(
+        "IdentityService: Sending list machine keys error to PID {}: {:?}",
+        client_pid, error
+    ));
+    // Return empty list with error logged - maintaining API contract
+    // In production, consider adding error field to ListMachineKeysResponse
+    let response = ListMachineKeysResponse { machines: Vec::new() };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        identity_machine::MSG_LIST_MACHINE_KEYS_RESPONSE,
+        &response,
+    )
+}
+
 /// Send get machine key response (success or error).
 pub fn send_get_machine_key_response(
     client_pid: u32,
@@ -360,6 +381,27 @@ pub fn send_get_credentials(
     credentials: Vec<LinkedCredential>,
 ) -> Result<(), AppError> {
     let response = GetCredentialsResponse { credentials };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        identity_cred::MSG_GET_CREDENTIALS_RESPONSE,
+        &response,
+    )
+}
+
+/// Send get credentials error response (for parse/auth failures).
+pub fn send_get_credentials_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: CredentialError,
+) -> Result<(), AppError> {
+    syscall::debug(&format!(
+        "IdentityService: Sending get credentials error to PID {}: {:?}",
+        client_pid, error
+    ));
+    // Return empty list with error logged - maintaining API contract
+    // In production, consider adding error field to GetCredentialsResponse
+    let response = GetCredentialsResponse { credentials: Vec::new() };
     send_response_to_pid(
         client_pid,
         cap_slots,

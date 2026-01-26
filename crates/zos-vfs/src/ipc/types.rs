@@ -171,8 +171,8 @@ pub struct ExistsRequest {
 /// Exists response.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExistsResponse {
-    /// Whether the path exists
-    pub exists: bool,
+    /// Result containing whether the path exists, or error
+    pub result: Result<bool, VfsError>,
 }
 
 /// Change permissions request.

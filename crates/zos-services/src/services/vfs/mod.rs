@@ -90,6 +90,22 @@ use zos_vfs::ipc::vfs_msg;
 use zos_vfs::service::{PermissionContext, ProcessClass};
 
 // =============================================================================
+// Resource Limits (Rule 11)
+// =============================================================================
+
+/// Maximum number of pending storage operations.
+///
+/// This prevents resource exhaustion from unbounded pending_ops map growth.
+/// If exceeded, new operations return ResourceExhausted error.
+pub const MAX_PENDING_OPS: usize = 1024;
+
+/// Maximum content size for file writes (16 MB).
+///
+/// This prevents resource exhaustion from very large write requests.
+/// If exceeded, write operations return ContentTooLarge error.
+pub const MAX_CONTENT_SIZE: usize = 16 * 1024 * 1024;
+
+// =============================================================================
 // Storage Key Helpers
 // =============================================================================
 
@@ -225,6 +241,42 @@ pub enum PendingOp {
         perm_ctx: PermissionContext,
         stage: WriteFileStage,
     },
+    /// Mkdir operation - tracks the state machine for directory creation
+    ///
+    /// Stages:
+    /// 1. Check if path already exists
+    /// 2. Check parent exists and is directory, check write permission
+    /// 3. Write inode
+    MkdirOp {
+        ctx: ClientContext,
+        path: String,
+        perm_ctx: PermissionContext,
+        stage: MkdirStage,
+    },
+    /// Readdir operation - tracks the state machine for directory listing
+    ///
+    /// Stages:
+    /// 1. Read directory inode
+    /// 2. Check read permission
+    /// 3. List children
+    ReaddirOp {
+        ctx: ClientContext,
+        path: String,
+        perm_ctx: PermissionContext,
+        stage: ReaddirStage,
+    },
+    /// Unlink operation - tracks the state machine for file deletion
+    ///
+    /// Stages:
+    /// 1. Read inode to verify it's a file and check permissions
+    /// 2. Delete content (must complete first)
+    /// 3. Delete inode (only after content delete succeeds)
+    UnlinkOp {
+        ctx: ClientContext,
+        path: String,
+        perm_ctx: PermissionContext,
+        stage: UnlinkStage,
+    },
 }
 
 /// Stages for the WriteFile operation state machine.
@@ -244,6 +296,43 @@ pub enum WriteFileStage {
     },
     /// Writing inode metadata (stage 2 of 2)
     WritingInode,
+}
+
+/// Stages for the Mkdir operation state machine.
+///
+/// This ensures parent permissions are checked before creating the directory.
+#[derive(Clone)]
+pub enum MkdirStage {
+    /// Checking if path already exists
+    CheckingExists,
+    /// Checking parent directory exists and we have write permission
+    CheckingParent,
+    /// Writing inode
+    WritingInode,
+}
+
+/// Stages for the Readdir operation state machine.
+///
+/// This ensures directory permissions are checked before listing.
+#[derive(Clone)]
+pub enum ReaddirStage {
+    /// Reading directory inode to check permissions
+    ReadingInode,
+    /// Listing children
+    ListingChildren,
+}
+
+/// Stages for the Unlink (file delete) operation state machine.
+///
+/// This ensures content is deleted before inode to avoid dangling references.
+#[derive(Clone)]
+pub enum UnlinkStage {
+    /// Reading inode to verify it's a file and check permissions
+    ReadingInode,
+    /// Deleting content (must complete before inode delete)
+    DeletingContent,
+    /// Deleting inode (final step)
+    DeletingInode,
 }
 
 /// Type of inode operation
@@ -405,6 +494,15 @@ impl VfsService {
 
     /// Start async storage read and track the pending operation
     pub fn start_storage_read(&mut self, key: &str, pending_op: PendingOp) -> Result<(), AppError> {
+        // Rule 11: Check resource limit before starting new operation
+        if self.pending_ops.len() >= MAX_PENDING_OPS {
+            syscall::debug(&format!(
+                "VfsService: Too many pending operations ({}), rejecting read",
+                self.pending_ops.len()
+            ));
+            return Err(AppError::IpcError("Too many pending operations".into()));
+        }
+
         match syscall::storage_read_async(key) {
             Ok(request_id) => {
                 syscall::debug(&format!(
@@ -428,6 +526,15 @@ impl VfsService {
         value: &[u8],
         pending_op: PendingOp,
     ) -> Result<(), AppError> {
+        // Rule 11: Check resource limit before starting new operation
+        if self.pending_ops.len() >= MAX_PENDING_OPS {
+            syscall::debug(&format!(
+                "VfsService: Too many pending operations ({}), rejecting write",
+                self.pending_ops.len()
+            ));
+            return Err(AppError::IpcError("Too many pending operations".into()));
+        }
+
         match syscall::storage_write_async(key, value) {
             Ok(request_id) => {
                 syscall::debug(&format!(
@@ -452,6 +559,15 @@ impl VfsService {
         key: &str,
         pending_op: PendingOp,
     ) -> Result<(), AppError> {
+        // Rule 11: Check resource limit before starting new operation
+        if self.pending_ops.len() >= MAX_PENDING_OPS {
+            syscall::debug(&format!(
+                "VfsService: Too many pending operations ({}), rejecting delete",
+                self.pending_ops.len()
+            ));
+            return Err(AppError::IpcError("Too many pending operations".into()));
+        }
+
         match syscall::storage_delete_async(key) {
             Ok(request_id) => {
                 syscall::debug(&format!(
@@ -474,6 +590,15 @@ impl VfsService {
         prefix: &str,
         pending_op: PendingOp,
     ) -> Result<(), AppError> {
+        // Rule 11: Check resource limit before starting new operation
+        if self.pending_ops.len() >= MAX_PENDING_OPS {
+            syscall::debug(&format!(
+                "VfsService: Too many pending operations ({}), rejecting list",
+                self.pending_ops.len()
+            ));
+            return Err(AppError::IpcError("Too many pending operations".into()));
+        }
+
         match syscall::storage_list_async(prefix) {
             Ok(request_id) => {
                 syscall::debug(&format!(
@@ -496,6 +621,15 @@ impl VfsService {
         key: &str,
         pending_op: PendingOp,
     ) -> Result<(), AppError> {
+        // Rule 11: Check resource limit before starting new operation
+        if self.pending_ops.len() >= MAX_PENDING_OPS {
+            syscall::debug(&format!(
+                "VfsService: Too many pending operations ({}), rejecting exists check",
+                self.pending_ops.len()
+            ));
+            return Err(AppError::IpcError("Too many pending operations".into()));
+        }
+
         match syscall::storage_exists_async(key) {
             Ok(request_id) => {
                 syscall::debug(&format!(
@@ -600,6 +734,24 @@ impl VfsService {
                 perm_ctx,
                 stage,
             } => self.handle_write_file_op_result(&client_ctx, &path, &perm_ctx, stage, result_type, data),
+            PendingOp::MkdirOp {
+                ctx: client_ctx,
+                path,
+                perm_ctx,
+                stage,
+            } => self.handle_mkdir_op_result(&client_ctx, &path, &perm_ctx, stage, result_type, data),
+            PendingOp::ReaddirOp {
+                ctx: client_ctx,
+                path,
+                perm_ctx,
+                stage,
+            } => self.handle_readdir_op_result(&client_ctx, &path, &perm_ctx, stage, result_type, data),
+            PendingOp::UnlinkOp {
+                ctx: client_ctx,
+                path,
+                perm_ctx,
+                stage,
+            } => self.handle_unlink_op_result(&client_ctx, &path, &perm_ctx, stage, result_type, data),
         }
     }
 

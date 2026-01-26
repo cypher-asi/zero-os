@@ -6,6 +6,26 @@
 //! - Handles key recovery from Shamir shards
 //! - Manages machine key records
 //!
+//! # Safety Invariants (per zos-service.md Rule 0)
+//!
+//! ## Success Conditions
+//! - A request succeeds only when ALL of:
+//!   1. Caller is authorized to act on the target user_id
+//!   2. All required data is parsed and validated
+//!   3. All storage operations complete successfully
+//!   4. Response is sent to the original caller
+//!
+//! ## Acceptable Partial Failure
+//! - Orphan VFS content (content written but inode write failed) - GC will clean up
+//! - Session write failure after successful ZID authentication (tokens still returned)
+//!
+//! ## Forbidden States
+//! - Inode pointing to missing content
+//! - Returning success before storage commit
+//! - Processing requests for user_id without authorization check
+//! - Silent fallthrough on parse errors (must return InvalidRequest)
+//! - Unbounded pending operation growth (enforced via MAX_PENDING_OPS)
+//!
 //! # Protocol
 //!
 //! Apps communicate with IdentityService via IPC:
@@ -37,6 +57,7 @@
 extern crate alloc;
 
 // Split modules for dispatch logic
+mod auth;
 mod network_dispatch;
 mod vfs_dispatch;
 mod vfs_helpers;
@@ -47,6 +68,15 @@ pub mod network;
 pub mod pending;
 pub mod response;
 pub mod utils;
+
+// Re-export authorization for use in handlers
+pub use auth::{check_user_authorization, log_denial, AuthResult};
+
+/// Maximum number of pending VFS operations (Rule 11: Resource & DoS)
+pub const MAX_PENDING_VFS_OPS: usize = 64;
+
+/// Maximum number of pending network operations (Rule 11: Resource & DoS)
+pub const MAX_PENDING_NET_OPS: usize = 32;
 
 #[cfg(test)]
 mod tests;

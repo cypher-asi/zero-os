@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:worker": "esbuild workers/worker.ts --bundle --outfile=public/worker.js --format=iife",
+    "dev:worker": "esbuild workers/worker.ts --bundle --outfile=public/worker.js --format=iife --watch",
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
@@ -23,6 +25,7 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "esbuild": "^0.24.0",
     "@eslint/js": "^9.39.2",
     "@testing-library/react": "^14.0.0",
     "@testing-library/user-event": "^14.5.0",
