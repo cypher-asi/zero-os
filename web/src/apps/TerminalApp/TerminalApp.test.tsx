@@ -122,13 +122,17 @@ describe('TerminalApp', () => {
   });
 
   describe('Console callback registration', () => {
-    it('registers console callback with supervisor', async () => {
+    it('warns when no processId is provided', async () => {
+      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       render(<TerminalApp windowId={1} />, {
         wrapper: createWrapper(mockSupervisor),
       });
 
-      // The effect runs synchronously on mount
-      expect(mockSupervisor.set_console_callback).toHaveBeenCalled();
+      // Without processId, should warn and not register
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[TerminalApp] No processId - console output will be buffered'
+      );
+      consoleSpy.mockRestore();
     });
 
     it('registers per-process callback when processId is provided', async () => {
@@ -295,13 +299,13 @@ describe('TerminalApp', () => {
 
   describe('Special commands', () => {
     it('handles clear screen escape sequence', () => {
-      const { container } = render(<TerminalApp windowId={1} />, {
+      const { container } = render(<TerminalApp windowId={1} processId={42} />, {
         wrapper: createWrapper(mockSupervisor),
       });
 
-      // Get the callback that was registered
-      const callback = (mockSupervisor.set_console_callback as ReturnType<typeof vi.fn>).mock
-        .calls[0][0];
+      // Get the callback that was registered for this process
+      const callback = (mockSupervisor.register_console_callback as ReturnType<typeof vi.fn>).mock
+        .calls[0][1];
 
       // Simulate receiving output
       act(() => {

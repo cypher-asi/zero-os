@@ -260,6 +260,115 @@ pub trait HAL: Send + Sync + 'static {
         None
     }
 
+    // === Async Key Storage (KeyService Only) ===
+    // These methods provide access to the dedicated key storage (zos-keys IndexedDB).
+    // Only KeyService should use these syscalls - other processes use KeyService IPC.
+
+    /// Start async read from key storage (returns immediately)
+    ///
+    /// The result will be delivered via notify_key_storage_read_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation (must be KeyService)
+    /// * `key` - Key storage path to read (format: /keys/{user_id}/...)
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn key_storage_read_async(&self, _pid: u64, _key: &str) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Start async write to key storage (returns immediately)
+    ///
+    /// The result will be delivered via notify_key_storage_write_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation (must be KeyService)
+    /// * `key` - Key storage path to write (format: /keys/{user_id}/...)
+    /// * `value` - Key data to store
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn key_storage_write_async(
+        &self,
+        _pid: u64,
+        _key: &str,
+        _value: &[u8],
+    ) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Start async delete from key storage (returns immediately)
+    ///
+    /// The result will be delivered via notify_key_storage_write_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation (must be KeyService)
+    /// * `key` - Key storage path to delete
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn key_storage_delete_async(&self, _pid: u64, _key: &str) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Start async list keys with prefix (returns immediately)
+    ///
+    /// The result will be delivered via notify_key_storage_list_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation (must be KeyService)
+    /// * `prefix` - Key path prefix to match
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn key_storage_list_async(&self, _pid: u64, _prefix: &str) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Start async exists check on key storage (returns immediately)
+    ///
+    /// The result will be delivered via notify_key_storage_exists_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation (must be KeyService)
+    /// * `key` - Key storage path to check
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn key_storage_exists_async(&self, _pid: u64, _key: &str) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
+    /// Get the PID associated with a pending key storage request
+    ///
+    /// # Arguments
+    /// * `request_id` - The request ID to look up
+    ///
+    /// # Returns
+    /// * `Some(pid)` - The PID that initiated this request
+    /// * `None` - Request ID not found
+    fn get_key_storage_request_pid(&self, _request_id: StorageRequestId) -> Option<u64> {
+        None
+    }
+
+    /// Remove and return the PID for a completed key storage request
+    ///
+    /// # Arguments
+    /// * `request_id` - The request ID to remove
+    ///
+    /// # Returns
+    /// * `Some(pid)` - The PID that initiated this request (now removed)
+    /// * `None` - Request ID not found
+    fn take_key_storage_request_pid(&self, _request_id: StorageRequestId) -> Option<u64> {
+        None
+    }
+
     // === Async Network Operations ===
     // These methods start async network (HTTP) operations and return immediately with a request_id.
     // Results are delivered via push callbacks (see onNetworkResult in JS HAL).

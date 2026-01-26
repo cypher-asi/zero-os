@@ -1,12 +1,19 @@
 /**
- * AxiomStorage - IndexedDB-backed storage for Zero OS Axiom log.
+ * ZosStorageAxiom - IndexedDB-backed storage for Zero OS Axiom log.
  *
  * This is the persistence layer for the Axiom commit log.
  * All storage operations are async and use IndexedDB for durability.
  *
+ * ## Storage Separation
+ *
+ * Zero OS uses 3 separate IndexedDBs:
+ * - **zos-filesystem**: VFS inodes and content (see zos-storage.js)
+ * - **zos-keys**: Cryptographic key storage (see zos-key-storage.js)
+ * - **zos-axiom** (this file): Commit log
+ *
  * @see docs/spec/v0.1.2/02-axiom/axiom-spec.md
  */
-window.AxiomStorage = {
+window.ZosStorageAxiom = {
   db: null,
   DB_NAME: 'zos-axiom',
   DB_VERSION: 2,

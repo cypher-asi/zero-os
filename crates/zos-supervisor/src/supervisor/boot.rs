@@ -136,7 +136,7 @@ impl Supervisor {
     /// Initialize ZosStorage (VFS IndexedDB storage).
     ///
     /// This must be called before using VFS operations. It initializes the
-    /// `zos-userspace` IndexedDB database and creates the root filesystem
+    /// `zos-filesystem` IndexedDB database and creates the root filesystem
     /// structure if it doesn't exist.
     ///
     /// ## Bootstrap Storage Access Pattern

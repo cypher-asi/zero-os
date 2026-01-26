@@ -338,7 +338,7 @@ impl IdentityClient {
             }
 
             // Try to receive (non-blocking)
-            if let Some(msg) = receive(self.input_endpoint) {
+            if let Ok(msg) = receive(self.input_endpoint) {
                 // Check if this is the response we're waiting for
                 if msg.tag == response_tag {
                     // Deserialize response

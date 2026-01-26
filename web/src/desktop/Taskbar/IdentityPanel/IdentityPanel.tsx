@@ -226,7 +226,12 @@ export function IdentityPanel({ onClose }: IdentityPanelProps) {
 
         {/* Section 4: Menu */}
         <div className={styles.menuSection}>
-          <Menu items={navItems} onChange={handleSelect} />
+          <Menu
+            items={navItems}
+            onChange={handleSelect}
+            background="none"
+            border="none"
+          />
         </div>
       </Panel>
 

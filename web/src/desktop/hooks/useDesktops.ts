@@ -11,6 +11,7 @@ import {
   type ViewMode,
   type LayerOpacities,
 } from '@/stores';
+import { useDesktopPrefsStore } from '@/stores/desktopPrefsStore';
 
 // =============================================================================
 // Re-export Types from Store
@@ -80,6 +81,8 @@ export function useDesktopActions(): UseDesktopActionsReturn {
   const switchDesktop = useCallback(
     (index: number): void => {
       desktop?.switch_desktop(index);
+      // Persist active workspace to localStorage
+      useDesktopPrefsStore.getState().setActiveWorkspace(index);
     },
     [desktop]
   );

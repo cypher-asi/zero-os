@@ -1,32 +1,32 @@
 //! Axiom Storage - IndexedDB persistence for WASM targets
 //!
-//! Provides wasm-bindgen bindings to the AxiomStorage JavaScript object
+//! Provides wasm-bindgen bindings to the ZosStorageAxiom JavaScript object
 //! for persisting CommitLog entries to IndexedDB.
 
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
-    /// AxiomStorage JavaScript object for IndexedDB persistence
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
+    /// ZosStorageAxiom JavaScript object for IndexedDB persistence
+    #[wasm_bindgen(js_namespace = ZosStorageAxiom)]
     pub async fn init() -> JsValue;
 
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorageAxiom)]
     pub async fn persistEntry(entry: JsValue) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorageAxiom)]
     pub async fn persistEntries(entries: JsValue) -> JsValue;
 
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorageAxiom)]
     pub async fn loadAll() -> JsValue;
 
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorageAxiom)]
     pub async fn getCount() -> JsValue;
 
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorageAxiom)]
     pub async fn getLastSeq() -> JsValue;
 
-    #[wasm_bindgen(js_namespace = AxiomStorage)]
+    #[wasm_bindgen(js_namespace = ZosStorageAxiom)]
     pub async fn clear() -> JsValue;
 }
 

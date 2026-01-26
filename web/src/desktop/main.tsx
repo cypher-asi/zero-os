@@ -70,6 +70,13 @@ function performUnloadCleanup() {
       // Ignore - page is unloading
     }
   }
+  if (window.ZosStorageKeys) {
+    try {
+      window.ZosStorageKeys.initSupervisor(null as unknown as Supervisor);
+    } catch (e) {
+      // Ignore - page is unloading
+    }
+  }
   if (window.ZosNetwork) {
     try {
       window.ZosNetwork.initSupervisor(null as unknown as Supervisor);
@@ -99,6 +106,9 @@ function performFullCleanup() {
   // Clear global references BEFORE freeing (they may hold callbacks)
   if (window.ZosStorage) {
     window.ZosStorage.initSupervisor(null as unknown as Supervisor);
+  }
+  if (window.ZosStorageKeys) {
+    window.ZosStorageKeys.initSupervisor(null as unknown as Supervisor);
   }
   if (window.ZosNetwork) {
     window.ZosNetwork.initSupervisor(null as unknown as Supervisor);
@@ -185,7 +195,7 @@ function App() {
 
         // Load both WASM modules in parallel
         const [supervisorModule, desktopModule] = await Promise.all([
-          import('../../pkg/zos_supervisor_web.js'),
+          import('../../pkg/supervisor/zos_supervisor.js'),
           import('../../pkg/desktop/zos_desktop.js'),
         ]);
 
@@ -200,11 +210,9 @@ function App() {
         updateProgress(BOOT_STEPS.DESKTOP, 'Creating desktop controller...');
         const desktop = new desktopModule.DesktopController() as DesktopController;
 
-        // Set up a default console callback to log output before UI is ready
-        // TerminalApp will override this when it mounts
-        supervisor.set_console_callback((text: string) => {
-          console.log('[console-fallback]', JSON.stringify(text));
-        });
+        // Note: Console callbacks are now per-process. Each TerminalApp registers
+        // its own callback with register_console_callback(pid, callback).
+        // System messages are buffered until a callback is registered.
 
         // Set up spawn callback for loading WASM processes
         supervisor.set_spawn_callback((procType: string, name: string) => {
@@ -246,6 +254,15 @@ function App() {
           console.log('[main] ZosStorage supervisor reference set');
         } else {
           console.warn('[main] ZosStorage not available - storage syscalls will fail');
+        }
+
+        // Initialize ZosStorageKeys with the supervisor reference for key storage callbacks
+        // This enables KeyService to use key_storage_* syscalls (lazy init on first use)
+        if (window.ZosStorageKeys) {
+          window.ZosStorageKeys.initSupervisor(supervisor);
+          console.log('[main] ZosStorageKeys supervisor reference set');
+        } else {
+          console.warn('[main] ZosStorageKeys not available - key storage syscalls will fail');
         }
 
         // Initialize ZosNetwork with the supervisor reference for async network callbacks
@@ -357,12 +374,16 @@ function App() {
     init();
 
     // Cleanup function for React unmount (HMR, navigation, etc.)
+    // IMPORTANT: Only reset initializingRef when cleanup actually runs (cleanupRef is set).
+    // StrictMode unmounts before init() finishes (cleanupRef is null), so we must NOT
+    // reset initializingRef or StrictMode's remount will start a second concurrent init.
     return () => {
       if (cleanupRef.current) {
         cleanupRef.current();
         cleanupRef.current = null;
+        // Only reset after cleanup completes - this allows HMR to reinitialize
+        initializingRef.current = false;
       }
-      initializingRef.current = false;
     };
   }, []);
 

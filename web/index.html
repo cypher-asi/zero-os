@@ -42,11 +42,14 @@
   <body>
     <div id="root"></div>
 
-    <!-- Axiom IndexedDB Storage -->
+    <!-- Axiom IndexedDB Storage (supervisor-owned, bootstrap exception) -->
     <script src="/axiom-storage.js"></script>
 
-    <!-- ZosStorage - Unified IndexedDB Storage -->
+    <!-- ZosStorage - VFS Storage (lazy init by VfsService) -->
     <script src="/zos-storage.js"></script>
+
+    <!-- ZosStorageKeys - Key Storage (lazy init by KeyService) -->
+    <script src="/zos-key-storage.js"></script>
 
     <script type="module" src="./src/desktop/main.tsx"></script>
   </body>

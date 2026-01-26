@@ -39,12 +39,10 @@ export interface Supervisor {
   send_input(input: string): void;
   /** Send input to a specific process by PID */
   send_input_to_process(pid: number, input: string): void;
-  /** Legacy: Set global console callback (use register_console_callback for isolation) */
-  set_console_callback(callback: (text: string) => void): void;
-  /** Register a console callback for a specific process */
-  register_console_callback(pid: number, callback: (text: string) => void): void;
+  /** Register a console callback for a specific process (per-process isolation) */
+  register_console_callback(pid: bigint, callback: (text: string) => void): void;
   /** Unregister the console callback for a process */
-  unregister_console_callback(pid: number): void;
+  unregister_console_callback(pid: bigint): void;
 
   // ===========================================================================
   // Process Spawning

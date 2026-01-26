@@ -91,7 +91,8 @@ impl VfsClient {
             .map_err(|e| VfsError::StorageError(alloc::format!("Lookup send failed: {}", e)))?;
 
         // Wait for response
-        let response = receive_blocking(INIT_ENDPOINT_SLOT);
+        let response = receive_blocking(INIT_ENDPOINT_SLOT)
+            .map_err(|_| VfsError::StorageError(String::from("Receive failed")))?;
         if response.tag != MSG_LOOKUP_RESPONSE {
             return Err(VfsError::StorageError(String::from(
                 "Unexpected response tag",
@@ -386,7 +387,10 @@ impl VfsClient {
         // race conditions where blocking here could consume other IPC messages.
         // The supervisor routes VFS responses to this slot via Init.
         loop {
-            let response = receive_blocking(VFS_RESPONSE_SLOT);
+            let response = match receive_blocking(VFS_RESPONSE_SLOT) {
+                Ok(msg) => msg,
+                Err(_) => continue,
+            };
 
             if response.tag == expected_response_tag {
                 // This is our VFS response - deserialize and return

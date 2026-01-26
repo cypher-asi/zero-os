@@ -15,6 +15,7 @@ import { BackgroundContext } from '../BackgroundContext';
 import { DesktopInner } from '../DesktopInner';
 import { usePointerHandlers } from '../Desktop/hooks/usePointerHandlers';
 import { useBackgroundMenu } from '../Desktop/hooks/useBackgroundMenu';
+import { useDesktopPrefsStore } from '@/stores/desktopPrefsStore';
 import type { WorkspaceInfo } from '@/stores/types';
 import type { DesktopProps, SelectionBox, DesktopBackgroundType } from '../Desktop/types';
 import styles from '../Desktop/Desktop.module.css';
@@ -79,6 +80,25 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
 
     setInitialized(true);
   }, [desktop, initialized]);
+
+  // Restore saved preferences on init
+  useEffect(() => {
+    if (!initialized) return;
+
+    const prefs = useDesktopPrefsStore.getState();
+
+    // Restore active workspace
+    if (prefs.activeWorkspace > 0) {
+      desktop.switch_desktop(prefs.activeWorkspace);
+    }
+
+    // Restore per-workspace backgrounds
+    // Apply saved backgrounds to all workspaces that have saved preferences
+    Object.entries(prefs.backgrounds).forEach(([indexStr, backgroundId]) => {
+      const index = parseInt(indexStr, 10);
+      desktop.set_desktop_background(index, backgroundId);
+    });
+  }, [initialized, desktop]);
 
   // Handle resize
   useEffect(() => {

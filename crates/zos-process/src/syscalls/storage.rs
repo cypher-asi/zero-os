@@ -5,6 +5,7 @@
 //!
 //! Only VfsService should use these - applications use zos_vfs::VfsClient.
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::error;
 #[allow(unused_imports)]
 use crate::{

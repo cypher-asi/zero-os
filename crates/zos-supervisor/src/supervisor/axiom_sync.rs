@@ -7,39 +7,60 @@ use wasm_bindgen::prelude::*;
 use super::{log, Supervisor};
 use crate::bindings::axiom_storage;
 
+/// Internal async helper for axiom initialization.
+/// This is a standalone async function that doesn't hold any borrows,
+/// avoiding wasm-bindgen closure issues with &mut self across await points.
+async fn do_axiom_init() -> Option<(u64, u64)> {
+    let result = axiom_storage::init().await;
+    if !result.is_truthy() {
+        log("[axiom] Failed to initialize IndexedDB");
+        return None;
+    }
+
+    let last_seq = axiom_storage::getLastSeq().await;
+    let count = axiom_storage::getCount().await;
+
+    let seq_num = last_seq.as_f64().map(|s| if s < 0.0 { 0 } else { s as u64 + 1 });
+    let count_num = count.as_f64().map(|n| n as u64);
+
+    Some((seq_num.unwrap_or(0), count_num.unwrap_or(0)))
+}
+
 #[wasm_bindgen]
 impl Supervisor {
     /// Initialize Axiom storage (IndexedDB) - call this before boot()
     /// Returns a Promise that resolves when storage is ready
+    ///
+    /// NOTE: This method avoids the wasm-bindgen "closure invoked recursively or
+    /// after being dropped" error by:
+    /// 1. Checking for double initialization upfront (synchronous guard)
+    /// 2. Performing all async IndexedDB operations in a separate async function
+    ///    that doesn't hold &mut self across await points
+    /// 3. Updating state synchronously after the async work completes
     #[wasm_bindgen]
     pub async fn init_axiom_storage(&mut self) -> Result<JsValue, JsValue> {
+        // Guard against double initialization (synchronous check)
+        if self.axiom_storage_ready {
+            log("[axiom] Already initialized");
+            return Ok(JsValue::from_bool(true));
+        }
+
         log("[axiom] Initializing IndexedDB storage...");
 
-        let result = axiom_storage::init().await;
+        // Perform all async work in a standalone function that doesn't borrow self.
+        // This avoids wasm-bindgen issues with holding &mut self across await points.
+        let result = do_axiom_init().await;
 
-        if result.is_truthy() {
-            self.axiom_storage_ready = true;
-
-            // Get the last persisted sequence number
-            let last_seq = axiom_storage::getLastSeq().await;
-            if let Some(seq) = last_seq.as_f64() {
-                self.last_persisted_axiom_seq = if seq < 0.0 { 0 } else { seq as u64 + 1 };
-                log(&format!(
-                    "[axiom] Storage ready, last_seq={}",
-                    self.last_persisted_axiom_seq
-                ));
+        // Update state synchronously based on result
+        match result {
+            Some((last_seq, count)) => {
+                self.axiom_storage_ready = true;
+                self.last_persisted_axiom_seq = last_seq;
+                log(&format!("[axiom] Storage ready, last_seq={}", last_seq));
+                log(&format!("[axiom] {} entries in IndexedDB", count));
+                Ok(JsValue::from_bool(true))
             }
-
-            // Get count of stored entries
-            let count = axiom_storage::getCount().await;
-            if let Some(n) = count.as_f64() {
-                log(&format!("[axiom] {} entries in IndexedDB", n as u64));
-            }
-
-            Ok(JsValue::from_bool(true))
-        } else {
-            log("[axiom] Failed to initialize IndexedDB");
-            Ok(JsValue::from_bool(false))
+            None => Ok(JsValue::from_bool(false)),
         }
     }
 
@@ -71,14 +92,17 @@ impl Supervisor {
             return 0;
         }
 
-        // Convert to JS array
+        // Convert to JS array (synchronous operation)
         let js_entries = js_sys::Array::new();
         for commit in &commits_to_persist {
             js_entries.push(&axiom_storage::commit_to_js(commit));
         }
 
-        // Persist to IndexedDB
+        // Persist to IndexedDB - the only await point
+        // Note: We prepare all data before awaiting to minimize borrow duration issues
         let result = axiom_storage::persistEntries(js_entries.into()).await;
+        
+        // Update state synchronously after await
         if let Some(count) = result.as_f64() {
             let persisted = count as u32;
             self.last_persisted_axiom_seq = current_seq;

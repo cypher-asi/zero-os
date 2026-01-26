@@ -1,10 +1,10 @@
 /**
- * ZosStorage - Unified IndexedDB persistence for Zero OS
+ * ZosStorage - IndexedDB persistence for Zero OS Filesystem
  *
- * This is the SINGLE consolidated storage object for Zero OS. All IndexedDB
+ * This is the filesystem storage layer for Zero OS. All VFS IndexedDB
  * access goes through this object.
  *
- * Database: zos-userspace
+ * Database: zos-filesystem
  * Object Stores:
  *   - inodes: Filesystem metadata (path -> Inode)
  *   - content: File content blobs (path -> Uint8Array)
@@ -16,6 +16,13 @@
  * 1. **Runtime Path (Processes)**: VFS Service → syscall → HAL → ZosStorage
  * 2. **Bootstrap Path (Supervisor)**: Supervisor Boot → HAL bootstrap_storage_* → ZosStorage
  * 3. **Read-Only Path (React UI)**: React → ZosStorageClient → ZosStorage sync caches
+ *
+ * ## Storage Separation
+ *
+ * Zero OS uses 3 separate IndexedDBs:
+ * - **zos-filesystem** (this file): VFS inodes and content
+ * - **zos-keys**: Cryptographic key storage (see zos-key-storage.js)
+ * - **zos-axiom**: Commit log (see axiom-storage.js)
  *
  * ## Usage
  *
@@ -30,7 +37,7 @@ const ZosStorage = {
   db: null,
 
   /** Database name */
-  DB_NAME: 'zos-userspace',
+  DB_NAME: 'zos-filesystem',
 
   /** Database version */
   DB_VERSION: 1,

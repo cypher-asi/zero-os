@@ -136,7 +136,7 @@ pub fn check_user_authorization(from_pid: u32, target_user_id: u128) -> AuthResu
 fn check_authorization_with_reason(from_pid: u32, _target_user_id: u128) -> (AuthResult, AuthReason) {
     // Check 1: System processes have full access
     // These are trusted kernel-level services with assigned PIDs
-    if from_pid <= TRUSTED_SYSTEM_PID_MAX {
+    if is_system_process(from_pid) {
         return (AuthResult::Allowed, AuthReason::SystemProcess);
     }
 
@@ -146,7 +146,7 @@ fn check_authorization_with_reason(from_pid: u32, _target_user_id: u128) -> (Aut
     //   1. Desktop should include session_token in request
     //   2. Verify token with Permission Service
     //   3. Extract user_id from token and compare with target_user_id
-    if from_pid == DESKTOP_PROCESS_PID {
+    if is_desktop_process(from_pid) {
         return (AuthResult::Allowed, AuthReason::DesktopProcess);
     }
 

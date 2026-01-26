@@ -238,6 +238,192 @@ impl super::Supervisor {
             payload,
         );
     }
+
+    // ==========================================================================
+    // Key Storage Callbacks (from ZosStorageKeys JavaScript)
+    // ==========================================================================
+
+    /// Internal handler for key storage read complete.
+    pub(super) fn notify_key_storage_read_complete_internal(
+        &mut self,
+        request_id: u32,
+        data: &[u8],
+    ) {
+        log(&format!(
+            "[supervisor] notify_key_storage_read_complete: request_id={}, len={}",
+            request_id,
+            data.len()
+        ));
+
+        // Look up which PID requested this
+        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+            Some(p) => p,
+            None => {
+                log(&format!(
+                    "[supervisor] Unknown key storage request_id: {}",
+                    request_id
+                ));
+                return;
+            }
+        };
+
+        // Build MSG_STORAGE_RESULT payload (same format as regular storage)
+        // Format: [request_id: u32, result_type: u8, data_len: u32, data: [u8]]
+        let mut payload = Vec::with_capacity(9 + data.len());
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_READ_OK);
+        payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        payload.extend_from_slice(data);
+
+        // Deliver to requesting process via Init
+        self.deliver_storage_result(pid, &payload);
+    }
+
+    /// Internal handler for key storage not found.
+    pub(super) fn notify_key_storage_not_found_internal(&mut self, request_id: u32) {
+        log(&format!(
+            "[supervisor] notify_key_storage_not_found: request_id={}",
+            request_id
+        ));
+
+        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+            Some(p) => p,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown key storage request_id {} in not_found handler (orphaned response)",
+                    request_id
+                ));
+                return;
+            }
+        };
+
+        // Build MSG_STORAGE_RESULT payload for NOT_FOUND
+        let mut payload = Vec::with_capacity(9);
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_NOT_FOUND);
+        payload.extend_from_slice(&0u32.to_le_bytes());
+
+        self.deliver_storage_result(pid, &payload);
+    }
+
+    /// Internal handler for key storage write complete.
+    pub(super) fn notify_key_storage_write_complete_internal(&mut self, request_id: u32) {
+        log(&format!(
+            "[supervisor] notify_key_storage_write_complete: request_id={}",
+            request_id
+        ));
+
+        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+            Some(p) => p,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown key storage request_id {} in write_complete handler (orphaned response)",
+                    request_id
+                ));
+                return;
+            }
+        };
+
+        // Build MSG_STORAGE_RESULT payload for WRITE_OK
+        let mut payload = Vec::with_capacity(9);
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_WRITE_OK);
+        payload.extend_from_slice(&0u32.to_le_bytes());
+
+        self.deliver_storage_result(pid, &payload);
+    }
+
+    /// Internal handler for key storage list complete.
+    pub(super) fn notify_key_storage_list_complete_internal(
+        &mut self,
+        request_id: u32,
+        keys_json: &str,
+    ) {
+        log(&format!(
+            "[supervisor] notify_key_storage_list_complete: request_id={}, len={}",
+            request_id,
+            keys_json.len()
+        ));
+
+        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+            Some(p) => p,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown key storage request_id {} in list_complete handler (orphaned response)",
+                    request_id
+                ));
+                return;
+            }
+        };
+
+        let data = keys_json.as_bytes();
+        let mut payload = Vec::with_capacity(9 + data.len());
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_LIST_OK);
+        payload.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        payload.extend_from_slice(data);
+
+        self.deliver_storage_result(pid, &payload);
+    }
+
+    /// Internal handler for key storage exists complete.
+    pub(super) fn notify_key_storage_exists_complete_internal(
+        &mut self,
+        request_id: u32,
+        exists: bool,
+    ) {
+        log(&format!(
+            "[supervisor] notify_key_storage_exists_complete: request_id={}, exists={}",
+            request_id, exists
+        ));
+
+        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+            Some(p) => p,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown key storage request_id {} in exists_complete handler (orphaned response)",
+                    request_id
+                ));
+                return;
+            }
+        };
+
+        let mut payload = Vec::with_capacity(10);
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_EXISTS_OK);
+        payload.extend_from_slice(&1u32.to_le_bytes()); // data_len = 1
+        payload.push(if exists { 1 } else { 0 });
+
+        self.deliver_storage_result(pid, &payload);
+    }
+
+    /// Internal handler for key storage error.
+    pub(super) fn notify_key_storage_error_internal(&mut self, request_id: u32, error: &str) {
+        log(&format!(
+            "[supervisor] notify_key_storage_error: request_id={}, error={}",
+            request_id, error
+        ));
+
+        let pid = match self.system.hal().take_key_storage_request_pid(request_id) {
+            Some(p) => p,
+            None => {
+                log(&format!(
+                    "[supervisor] ERROR: Unknown key storage request_id {} in error handler (orphaned response, error was: {})",
+                    request_id, error
+                ));
+                return;
+            }
+        };
+
+        let error_bytes = error.as_bytes();
+        let mut payload = Vec::with_capacity(9 + error_bytes.len());
+        payload.extend_from_slice(&request_id.to_le_bytes());
+        payload.push(storage_const::STORAGE_ERROR);
+        payload.extend_from_slice(&(error_bytes.len() as u32).to_le_bytes());
+        payload.extend_from_slice(error_bytes);
+
+        self.deliver_storage_result(pid, &payload);
+    }
 }
 
 #[cfg(test)]

@@ -114,6 +114,13 @@ export {
   type KeyScheme,
 } from './machineKeysStore';
 
+// Desktop Preferences store (localStorage persistence)
+export {
+  useDesktopPrefsStore,
+  selectActiveWorkspace,
+  selectBackgrounds,
+} from './desktopPrefsStore';
+
 // Shared types
 export type {
   WasmRefs,

@@ -90,9 +90,8 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
         supervisor.unregister_console_callback(BigInt(processId));
       };
     } else {
-      // Legacy mode: use global callback (backward compatible)
-      console.log('[TerminalApp] Using legacy global console callback');
-      supervisor.set_console_callback(handleOutput);
+      // No processId available - console callbacks are per-process, so we can't register
+      console.warn('[TerminalApp] No processId - console output will be buffered');
     }
   }, [supervisor, processId]);
 

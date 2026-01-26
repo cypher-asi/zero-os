@@ -57,7 +57,8 @@ export function createMockSupervisor(
       });
     }),
     send_input: vi.fn((_input: string) => {}),
-    set_console_callback: vi.fn((_callback: (text: string) => void) => {}),
+    register_console_callback: vi.fn((_pid: bigint, _callback: (text: string) => void) => {}),
+    unregister_console_callback: vi.fn((_pid: bigint) => {}),
     set_spawn_callback: vi.fn((_callback: (procType: string, name: string) => void) => {}),
     complete_spawn: vi.fn((name: string, binary: Uint8Array) => {
       const pid = state.processes.length + 1;
@@ -123,8 +124,6 @@ export function createMockSupervisor(
 
     // Process isolation APIs
     send_input_to_process: vi.fn((_pid: number, _input: string) => {}),
-    register_console_callback: vi.fn((_pid: number, _callback: (text: string) => void) => {}),
-    unregister_console_callback: vi.fn((_pid: number) => {}),
 
     // Capability API
     revoke_capability: vi.fn((_pid: bigint, _slot: number) => true),

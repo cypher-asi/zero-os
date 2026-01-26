@@ -5,6 +5,7 @@
 //!
 //! Only the Network Service should use these - applications use IPC to Network Service.
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::error;
 #[allow(unused_imports)]
 use crate::SYS_NETWORK_FETCH;

@@ -33,7 +33,7 @@
 //! │  ┌──────────────────────────────────────────────────────────────────────┐   │
 //! │  │                       Storage Backend                                  │   │
 //! │  │  ┌─────────────────────────┐  ┌─────────────────────────┐            │   │
-//! │  │  │   zos-userspace DB      │  │   Content Store         │            │   │
+//! │  │  │   zos-filesystem DB     │  │   Content Store         │            │   │
 //! │  │  │  • Inodes (metadata)    │  │  • File content blobs   │            │   │
 //! │  │  │  • Directory entries    │  │  • Encrypted content    │            │   │
 //! │  │  └─────────────────────────┘  └─────────────────────────┘            │   │

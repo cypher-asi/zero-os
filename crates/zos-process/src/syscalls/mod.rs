@@ -2,8 +2,6 @@
 
 extern crate alloc;
 #[cfg(target_arch = "wasm32")]
-use alloc::format;
-#[cfg(target_arch = "wasm32")]
 use alloc::string::ToString;
 use crate::error;
 // Import syscall numbers (re-exported from zos-ipc at crate root)
@@ -386,7 +384,7 @@ pub fn call(endpoint_slot: u32, tag: u32, data: &[u8]) -> Result<ReceivedMessage
 
     // Poll for reply (would block in a real implementation)
     loop {
-        if let Some(msg) = receive(endpoint_slot) {
+        if let Ok(msg) = receive(endpoint_slot) {
             return Ok(msg);
         }
         yield_now();

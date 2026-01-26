@@ -12,6 +12,7 @@ import type {
   DesktopBackgroundType,
 } from '../types';
 import type { WorkspaceInfo } from '@/stores/types';
+import { useDesktopPrefsStore } from '@/stores/desktopPrefsStore';
 
 interface UseBackgroundMenuProps {
   desktop: DesktopController;
@@ -64,6 +65,9 @@ export function useBackgroundMenu({
       const activeDesktop = workspaceInfo.actualActive;
       // Update the desktop state (this will persist and the render loop will sync the renderer)
       desktop.set_desktop_background(activeDesktop, id);
+
+      // Persist per-workspace background to localStorage
+      useDesktopPrefsStore.getState().setBackground(activeDesktop, id);
     },
     [desktop, workspaceInfoRef]
   );

@@ -86,6 +86,21 @@ declare global {
       // Get pending request count
       getPendingCount(): number;
     };
+    /** ZosStorageKeys - key storage HAL for cryptographic keys (lazy init by KeyService) */
+    ZosStorageKeys?: {
+      // Supervisor initialization
+      initSupervisor(supervisor: unknown): void;
+      // Async key operations (HAL callbacks)
+      startRead(requestId: number, path: string): Promise<void>;
+      startWrite(requestId: number, path: string, value: Uint8Array): Promise<void>;
+      startDelete(requestId: number, path: string): Promise<void>;
+      startList(requestId: number, prefix: string): Promise<void>;
+      startExists(requestId: number, path: string): Promise<void>;
+      // Sync cache access
+      existsSync(path: string): boolean;
+      getKeySync(path: string): Uint8Array | null;
+      listKeysSync(prefix: string): string[];
+    };
   }
 }
 
