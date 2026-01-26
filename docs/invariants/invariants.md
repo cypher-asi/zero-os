@@ -470,15 +470,23 @@ This architecture ensures Axiom and Kernel remain **separate concerns** with no 
 
 32. **Keystore Hierarchy Enforcement (Cryptographic Key Material)**
 
-    Cryptographic key operations use **dedicated keystore syscalls** that bypass VFS entirely:
+    Cryptographic key operations use a **dedicated KeystoreService** that bypasses VFS entirely:
 
     ```
     ┌─────────────────────────────────────────────────────────────┐
     │                    Identity Service (PID 5)                  │
-    │              Authorized to use keystore syscalls             │
+    │                    (or other authorized process)             │
     └────────────────────┬────────────────────────────────────────┘
                          │
-                         │ Keystore Syscalls (Direct - No VFS)
+                         │ Keystore IPC Protocol
+                         │ (MSG_KEYSTORE_READ, MSG_KEYSTORE_WRITE, etc.)
+                         ▼
+    ┌─────────────────────────────────────────────────────────────┐
+    │                  KeystoreService (PID 7)                     │
+    │              ONLY process with keystore syscalls             │
+    └────────────────────┬────────────────────────────────────────┘
+                         │
+                         │ Keystore Syscalls (0x80-0x84)
                          │ (SYS_KEYSTORE_READ, SYS_KEYSTORE_WRITE, etc.)
                          ▼
     ┌─────────────────────────────────────────────────────────────┐
@@ -491,7 +499,7 @@ This architecture ensures Axiom and Kernel remain **separate concerns** with no 
     ┌─────────────────────────────────────────────────────────────┐
     │                   Axiom (Verification Layer)                 │
     │    - Logs request to SysLog                                  │
-    │    - Verifies sender identity (PID check)                    │
+    │    - Verifies sender identity                                │
     │    - Calls kernel function                                   │
     │    - Records commits to CommitLog                            │
     └────────────────────┬────────────────────────────────────────┘
@@ -527,17 +535,18 @@ This architecture ensures Axiom and Kernel remain **separate concerns** with no 
                   IndexedDB (zos-keystore)
     ```
 
-    **Why Keystore Bypasses VFS:**
+    **Why Keystore Has Its Own Service:**
 
     * **Security Isolation**: Key material never passes through VFS, eliminating path traversal and filesystem-level attack vectors
     * **Reduced Attack Surface**: VFS bugs (path parsing, permission checks, directory traversal) cannot leak cryptographic keys
     * **Physical Separation**: `zos-keystore` is a separate IndexedDB database from `zos-storage`
-    * **Direct Access**: Identity Service needs fast, direct key access without VFS overhead
+    * **Controlled Access**: Only KeystoreService uses keystore syscalls; other processes use capability-gated IPC
     * **No Filesystem Semantics**: Keys don't need directories, permissions, or metadata - just key-value storage
 
     **Access Control:**
 
-    * Keystore syscalls are restricted to authorized processes (currently Identity Service, PID 5)
+    * Keystore syscalls are restricted to KeystoreService (PID 7)
+    * Identity Service accesses keystore via IPC to KeystoreService (capability-gated)
     * Axiom logs all keystore operations to SysLog for audit
     * React UI may read from `ZosKeystore.keyCache` (read-only, synchronous)
 
@@ -606,7 +615,7 @@ This single rule:
       * 0x30-0x3F: Capability (grant, revoke, inspect)
       * 0x40-0x4F: IPC (send, receive, call, reply)
       * 0x50-0x5F: System (list processes)
-      * 0x60-0x6F: Keystore (cryptographic key storage - bypasses VFS)
+      * 0x80-0x8F: Keystore (cryptographic key storage - bypasses VFS)
       * 0x70-0x7F: Platform Storage (async ops - VFS only)
       * 0x90-0x9F: Network (async HTTP)
     * **IPC Messages** (various modules):
@@ -619,6 +628,7 @@ This single rule:
       * 0x7000-0x70FF: Identity service
       * 0x8000-0x80FF: VFS service
       * 0x9000-0x901F: Network service
+      * 0xA000-0xA0FF: Keystore service
 
     **Rationale:**
     
@@ -627,7 +637,7 @@ This single rule:
     * Prevents constant value conflicts
     * Makes protocol versioning and evolution easier
     * Both syscalls and IPC messages are part of the kernel interface
-    * Keystore syscalls (0x60-0x6F) are separate from storage syscalls (0x70-0x7F) to enforce separation at the syscall boundary
+    * Keystore syscalls (0x80-0x8F) are separate from storage syscalls (0x70-0x7F) to enforce separation at the syscall boundary
 
 ---
 
