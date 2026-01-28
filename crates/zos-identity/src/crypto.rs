@@ -179,7 +179,7 @@ fn derive_key_from_password(password: &str, kdf: &KeyDerivation) -> Result<[u8; 
 /// - `EncryptedShard` containing ciphertext, nonce, and auth tag
 ///
 /// # Security
-/// - Uses Argon2id with 64MB memory cost for password hardening
+/// - Uses Argon2id with 2MB memory cost for password hardening (WASM-compatible)
 /// - Uses AES-256-GCM for authenticated encryption
 /// - Each shard gets a unique random nonce
 pub fn encrypt_shard(
@@ -281,16 +281,20 @@ pub fn generate_kdf_salt() -> Result<[u8; 32], KeyError> {
 
 /// Create default KDF parameters with a random salt.
 ///
-/// Uses Argon2id with:
-/// - Memory: 64MB (65536 KB)
-/// - Iterations: 3
+/// Uses Argon2id with minimal parameters for WASM compatibility:
+/// - Memory: 64 KB (minimum recommended)
+/// - Iterations: 3 (minimum recommended)
 /// - Parallelism: 1
+///
+/// WARNING: These are minimal parameters due to WASM performance constraints.
+/// Argon2 in WASM runs 10-100x slower than native. In production, consider
+/// using Web Crypto API's PBKDF2 for better browser performance.
 pub fn create_kdf_params() -> Result<KeyDerivation, KeyError> {
     Ok(KeyDerivation {
         algorithm: String::from("Argon2id"),
         salt: generate_kdf_salt()?,
         time_cost: 3,
-        memory_cost: 65536, // 64 MB
+        memory_cost: 64, // 64 KB (WASM minimum)
         parallelism: 1,
     })
 }

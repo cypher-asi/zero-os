@@ -3,10 +3,10 @@
 //! Handles MSG_SPAWN_SERVICE and capability granted notifications.
 
 #[cfg(target_arch = "wasm32")]
-use alloc::format;
+use alloc::{format, vec::Vec};
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::format;
+use std::{format, vec::Vec};
 
 use crate::Init;
 use zos_process as syscall;
@@ -49,8 +49,17 @@ impl Init {
     /// service's input endpoint. Init stores this mapping so it can deliver
     /// IPC messages to services via capability-checked syscall::send().
     ///
+    /// After storing the capability, any pending deliveries for this service
+    /// are retried. This handles the race condition where user requests arrive
+    /// before capability grants are processed.
+    ///
     /// Payload: [service_pid: u32, cap_slot: u32]
     pub fn handle_service_cap_granted(&mut self, msg: &syscall::ReceivedMessage) {
+        self.log(&format!(
+            "AGENT_LOG:cap_granted:received:from_pid={}:data_len={}",
+            msg.from_pid, msg.data.len()
+        ));
+
         // Verify sender is supervisor (PID 0)
         if msg.from_pid != 0 {
             self.log(&format!(
@@ -69,12 +78,18 @@ impl Init {
         let service_pid = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
         let cap_slot = u32::from_le_bytes([msg.data[4], msg.data[5], msg.data[6], msg.data[7]]);
 
+        let pending_count = self.pending_deliveries.get(&service_pid)
+            .map(|v: &Vec<crate::PendingDelivery>| v.len())
+            .unwrap_or(0);
         self.log(&format!(
-            "Registered capability for service PID {} at slot {}",
-            service_pid, cap_slot
+            "AGENT_LOG:cap_granted:registered:service_pid={}:cap_slot={}:total_caps={}:pending_count={}",
+            service_pid, cap_slot, self.service_cap_slots.len() + 1, pending_count
         ));
 
         self.service_cap_slots.insert(service_pid, cap_slot);
+
+        // Retry any pending deliveries that were waiting for this capability
+        self.retry_pending_deliveries(service_pid, cap_slot);
     }
 
     /// Handle VFS response endpoint capability granted notification from supervisor.

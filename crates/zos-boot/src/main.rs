@@ -49,12 +49,23 @@ entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
 /// Maximum iterations for the main loop (safety limit for testing)
 const MAX_MAIN_LOOP_ITERATIONS: u64 = 10000;
 
+/// Find the terminal process PID if it exists
+fn find_terminal_pid(system: &System<X86_64Hal>) -> Option<zos_kernel::ProcessId> {
+    for (pid, process) in system.list_processes() {
+        if process.name == "terminal" {
+            return Some(pid);
+        }
+    }
+    None
+}
+
 /// Run the kernel main loop
 ///
 /// This is the heart of the QEMU native runtime. It:
 /// 1. Polls for syscalls from WASM processes
 /// 2. Dispatches syscalls through the Axiom verification layer
 /// 3. Completes syscalls and resumes processes
+/// 4. Routes serial input to terminal process
 fn run_kernel_main_loop(
     system: &mut System<X86_64Hal>,
     hal: &X86_64Hal,
@@ -93,10 +104,12 @@ fn run_kernel_main_loop(
             );
         }
 
-        // Poll for syscalls from WASM processes
-        let pending_syscalls = hal.run_scheduler();
+        // Poll for serial input and route to terminal process
+        route_serial_input_to_terminal(system);
 
-        for syscall in pending_syscalls {
+        // Run processes with synchronous syscall handling
+        // This ensures syscalls are processed immediately before the process continues
+        hal.run_scheduler_with_handler(|syscall| {
             syscall_count += 1;
 
             // Get sender PID
@@ -113,9 +126,7 @@ fn run_kernel_main_loop(
                         serial_println!("{}", text);
                     }
                 }
-                // Complete immediately with success
-                hal.complete_syscall(syscall.pid, 0, &[]);
-                continue;
+                return (0, alloc::vec::Vec::new());
             }
 
             // Debug output for other syscalls (throttled)
@@ -133,12 +144,40 @@ fn run_kernel_main_loop(
             let (result, _rich_result, response_data) =
                 system.process_syscall(sender, syscall_num, args, &syscall.data);
 
-            // Complete the syscall (resume the WASM process)
-            hal.complete_syscall(syscall.pid, result as u32, &response_data);
-        }
+            (result as u32, response_data)
+        });
 
         // Small yield to prevent busy-spinning
         x86_64::instructions::hlt();
+    }
+}
+
+/// Route serial input to terminal process via HAL message queue
+///
+/// Reads bytes from the serial input buffer and sends them as messages
+/// to the terminal process if it's running.
+fn route_serial_input_to_terminal(system: &mut System<X86_64Hal>) {
+    use zos_hal::x86_64::serial;
+    use zos_hal::NumericProcessHandle;
+    
+    // Read all available bytes from serial input
+    while let Some(byte) = serial::read_byte() {
+        // Find terminal process
+        if let Some(terminal_pid) = find_terminal_pid(system) {
+            // Create console input message: [msg_type: u8, byte: u8]
+            // Message type 0x03 = console input
+            let msg_data = alloc::vec![0x03, byte];
+            
+            // Send to the terminal process via HAL
+            let handle = NumericProcessHandle::new(terminal_pid.0);
+            if let Err(_e) = system.hal().send_to_process(&handle, &msg_data) {
+                // Silently ignore errors - terminal might not be ready yet
+            }
+        }
+        // If no terminal, just echo the character back to serial for debugging
+        else {
+            serial::write_byte(byte);
+        }
     }
 }
 
@@ -527,8 +566,8 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
             let init_pid = kernel_system.register_process("init");
             serial_println!("  Registered Init as PID {}", init_pid.0);
             
-            // Spawn Init via HAL WASM runtime
-            match HAL.spawn_process("init", init_binary) {
+            // Spawn Init via HAL WASM runtime with the kernel-allocated PID
+            match HAL.spawn_process_with_pid(init_pid.0, "init", init_binary) {
                 Ok(handle) => {
                     serial_println!("  Spawned Init process (handle {})", handle.id());
                     

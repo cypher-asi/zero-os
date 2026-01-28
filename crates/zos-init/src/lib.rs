@@ -95,6 +95,25 @@ pub struct ServiceInfo {
 }
 
 
+#[cfg(target_arch = "wasm32")]
+use alloc::vec::Vec;
+#[cfg(not(target_arch = "wasm32"))]
+use std::vec::Vec;
+
+/// A pending IPC delivery that failed due to missing capability.
+/// Stored for retry when the capability is granted.
+#[derive(Clone)]
+pub struct PendingDelivery {
+    /// Target process ID
+    pub target_pid: u32,
+    /// Target endpoint slot
+    pub endpoint_slot: u32,
+    /// Message tag
+    pub tag: u32,
+    /// Message data
+    pub data: Vec<u8>,
+}
+
 /// Init process state
 pub struct Init {
     /// Service registry: name → info
@@ -105,6 +124,9 @@ pub struct Init {
     /// Service VFS response capability slots: service_pid → capability slot in Init's CSpace
     /// Used for delivering VFS responses to services' VFS response endpoint (slot 4)
     pub service_vfs_slots: BTreeMap<u32, u32>,
+    /// Pending IPC deliveries waiting for capability grants.
+    /// Keyed by target PID for quick lookup when capability arrives.
+    pub pending_deliveries: BTreeMap<u32, Vec<PendingDelivery>>,
     /// Our endpoint slot for receiving messages
     pub endpoint_slot: u32,
     /// Boot sequence complete
@@ -117,6 +139,7 @@ impl Init {
             services: BTreeMap::new(),
             service_cap_slots: BTreeMap::new(),
             service_vfs_slots: BTreeMap::new(),
+            pending_deliveries: BTreeMap::new(),
             endpoint_slot: INIT_ENDPOINT_SLOT,
             boot_complete: false,
         }

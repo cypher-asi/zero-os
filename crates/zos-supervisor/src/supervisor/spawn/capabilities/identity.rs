@@ -129,6 +129,11 @@ impl Supervisor {
         service_name: &str,
         service_pid: ProcessId,
     ) {
+        log(&format!(
+            "AGENT_LOG:grant_init_cap:start:service={}:pid={}:init_slot={:?}",
+            service_name, service_pid.0, self.init_endpoint_slot
+        ));
+        
         let init_pid = ProcessId(1);
 
         // Get service's input endpoint ID from SERVICE_INPUT_SLOT

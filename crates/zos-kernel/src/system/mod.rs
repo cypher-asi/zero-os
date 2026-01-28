@@ -536,8 +536,7 @@ fn execute_syscall_kernel_fn<H: HAL>(
             (r, c, Vec::new())
         }
         0x40 | 0x41 => {
-            let (r, c) = execute_ipc_syscall(core, syscall_num, sender, args, data, timestamp);
-            (r, c, Vec::new())
+            execute_ipc_syscall(core, syscall_num, sender, args, data, timestamp)
         }
         0x50 => (0, Vec::new(), Vec::new()), // SYS_PS - success, data formatted in metrics.rs
         0x70..=0x74 => {
@@ -681,7 +680,7 @@ fn execute_ipc_syscall<H: HAL>(
     args: [u32; 4],
     data: &[u8],
     timestamp: u64,
-) -> (i64, Vec<CommitType>) {
+) -> (i64, Vec<CommitType>, Vec<u8>) {
     match syscall_num {
         0x40 => {
             let slot = args[0];
@@ -689,20 +688,49 @@ fn execute_ipc_syscall<H: HAL>(
             let (result, commit) = core.ipc_send(sender, slot, tag, data.to_vec(), timestamp);
             let commit_types: Vec<CommitType> = commit.into_iter().map(|c| c.commit_type).collect();
             match result {
-                Ok(()) => (0, commit_types),
-                Err(_) => (-1, commit_types),
+                Ok(()) => (0, commit_types, Vec::new()),
+                Err(_) => (-1, commit_types, Vec::new()),
             }
         }
         0x41 => {
+            // SYS_RECV: Actually receive and return message data
             let slot = args[0];
-            match core.ipc_has_message(sender, slot, timestamp) {
-                Ok(true) => (1, Vec::new()),
-                Ok(false) => (0, Vec::new()),
-                Err(_) => (-1, Vec::new()),
+            match core.ipc_receive(sender, slot, timestamp) {
+                Ok(Some(msg)) => {
+                    // Serialize the message for return to the caller
+                    let response_data = serialize_ipc_message(&msg);
+                    // Return 1 to indicate message received, with serialized message data
+                    (1, Vec::new(), response_data)
+                }
+                Ok(None) => (0, Vec::new(), Vec::new()),
+                Err(_) => (-1, Vec::new(), Vec::new()),
             }
         }
-        _ => (-1, Vec::new()),
+        _ => (-1, Vec::new(), Vec::new()),
     }
+}
+
+/// Serialize an IPC message for syscall response
+/// Format: [from_pid: u32 LE][tag: u32 LE][num_caps: u8][cap_slots: u32 LE * num_caps][data: [u8]]
+fn serialize_ipc_message(msg: &crate::ipc::Message) -> Vec<u8> {
+    let num_caps = msg.transferred_caps.len() as u8;
+    let cap_data_len = (num_caps as usize) * 4;
+    let mut buf = Vec::with_capacity(9 + cap_data_len + msg.data.len());
+    
+    // from_pid as u32
+    buf.extend_from_slice(&(msg.from.0 as u32).to_le_bytes());
+    // tag as u32
+    buf.extend_from_slice(&msg.tag.to_le_bytes());
+    // num_caps as u8
+    buf.push(num_caps);
+    // cap_slots as u32 each (receiver_slot hint, or 0 if not specified)
+    for cap in &msg.transferred_caps {
+        let slot = cap.receiver_slot.unwrap_or(0);
+        buf.extend_from_slice(&slot.to_le_bytes());
+    }
+    // data
+    buf.extend_from_slice(&msg.data);
+    buf
 }
 
 fn execute_storage_syscall<H: HAL>(

@@ -3,7 +3,7 @@
 //! Defines the state structure for each WASM process instance.
 
 use alloc::string::String;
-use wasmi::{Instance, Store, TypedFunc};
+use wasmi::{Instance, Store, TypedFunc, TypedResumableInvocation};
 
 use super::host::HostState;
 
@@ -34,6 +34,8 @@ pub struct WasmProcess {
     pub instance: Instance,
     /// The _start function (None if already called)
     pub start_func: Option<TypedFunc<(), ()>>,
+    /// Resumable invocation for continuing after fuel exhaustion
+    pub resumable: Option<TypedResumableInvocation<()>>,
     /// Memory size in bytes
     pub memory_size: usize,
 }

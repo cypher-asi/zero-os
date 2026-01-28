@@ -62,6 +62,30 @@ pub trait HAL: Send + Sync + 'static {
     /// * `Err(HalError::ProcessSpawnFailed)` - Failed to create process
     fn spawn_process(&self, name: &str, binary: &[u8]) -> Result<Self::ProcessHandle, HalError>;
 
+    /// Spawn a new process with a specific PID from WASM binary
+    ///
+    /// This variant allows the kernel to specify the PID, ensuring coordination
+    /// between kernel's process registry and HAL's runtime.
+    ///
+    /// # Arguments
+    /// * `pid` - The process ID to use (must match kernel's allocated PID)
+    /// * `name` - Human-readable process name for debugging
+    /// * `binary` - WASM binary to execute
+    ///
+    /// # Returns
+    /// * `Ok(ProcessHandle)` - Handle to the spawned process
+    /// * `Err(HalError::ProcessSpawnFailed)` - Failed to create process
+    fn spawn_process_with_pid(
+        &self,
+        pid: u64,
+        name: &str,
+        binary: &[u8],
+    ) -> Result<Self::ProcessHandle, HalError> {
+        // Default implementation ignores PID and uses spawn_process
+        let _ = pid;
+        self.spawn_process(name, binary)
+    }
+
     /// Terminate a process
     ///
     /// # Arguments

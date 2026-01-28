@@ -6,10 +6,10 @@
 //! kernel access.
 
 #[cfg(target_arch = "wasm32")]
-use alloc::{format, string::String};
+use alloc::{format, string::String, vec::Vec};
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::{format, string::String};
+use std::{format, string::String, vec::Vec};
 
 use crate::Init;
 use zos_process as syscall;
@@ -158,6 +158,13 @@ impl Init {
             self.service_cap_slots.get(&target_pid).copied()
         };
 
+        // Debug: Log the capability lookup
+        self.log(&format!(
+            "AGENT_LOG:ipc_delivery:lookup:target_pid={}:slot={}:has_cap={:?}:all_caps={:?}",
+            target_pid, endpoint_slot, cap_slot.is_some(), 
+            self.service_cap_slots.keys().collect::<Vec<_>>()
+        ));
+
         if let Some(cap_slot) = cap_slot {
             // #region agent log - hypothesis A,C
             self.log(&format!(
@@ -201,16 +208,71 @@ impl Init {
                 }
             }
         } else {
-            // HARD FAIL: No capability means service isn't ready yet
-            // This is a boot sequencing bug that must be fixed
+            // Capability not yet available - store for retry when capability arrives
+            // This handles the race condition during boot where user requests may arrive
+            // before the supervisor's capability grants are processed by Init
             self.log(&format!(
-                "FATAL: No capability for PID {} slot {} - service not properly initialized (tag 0x{:x})",
+                "PENDING: No capability for PID {} slot {} - queuing for retry (tag 0x{:x})",
                 target_pid, endpoint_slot, tag
             ));
+
+            // Store the pending delivery for retry
+            let pending = crate::PendingDelivery {
+                target_pid,
+                endpoint_slot,
+                tag,
+                data: ipc_data.to_vec(),
+            };
+
+            self.pending_deliveries
+                .entry(target_pid)
+                .or_insert_with(Vec::new)
+                .push(pending);
+
+            // Notify supervisor to re-grant the capability
             syscall::debug(&format!(
                 "ERROR:IPC_DELIVERY_FAILED:no_capability:pid={}:slot={}:tag=0x{:x}",
                 target_pid, endpoint_slot, tag
             ));
+        }
+    }
+
+    /// Retry pending deliveries for a process after capability was granted.
+    ///
+    /// Called when MSG_SERVICE_CAP_GRANTED is received to deliver any
+    /// messages that were queued waiting for the capability.
+    pub fn retry_pending_deliveries(&mut self, service_pid: u32, cap_slot: u32) {
+        // Take pending deliveries for this PID (removes from map)
+        let pending: Vec<crate::PendingDelivery> = match self.pending_deliveries.remove(&service_pid) {
+            Some(p) => p,
+            None => return, // No pending deliveries
+        };
+
+        self.log(&format!(
+            "AGENT_LOG:retry_pending:pid={}:count={}",
+            service_pid, pending.len()
+        ));
+
+        for delivery in pending {
+            self.log(&format!(
+                "Retrying delivery to PID {} slot {} (tag 0x{:x}, {} bytes)",
+                delivery.target_pid, delivery.endpoint_slot, delivery.tag, delivery.data.len()
+            ));
+
+            match syscall::send(cap_slot, delivery.tag, &delivery.data) {
+                Ok(()) => {
+                    self.log(&format!(
+                        "Retry successful: IPC delivered to PID {} (tag 0x{:x})",
+                        delivery.target_pid, delivery.tag
+                    ));
+                }
+                Err(e) => {
+                    self.log(&format!(
+                        "Retry failed: IPC delivery to PID {} failed: error {}",
+                        delivery.target_pid, e
+                    ));
+                }
+            }
         }
     }
 

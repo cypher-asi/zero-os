@@ -347,7 +347,7 @@ impl Default for KeyDerivation {
             algorithm: String::from("Argon2id"),
             salt: [0u8; 32],
             time_cost: 3,
-            memory_cost: 65536, // 64 MB
+            memory_cost: 64, // 64 KB (WASM minimum)
             parallelism: 1,
         }
     }

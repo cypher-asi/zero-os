@@ -51,6 +51,8 @@ impl Supervisor {
             self.handle_init_endpoint_response(rest);
         } else if let Some(rest) = msg.strip_prefix(debug::CAP_RESPONSE) {
             self.handle_init_cap_response(rest);
+        } else if let Some(rest) = msg.strip_prefix("ERROR:IPC_DELIVERY_FAILED:no_capability:") {
+            self.handle_ipc_delivery_failed(rest);
         } else if msg.starts_with(debug::AGENT_LOG) {
             // #region agent log - debug mode instrumentation passthrough
             log(&format!("[AGENT_LOG] PID {} | {}", pid.0, msg));
@@ -59,6 +61,62 @@ impl Supervisor {
         } else {
             self.handle_debug_console_output(pid, msg);
         }
+    }
+
+    /// Handle IPC delivery failure from Init.
+    ///
+    /// When Init lacks a capability to deliver to a service, the supervisor
+    /// re-grants the capability and notifies Init so it can retry.
+    ///
+    /// Format: "pid={pid}:slot={slot}:tag=0x{tag}"
+    fn handle_ipc_delivery_failed(&mut self, rest: &str) {
+        log(&format!(
+            "[supervisor] IPC delivery failed, attempting capability recovery: {}",
+            rest
+        ));
+
+        // Parse: pid={pid}:slot={slot}:tag=0x{tag}
+        let parts: Vec<&str> = rest.split(':').collect();
+        if parts.len() < 3 {
+            log("[supervisor] IPC_DELIVERY_FAILED: malformed message");
+            return;
+        }
+
+        let target_pid: u32 = match parts[0].strip_prefix("pid=").and_then(|s| s.parse().ok()) {
+            Some(p) => p,
+            None => {
+                log("[supervisor] IPC_DELIVERY_FAILED: invalid pid");
+                return;
+            }
+        };
+
+        let _slot: u32 = match parts[1].strip_prefix("slot=").and_then(|s| s.parse().ok()) {
+            Some(s) => s,
+            None => {
+                log("[supervisor] IPC_DELIVERY_FAILED: invalid slot");
+                return;
+            }
+        };
+
+        // Find the service name by PID
+        let service_name = match self.system.get_process(ProcessId(target_pid as u64)) {
+            Some(proc) => proc.name.clone(),
+            None => {
+                log(&format!(
+                    "[supervisor] IPC_DELIVERY_FAILED: process {} not found",
+                    target_pid
+                ));
+                return;
+            }
+        };
+
+        log(&format!(
+            "[supervisor] Re-granting Init capability to {} (PID {})",
+            service_name, target_pid
+        ));
+
+        // Re-grant capability from this service's endpoint to Init
+        self.grant_init_capability_to_service(&service_name, ProcessId(target_pid as u64));
     }
 
     /// Handle SPAWN:RESPONSE from Init (Init-driven spawn protocol).

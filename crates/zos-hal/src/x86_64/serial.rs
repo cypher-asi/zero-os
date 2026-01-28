@@ -1,17 +1,25 @@
 //! Serial port driver for x86_64
 //!
-//! Uses the standard COM1 port (0x3F8) for debug output.
-//! This is the primary output mechanism for QEMU debugging.
+//! Uses the standard COM1 port (0x3F8) for debug output and input.
+//! This is the primary I/O mechanism for QEMU debugging.
 
+use alloc::collections::VecDeque;
 use core::fmt::{self, Write};
 use spin::Mutex;
 use uart_16550::SerialPort;
+use x86_64::instructions::port::Port;
 
 /// COM1 serial port base address
 const COM1_PORT: u16 = 0x3F8;
 
 /// Global serial port writer
 static SERIAL: Mutex<Option<SerialPort>> = Mutex::new(None);
+
+/// Input buffer for received serial data
+static INPUT_BUFFER: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::new());
+
+/// Maximum input buffer size
+const MAX_INPUT_BUFFER: usize = 256;
 
 /// Initialize the serial port
 ///
@@ -21,6 +29,56 @@ pub fn init() {
     let mut serial = unsafe { SerialPort::new(COM1_PORT) };
     serial.init();
     *SERIAL.lock() = Some(serial);
+    
+    // Enable receive interrupts (IER bit 0)
+    enable_receive_interrupt();
+}
+
+/// Enable serial port receive interrupt
+fn enable_receive_interrupt() {
+    // COM1 + 1 = IER (Interrupt Enable Register)
+    // Bit 0: Received Data Available Interrupt
+    let mut ier_port: Port<u8> = Port::new(COM1_PORT + 1);
+    unsafe {
+        let current = ier_port.read();
+        ier_port.write(current | 0x01);
+    }
+}
+
+/// Read a byte from the serial input buffer (non-blocking)
+///
+/// Returns `Some(byte)` if data is available, `None` otherwise.
+pub fn read_byte() -> Option<u8> {
+    INPUT_BUFFER.lock().pop_front()
+}
+
+/// Check if the serial port has data available to read
+pub fn has_data_available() -> bool {
+    // COM1 + 5 = LSR (Line Status Register)
+    // Bit 0: Data Ready
+    let mut lsr_port: Port<u8> = Port::new(COM1_PORT + 5);
+    unsafe { lsr_port.read() & 0x01 != 0 }
+}
+
+/// Receive a byte directly from the serial port hardware (for interrupt handler)
+///
+/// Returns `Some(byte)` if data is available, `None` otherwise.
+pub fn receive_byte_raw() -> Option<u8> {
+    if has_data_available() {
+        let mut data_port: Port<u8> = Port::new(COM1_PORT);
+        Some(unsafe { data_port.read() })
+    } else {
+        None
+    }
+}
+
+/// Queue a received byte into the input buffer (called by interrupt handler)
+pub fn queue_input_byte(byte: u8) {
+    let mut buffer = INPUT_BUFFER.lock();
+    if buffer.len() < MAX_INPUT_BUFFER {
+        buffer.push_back(byte);
+    }
+    // If buffer is full, drop the byte (oldest data is preserved)
 }
 
 /// Serial port writer for formatting

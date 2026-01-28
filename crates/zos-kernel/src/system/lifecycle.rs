@@ -183,8 +183,8 @@ pub(in crate::system) fn execute_spawn_process<H: HAL>(
     let (pid, commits) = core.register_process(name, timestamp);
     let commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
 
-    // Spawn via HAL (this starts the WASM runtime)
-    match core.hal().spawn_process(name, binary) {
+    // Spawn via HAL with the kernel-allocated PID (this starts the WASM runtime)
+    match core.hal().spawn_process_with_pid(pid.0, name, binary) {
         Ok(_handle) => (pid.0 as i64, commit_types),
         Err(_) => {
             // Process was registered but spawn failed - kernel state is inconsistent

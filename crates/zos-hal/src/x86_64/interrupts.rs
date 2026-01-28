@@ -21,6 +21,8 @@ use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, Pag
 #[repr(u8)]
 pub enum InterruptIndex {
     Timer = 32,
+    /// Serial COM1 interrupt (IRQ4)
+    SerialInput = 36,
 }
 
 impl InterruptIndex {
@@ -70,6 +72,9 @@ static IDT: Lazy<InterruptDescriptorTable> = Lazy::new(|| {
     // Hardware interrupts (IRQs)
     // Timer interrupt (vector 32)
     idt[InterruptIndex::Timer.as_u8()].set_handler_fn(timer_interrupt_handler);
+    
+    // Serial input interrupt (vector 36 = IRQ4)
+    idt[InterruptIndex::SerialInput.as_u8()].set_handler_fn(serial_input_handler);
 
     idt
 });
@@ -242,5 +247,22 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFr
     
     // Send End-Of-Interrupt to LAPIC
     // This must be done AFTER processing to allow nested interrupts
+    apic::eoi();
+}
+
+/// Serial input interrupt handler (vector 36 = IRQ4)
+///
+/// This handler is called when data is received on COM1.
+/// It reads bytes from the serial port and queues them for processing.
+extern "x86-interrupt" fn serial_input_handler(_stack_frame: InterruptStackFrame) {
+    use super::serial;
+    
+    // Read all available bytes from the serial port
+    while let Some(byte) = serial::receive_byte_raw() {
+        // Queue the byte for later processing
+        serial::queue_input_byte(byte);
+    }
+    
+    // Send End-Of-Interrupt to LAPIC
     apic::eoi();
 }

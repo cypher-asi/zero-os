@@ -29,6 +29,11 @@ impl Supervisor {
         process_pid: ProcessId,
         name: &str,
     ) {
+        log(&format!(
+            "AGENT_LOG:setup_caps:name={}:pid={}:init_spawned={}",
+            name, process_pid.0, self.init_spawned
+        ));
+        
         if name == "init" {
             self.init_spawned = true;
             log("[supervisor] Init process spawned (PID 1)");
@@ -117,6 +122,10 @@ impl Supervisor {
         // When vfs_service is spawned, grant its endpoint to processes that need VFS access
         // and grant Init (PID 1) capability to deliver IPC messages to VFS
         if name == "vfs_service" {
+            log(&format!(
+                "AGENT_LOG:spawn_caps:vfs_spawned:pid={}:init_spawned={}:will_grant",
+                process_pid.0, self.init_spawned
+            ));
             self.grant_vfs_capabilities_to_existing_processes(process_pid);
             self.grant_init_capability_to_service("vfs_service", process_pid);
         }

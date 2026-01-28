@@ -154,6 +154,10 @@ pub mod syscall {
     pub const SYS_EXIT: u32 = 0x03;
     /// Get current time (nanos since boot)
     pub const SYS_TIME: u32 = 0x04;
+    /// Get random bytes (fills syscall output buffer).
+    /// arg1 = number of bytes requested (max 256).
+    /// Returns number of bytes written, or negative error code.
+    pub const SYS_RANDOM: u32 = 0x05;
     /// Get wallclock time (milliseconds since Unix epoch)
     pub const SYS_WALLCLOCK: u32 = 0x06;
     /// Console write syscall - write text to console output

@@ -141,10 +141,16 @@ impl Supervisor {
 
         // Deliver console output directly to UI
         if let Ok(text) = std::str::from_utf8(data) {
+            // Show actual content for debugging (truncate if too long)
+            let preview = if text.len() > 200 {
+                format!("{}...", &text[..200])
+            } else {
+                text.to_string()
+            };
             log(&format!(
-                "[supervisor] Console output from PID {}: {} bytes",
+                "[process {}] {}",
                 pid.0,
-                text.len()
+                preview.trim()
             ));
             // Route to process-specific callback (or fall back to global)
             self.write_console_to_process(pid.0, text);

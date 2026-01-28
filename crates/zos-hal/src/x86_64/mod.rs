@@ -17,6 +17,7 @@ pub mod apic;
 pub mod gdt;
 pub mod interrupts;
 pub mod pci;
+pub mod random;
 pub mod rtc;
 #[macro_use]
 pub mod serial;
@@ -152,8 +153,22 @@ impl X86_64Hal {
     ///
     /// Executes WASM processes cooperatively. Returns pending syscalls
     /// from processes for the supervisor to handle.
+    /// 
+    /// This runs processes in small timeslices, yielding when a syscall
+    /// is made so the kernel can process it before the process continues.
     pub fn run_scheduler(&self) -> Vec<PendingSyscall> {
         self.wasm_runtime().run_all_processes()
+    }
+    
+    /// Run the process scheduler with a syscall handler
+    ///
+    /// This variant processes syscalls synchronously as they are made,
+    /// ensuring the process doesn't continue until the syscall is complete.
+    pub fn run_scheduler_with_handler<F>(&self, mut handler: F)
+    where
+        F: FnMut(PendingSyscall) -> (u32, Vec<u8>),
+    {
+        self.wasm_runtime().run_all_processes_with_handler(&mut handler)
     }
     
     /// Complete a syscall and resume the process
@@ -267,6 +282,21 @@ impl HAL for X86_64Hal {
         ));
         
         // Spawn the WASM process
+        self.wasm_runtime().spawn(pid, name, binary)
+    }
+
+    fn spawn_process_with_pid(
+        &self,
+        pid: u64,
+        name: &str,
+        binary: &[u8],
+    ) -> Result<Self::ProcessHandle, HalError> {
+        serial::write_str(&alloc::format!(
+            "[x86_64-hal] spawn_process_with_pid: name='{}', pid={}, binary_size={}\n",
+            name, pid, binary.len()
+        ));
+        
+        // Spawn the WASM process with the specified PID
         self.wasm_runtime().spawn(pid, name, binary)
     }
 
