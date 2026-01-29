@@ -38,7 +38,7 @@ import {
 /** Service capabilities type that accepts both modern and legacy formats */
 type ServiceCapabilities = ServiceMachineKeyCapabilities | ServiceLegacyMachineKeyCapabilities;
 
-import { bytesToHex, u128ToHex } from '@/client-services/identityUtils';
+import { bytesToHex, u128ToUuid } from '@/client-services/identityUtils';
 
 // =============================================================================
 // Machine Key Converters
@@ -94,9 +94,9 @@ export function convertMachineRecord(
   record: ServiceMachineKeyRecord,
   currentMachineId?: string
 ): UIMachineKeyRecord {
-  // machine_id comes as a number from JSON, convert to hex string
-  const machineIdHex = u128ToHex(record.machine_id);
-  const authorizedByHex = u128ToHex(record.authorized_by);
+  // machine_id comes as a number from JSON, convert to UUID format (matches ZID server)
+  const machineIdUuid = u128ToUuid(record.machine_id);
+  const authorizedByUuid = u128ToUuid(record.authorized_by);
 
   const normalizeKeyScheme = (scheme?: string): KeyScheme => {
     switch (scheme) {
@@ -111,15 +111,15 @@ export function convertMachineRecord(
   };
 
   return {
-    machineId: machineIdHex,
+    machineId: machineIdUuid,
     signingPublicKey: bytesToHex(record.signing_public_key),
     encryptionPublicKey: bytesToHex(record.encryption_public_key),
     authorizedAt: record.authorized_at,
-    authorizedBy: authorizedByHex,
+    authorizedBy: authorizedByUuid,
     capabilities: convertCapabilities(record.capabilities),
     machineName: record.machine_name,
     lastSeenAt: record.last_seen_at,
-    isCurrentDevice: machineIdHex === currentMachineId,
+    isCurrentDevice: machineIdUuid === currentMachineId,
     epoch: record.epoch ?? 1, // Use service value, fallback to 1 for backward compatibility
     keyScheme: normalizeKeyScheme(record.key_scheme),
     pqSigningPublicKey: record.pq_signing_public_key

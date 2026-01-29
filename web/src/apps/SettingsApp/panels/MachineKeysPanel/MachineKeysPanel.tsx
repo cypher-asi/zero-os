@@ -3,7 +3,7 @@ import type { PanelDrillItem } from '@cypher-asi/zui';
 import { useMachineKeys } from '@desktop/hooks/useMachineKeys';
 import { useNeuralKey } from '@desktop/hooks/useNeuralKey';
 import { useIdentityServiceClient } from '@desktop/hooks/useIdentityServiceClient';
-import { useMachineKeysStore } from '@/stores/machineKeysStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { usePanelDrillOptional } from '../../context';
 import { GenerateMachineKeyPanel } from '../GenerateMachineKeyPanel';
 import {
@@ -32,7 +32,8 @@ export function MachineKeysPanel({ onDrillDown }: MachineKeysPanelProps) {
   const { state, revokeMachineKey, rotateMachineKey } = useMachineKeys();
   const { state: neuralKeyState } = useNeuralKey();
   const { getUserIdOrThrow } = useIdentityServiceClient();
-  const { setDefaultKeySchemeFromMachine } = useMachineKeysStore();
+  const defaultMachineId = useSettingsStore((s) => s.defaultMachineId);
+  const setDefaultMachineKey = useSettingsStore((s) => s.setDefaultMachineKey);
 
   // Navigation - prefer context, fall back to prop
   const panelDrill = usePanelDrillOptional();
@@ -89,14 +90,14 @@ export function MachineKeysPanel({ onDrillDown }: MachineKeysPanelProps) {
       } else if (action === 'set_default') {
         try {
           const userId = getUserIdOrThrow();
-          await setDefaultKeySchemeFromMachine(userId, machineId);
-          console.log(`Set default key scheme from machine ${machineId}`);
+          await setDefaultMachineKey(userId, machineId);
+          console.log(`Set machine ${machineId} as default for authentication`);
         } catch (err) {
-          console.error('Failed to set default key scheme:', err);
+          console.error('Failed to set default machine key:', err);
         }
       }
     },
-    [getUserIdOrThrow, setDefaultKeySchemeFromMachine]
+    [getUserIdOrThrow, setDefaultMachineKey]
   );
 
   // Handle add machine - navigate to generate key panel
@@ -118,6 +119,7 @@ export function MachineKeysPanel({ onDrillDown }: MachineKeysPanelProps) {
     <MachineKeysPanelView
       machines={state.machines}
       currentMachineId={state.currentMachineId ?? undefined}
+      defaultMachineId={defaultMachineId ?? undefined}
       error={state.error}
       isInitializing={state.isInitializing}
       hasNeuralKey={neuralKeyState.hasNeuralKey}

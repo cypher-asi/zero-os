@@ -3,76 +3,28 @@
   bottom: 100%;
   right: 0;
   margin-bottom: 4px;
-  /* Relative positioning context for subpanel overlay */
+  /* CRITICAL: Explicit height for PanelDrill's absolute positioning to work */
+  height: 485px;
 }
 
 .panel {
   width: 240px;
+  height: 100%; /* Fill the wrapper */
   display: flex;
   flex-direction: column;
 }
 
-/* Subpanel Overlay - slides in from right, positioned over main panel */
-.subpanelOverlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 10;
-  animation: slideInFromRight 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+/* Content wrapper for the root panel content */
+.contentWrapper {
   display: flex;
   flex-direction: column;
-  background: var(--panel-glass-bg, rgba(20, 20, 30, 0.85));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
-  border-radius: var(--radius-md, 8px);
-}
-
-@keyframes slideInFromRight {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.subpanel {
-  width: 240px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Vertically center content within PanelDrill */
-.subpanel :global([class*='content']) {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
   flex: 1;
+  overflow: hidden;
 }
 
-/* Section 1: Title */
-.titleSection {
-  padding: 12px 12px 0 12px;
-}
-
-.title {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  color: var(--color-text-primary, #fff);
-  text-transform: uppercase;
-  margin: 0;
-}
-
-/* Section 2: Horizontal Image (full bleed) */
+/* Section 1: Horizontal Image (full bleed) */
 .imageSection {
-  padding: 12px 0;
+  padding: 0;
 }
 
 .imagePlaceholder {
@@ -89,12 +41,12 @@
   color: var(--color-text-muted, rgba(255, 255, 255, 0.2));
 }
 
-/* Section 3: Profile Data */
+/* Section 2: Profile Data */
 .profileSection {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 12px 12px 12px;
+  padding: 12px;
 }
 
 .userInfo {
@@ -130,9 +82,11 @@
   opacity: 0.7;
 }
 
-/* Section 4: Menu */
+/* Section 3: Menu */
 .menuSection {
   padding: 0;
+  flex: 1;
+  overflow: auto;
 }
 
 /* Menu */

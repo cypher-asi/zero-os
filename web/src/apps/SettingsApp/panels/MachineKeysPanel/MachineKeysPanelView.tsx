@@ -30,6 +30,8 @@ export interface MachineKeysPanelViewProps {
   machines: MachineKeyRecord[];
   /** Current machine ID for highlighting */
   currentMachineId?: string;
+  /** Default machine ID for authentication (from preferences) */
+  defaultMachineId?: string;
   /** Error message to display */
   error: string | null;
   /** Whether initial data is loading */
@@ -83,6 +85,7 @@ function getMachineById(machines: MachineKeyRecord[], id: string): MachineKeyRec
  */
 export function MachineKeysPanelView({
   machines,
+  defaultMachineId,
   error,
   isInitializing,
   hasNeuralKey,
@@ -316,10 +319,17 @@ export function MachineKeysPanelView({
                   Current
                 </Label>
               )}
+              {defaultMachineId === machine.machineId && (
+                <Label size="xs" variant="accent" title="Default machine key for ZID login">
+                  Default
+                </Label>
+              )}
               <div className={styles.machineItemAction}>
                 <ButtonMore
                   items={[
-                    { id: 'set_default', label: 'Set as Default', icon: <Star size={14} /> },
+                    ...(defaultMachineId !== machine.machineId
+                      ? [{ id: 'set_default', label: 'Set as Default', icon: <Star size={14} /> }]
+                      : []),
                     { id: 'rotate', label: 'Rotate', icon: <RefreshCw size={14} /> },
                     ...(!machine.isCurrentDevice
                       ? [{ id: 'delete', label: 'Delete', icon: <Trash2 size={14} /> }]

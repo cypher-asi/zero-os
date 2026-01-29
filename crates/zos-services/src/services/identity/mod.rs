@@ -224,6 +224,9 @@ impl ZeroApp for IdentityService {
             identity_prefs::MSG_SET_DEFAULT_KEY_SCHEME => {
                 handlers::preferences::handle_set_default_key_scheme(self, &msg)
             }
+            identity_prefs::MSG_SET_DEFAULT_MACHINE_KEY => {
+                handlers::preferences::handle_set_default_machine_key(self, &msg)
+            }
             net::MSG_NET_RESULT => self.handle_net_result(&msg),
             _ => {
                 syscall::debug(&alloc::format!(

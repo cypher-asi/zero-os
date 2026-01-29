@@ -586,12 +586,18 @@ pub struct IdentityPreferences {
     /// Default key scheme for new machine keys
     #[serde(default)]
     pub default_key_scheme: KeyScheme,
+    /// Default machine key ID for authentication.
+    /// Auto-set when the first machine key is created.
+    /// Used by ZID login to determine which machine key to authenticate with.
+    #[serde(default)]
+    pub default_machine_id: Option<u128>,
 }
 
 impl Default for IdentityPreferences {
     fn default() -> Self {
         Self {
             default_key_scheme: KeyScheme::Classical,
+            default_machine_id: None,
         }
     }
 }
@@ -627,6 +633,25 @@ pub struct SetDefaultKeySchemeRequest {
 /// Set default key scheme response
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SetDefaultKeySchemeResponse {
+    pub result: Result<(), KeyError>,
+}
+
+/// Set default machine key request.
+///
+/// Sets the default machine key ID for authentication.
+/// This key will be used by ZID login.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SetDefaultMachineKeyRequest {
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    /// Machine ID to set as default (hex string for JavaScript interop)
+    #[serde(with = "u128_hex_string")]
+    pub machine_id: u128,
+}
+
+/// Set default machine key response
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SetDefaultMachineKeyResponse {
     pub result: Result<(), KeyError>,
 }
 

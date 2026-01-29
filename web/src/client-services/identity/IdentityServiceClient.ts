@@ -36,6 +36,7 @@ import {
   type IdentityPreferences,
   type GetIdentityPreferencesResponse,
   type SetDefaultKeySchemeResponse,
+  type SetDefaultMachineKeyResponse,
   type MachineKeyAndTokens,
   type CreateMachineKeyAndEnrollResponse,
 } from './types';
@@ -46,6 +47,8 @@ import {
   DeliveryFailedError,
   parseServiceError,
 } from './errors';
+
+import { uuidToHex } from '../identityUtils';
 
 import {
   ensureCallbackRegistered,
@@ -471,6 +474,22 @@ export class IdentityServiceClient {
     const response = await this.request<SetDefaultKeySchemeResponse>(MSG.SET_DEFAULT_KEY_SCHEME, {
       user_id: formatUserIdForRust(userId),
       key_scheme: keyScheme,
+    });
+    this.unwrapResult(response.result);
+  }
+
+  /**
+   * Set default machine key for authentication in VFS preferences.
+   * This key will be used by ZID login.
+   * @param userId - User ID
+   * @param machineId - Machine ID to set as default (UUID or hex string)
+   */
+  async setDefaultMachineKey(userId: bigint | string, machineId: string): Promise<void> {
+    // Convert from UUID format (with dashes) to hex format for Rust backend
+    const machineIdHex = uuidToHex(machineId);
+    const response = await this.request<SetDefaultMachineKeyResponse>(MSG.SET_DEFAULT_MACHINE_KEY, {
+      user_id: formatUserIdForRust(userId),
+      machine_id: machineIdHex,
     });
     this.unwrapResult(response.result);
   }

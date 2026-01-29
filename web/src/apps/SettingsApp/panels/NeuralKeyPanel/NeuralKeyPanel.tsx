@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import {
   GroupCollapsible,
   Button,
+  ButtonCopy,
   Card,
   CardItem,
   Text,
@@ -599,56 +600,40 @@ export function NeuralKeyPanel() {
     <div className={styles.panelContainer}>
       <GroupCollapsible title="Neural Key" defaultOpen className={styles.collapsibleSection}>
         <div className={styles.identitySection}>
-          <div className={styles.statusHero}>
-            <div className={styles.statusIconActive}>
-              <Brain size={32} />
-            </div>
-            <Label size="sm" variant="success">
-              Neural Key Active
-            </Label>
-          </div>
-
           {state.publicIdentifiers && (
-            <div className={styles.keyDetails}>
-              <div className={styles.keyDetailItem}>
-                <div className={styles.keyDetailLabel}>
-                  <Key size={14} />
-                  <span>Identity Key</span>
+            <div className={styles.keyDetailsRow}>
+              <div className={styles.statusHeroColumn}>
+                <div className={styles.statusIconActive}>
+                  <Brain size={32} />
                 </div>
-                <div className={styles.neuralprintRow}>
-                  <code className={styles.keyDetailValue}>
-                    {formatPubKey(state.publicIdentifiers.identitySigningPubKey)}
-                  </code>
-                  <Button
-                    variant={isCopied('neuralprint') ? 'primary' : 'ghost'}
-                    size="xs"
-                    onClick={() =>
-                      copy(state.publicIdentifiers?.identitySigningPubKey ?? '', 'neuralprint')
-                    }
-                  >
-                    {isCopied('neuralprint') ? (
-                      <>
-                        <Check size={12} />
-                        Copied
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={12} />
-                        Copy
-                      </>
-                    )}
-                  </Button>
-                </div>
+                <Label size="sm" variant="success">
+                  Neural Key Active
+                </Label>
               </div>
 
-              <div className={styles.keyDetailItem}>
-                <div className={styles.keyDetailLabel}>
-                  <Calendar size={14} />
-                  <span>Created</span>
+              <div className={styles.keyDetailsColumn}>
+                <div className={styles.keyDetailItem}>
+                  <div className={styles.keyDetailLabel}>
+                    <Key size={14} />
+                    <span>Identity Key</span>
+                  </div>
+                  <div className={styles.neuralprintRow}>
+                    <code className={styles.keyDetailValue}>
+                      {formatPubKey(state.publicIdentifiers.identitySigningPubKey)}
+                    </code>
+                    <ButtonCopy text={state.publicIdentifiers.identitySigningPubKey} />
+                  </div>
                 </div>
-                <span className={styles.keyDetailValue}>
-                  {state.createdAt ? formatDate(state.createdAt) : 'Unknown'}
-                </span>
+
+                <div className={styles.keyDetailItem}>
+                  <div className={styles.keyDetailLabel}>
+                    <Calendar size={14} />
+                    <span>Created</span>
+                  </div>
+                  <span className={styles.keyDetailValue}>
+                    {state.createdAt ? formatDate(state.createdAt) : 'Unknown'}
+                  </span>
+                </div>
               </div>
             </div>
           )}

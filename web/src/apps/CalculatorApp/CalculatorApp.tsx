@@ -206,8 +206,8 @@ export function CalculatorApp() {
   ).calculatorAppHandler = handleMessage;
 
   return (
-    <Panel border="none" className={styles.container}>
-      <Panel variant="glass" border="none" className={styles.calculatorPanel}>
+    <Panel border="none" background="none" className={styles.container}>
+      <Panel variant="glass" border="none" background="none" className={styles.calculatorPanel}>
         {/* Display */}
         <Panel variant="default" className={styles.displayPanel}>
           <Panel border="none" className={styles.indicators}>
@@ -228,7 +228,7 @@ export function CalculatorApp() {
         </Panel>
 
         {/* Keypad */}
-        <Panel border="none" className={styles.keypad}>
+        <Panel border="none" background="none" className={styles.keypad}>
           {/* Row 1 */}
           <Button variant="ghost" size="lg" onClick={() => handleButton('clear_entry')}>
             CE

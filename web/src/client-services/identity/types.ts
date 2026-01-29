@@ -55,6 +55,8 @@ export const MSG = {
   GET_IDENTITY_PREFERENCES_RESPONSE: 0x7091,
   SET_DEFAULT_KEY_SCHEME: 0x7092,
   SET_DEFAULT_KEY_SCHEME_RESPONSE: 0x7093,
+  SET_DEFAULT_MACHINE_KEY: 0x7094,
+  SET_DEFAULT_MACHINE_KEY_RESPONSE: 0x7095,
 } as const;
 
 // =============================================================================
@@ -332,6 +334,8 @@ export interface CreateMachineKeyAndEnrollResponse {
 export interface IdentityPreferences {
   /** Default key scheme for new machine keys */
   default_key_scheme: KeyScheme;
+  /** Default machine key ID for authentication (hex string) */
+  default_machine_id?: string;
 }
 
 /** Get identity preferences response */
@@ -341,6 +345,11 @@ export interface GetIdentityPreferencesResponse {
 
 /** Set default key scheme response */
 export interface SetDefaultKeySchemeResponse {
+  result: Result<void>;
+}
+
+/** Set default machine key response */
+export interface SetDefaultMachineKeyResponse {
   result: Result<void>;
 }
 

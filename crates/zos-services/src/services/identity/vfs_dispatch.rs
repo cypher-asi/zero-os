@@ -457,6 +457,64 @@ impl IdentityService {
                     ),
                 }
             }
+            PendingStorageOp::ReadPreferencesForDefaultMachine {
+                ctx,
+                user_id,
+                new_default_machine_id,
+            } => {
+                let mut preferences = result
+                    .ok()
+                    .and_then(|data| {
+                        serde_json::from_slice::<zos_identity::ipc::IdentityPreferences>(&data).ok()
+                    })
+                    .unwrap_or_default();
+
+                preferences.default_machine_id = Some(new_default_machine_id);
+
+                match serde_json::to_vec(&preferences) {
+                    Ok(json_bytes) => {
+                        let prefs_path =
+                            zos_identity::ipc::IdentityPreferences::storage_path(user_id);
+                        self.start_vfs_write(
+                            &prefs_path,
+                            &json_bytes,
+                            PendingStorageOp::WritePreferencesForDefaultMachine {
+                                ctx: RequestContext::new(ctx.client_pid, ctx.cap_slots),
+                                user_id,
+                                json_bytes: json_bytes.clone(),
+                            },
+                        )
+                    }
+                    Err(_) => response::send_set_default_machine_key_error(
+                        ctx.client_pid,
+                        &ctx.cap_slots,
+                        KeyError::StorageError("Serialization failed".into()),
+                    ),
+                }
+            }
+            PendingStorageOp::ReadPreferencesForZidLogin {
+                ctx,
+                user_id,
+                zid_endpoint,
+            } => {
+                // Parse preferences to get default_machine_id (defaults to None if not found)
+                let preferences = result
+                    .ok()
+                    .and_then(|data| {
+                        serde_json::from_slice::<zos_identity::ipc::IdentityPreferences>(&data).ok()
+                    })
+                    .unwrap_or_default();
+
+                // Continue ZID login with the default_machine_id from preferences
+                session::continue_zid_login_after_preferences(
+                    self,
+                    ctx.client_pid,
+                    user_id,
+                    zid_endpoint,
+                    preferences.default_machine_id,
+                    ctx.cap_slots,
+                )
+            }
             // Rule 5: Explicitly enumerate all remaining pending operation types
             // These operations don't expect a read response - if we get here, it's a logic error
             PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
@@ -473,6 +531,7 @@ impl IdentityService {
             PendingStorageOp::WriteZidSession { ctx, .. } |
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
             PendingStorageOp::WritePreferences { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a read response
                 // This indicates a state machine bug - report it clearly
@@ -675,6 +734,27 @@ impl IdentityService {
                     }
                 }
             }
+            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } => {
+                match result {
+                    Ok(()) => {
+                        syscall::debug("IdentityService: Default machine key preference stored successfully via VFS");
+                        let resp = zos_identity::ipc::SetDefaultMachineKeyResponse { result: Ok(()) };
+                        response::send_set_default_machine_key_response(ctx.client_pid, &ctx.cap_slots, resp)
+                    }
+                    Err(e) => {
+                        // Rule 9: Include operation and result type in error message
+                        syscall::debug(&format!(
+                            "IdentityService: WritePreferencesForDefaultMachine failed - op=set_default_machine_key, error={}",
+                            e
+                        ));
+                        response::send_set_default_machine_key_error(
+                            ctx.client_pid,
+                            &ctx.cap_slots,
+                            KeyError::StorageError(format!("VFS write failed for default machine key: {}", e)),
+                        )
+                    }
+                }
+            }
             // Rule 5: Explicitly enumerate all remaining pending operation types
             // These operations don't expect a write response - if we get here, it's a logic error
             PendingStorageOp::CheckIdentityDirectory { ctx, .. } |
@@ -695,6 +775,8 @@ impl IdentityService {
             PendingStorageOp::ReadMachineKeyForZidEnroll { ctx, .. } |
             PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a write response
                 // This indicates a state machine bug - report it clearly
@@ -793,7 +875,10 @@ impl IdentityService {
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
             PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
             PendingStorageOp::WritePreferences { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive an exists response
                 // This indicates a state machine bug - report it clearly
@@ -873,7 +958,10 @@ impl IdentityService {
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
             PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
             PendingStorageOp::WritePreferences { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a mkdir response
                 // This indicates a state machine bug - report it clearly
@@ -1002,7 +1090,10 @@ impl IdentityService {
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
             PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
             PendingStorageOp::WritePreferences { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } |
             PendingStorageOp::DeleteZidSession { ctx } => {
                 // Rule 5: These operations should NOT receive a readdir response
                 // This indicates a state machine bug - report it clearly
@@ -1073,7 +1164,10 @@ impl IdentityService {
             PendingStorageOp::WriteZidEnrollSession { ctx, .. } |
             PendingStorageOp::ReadIdentityPreferences { ctx, .. } |
             PendingStorageOp::ReadPreferencesForUpdate { ctx, .. } |
-            PendingStorageOp::WritePreferences { ctx, .. } => {
+            PendingStorageOp::ReadPreferencesForDefaultMachine { ctx, .. } |
+            PendingStorageOp::ReadPreferencesForZidLogin { ctx, .. } |
+            PendingStorageOp::WritePreferences { ctx, .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachine { ctx, .. } => {
                 // Rule 5: These operations should NOT receive an unlink response
                 // This indicates a state machine bug - report it clearly
                 syscall::debug(&format!(

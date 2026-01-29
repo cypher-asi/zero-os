@@ -72,17 +72,59 @@ pub fn handle_zid_login(service: &mut IdentityService, msg: &Message) -> Result<
         );
     }
 
-    // Get machine keys from keystore (Invariant 32: /keys/ paths use Keystore)
-    let machine_prefix = format!("/keys/{}/identity/machine/", request.user_id);
+    // Read preferences to get default_machine_id (if set)
+    let prefs_path = zos_identity::ipc::IdentityPreferences::storage_path(request.user_id);
     let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
-    service.start_keystore_list(
-        &machine_prefix,
-        PendingKeystoreOp::ListMachineKeysForZidLogin {
+    service.start_vfs_read(
+        &prefs_path,
+        PendingStorageOp::ReadPreferencesForZidLogin {
             ctx,
             user_id: request.user_id,
             zid_endpoint: request.zid_endpoint,
         },
     )
+}
+
+/// Continue ZID login after reading preferences.
+/// Uses default_machine_id if set, otherwise lists all and picks first.
+pub fn continue_zid_login_after_preferences(
+    service: &mut IdentityService,
+    client_pid: u32,
+    user_id: u128,
+    zid_endpoint: String,
+    default_machine_id: Option<u128>,
+    cap_slots: Vec<u32>,
+) -> Result<(), AppError> {
+    let ctx = RequestContext::new(client_pid, cap_slots);
+    
+    if let Some(machine_id) = default_machine_id {
+        // Use the default machine key directly
+        syscall::debug(&format!(
+            "IdentityService: Using default machine key {:032x} for ZID login",
+            machine_id
+        ));
+        let machine_key_path = zos_identity::keystore::MachineKeyRecord::storage_path(user_id, machine_id);
+        service.start_keystore_read(
+            &machine_key_path,
+            PendingKeystoreOp::ReadMachineKeyForZidLogin {
+                ctx,
+                user_id,
+                zid_endpoint,
+            },
+        )
+    } else {
+        // No default set - list all and pick first
+        syscall::debug("IdentityService: No default machine key set, listing all");
+        let machine_prefix = format!("/keys/{}/identity/machine/", user_id);
+        service.start_keystore_list(
+            &machine_prefix,
+            PendingKeystoreOp::ListMachineKeysForZidLogin {
+                ctx,
+                user_id,
+                zid_endpoint,
+            },
+        )
+    }
 }
 
 pub fn continue_zid_login_after_list(
@@ -596,11 +638,11 @@ pub fn continue_zid_enroll_after_challenge(
     let ctx = RequestContext::new(client_pid, cap_slots);
     
     #[derive(serde::Deserialize)]
-    struct ChallengeResponse {
+    struct ChallengeResponseDto {
         challenge: String,
     }
 
-    let challenge: ChallengeResponse = match serde_json::from_slice(&challenge_response.body) {
+    let challenge_resp: ChallengeResponseDto = match serde_json::from_slice(&challenge_response.body) {
         Ok(c) => c,
         Err(e) => {
             syscall::debug(&format!("IdentityService: Failed to parse challenge response: {}", e));
@@ -612,7 +654,8 @@ pub fn continue_zid_enroll_after_challenge(
         }
     };
 
-    let challenge_bytes = match base64_decode(&challenge.challenge) {
+    // The challenge field is base64-encoded JSON of the full Challenge struct
+    let challenge_json = match base64_decode(&challenge_resp.challenge) {
         Ok(b) => b,
         Err(_) => {
             return response::send_zid_enroll_error(
@@ -620,6 +663,19 @@ pub fn continue_zid_enroll_after_challenge(
                 &ctx.cap_slots,
                 ZidError::InvalidChallenge,
             )
+        }
+    };
+
+    // Parse the Challenge struct from JSON
+    let challenge: zos_identity::crypto::Challenge = match serde_json::from_slice(&challenge_json) {
+        Ok(c) => c,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse challenge JSON: {}", e));
+            return response::send_zid_enroll_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                ZidError::InvalidChallenge,
+            );
         }
     };
 
@@ -635,8 +691,9 @@ pub fn continue_zid_enroll_after_challenge(
         }
     };
 
-    // Sign the challenge with the machine key
-    let signature = sign_with_machine_keypair(&challenge_bytes, &machine_keypair);
+    // Sign the CANONICAL challenge message (130 bytes), not the raw JSON
+    let canonical_message = zos_identity::crypto::canonicalize_challenge(&challenge);
+    let signature = sign_with_machine_keypair(&canonical_message, &machine_keypair);
     let signature_hex = bytes_to_hex(&signature);
     let machine_id_uuid = format_uuid(machine_id);
 

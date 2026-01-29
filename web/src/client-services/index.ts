@@ -92,4 +92,11 @@ export {
 } from './KeystoreClient';
 
 // Identity utilities
-export { userIdToBigInt, bytesToHex, u128ToHex } from './identityUtils';
+export {
+  userIdToBigInt,
+  bytesToHex,
+  u128ToHex,
+  u128ToUuid,
+  uuidToBigInt,
+  uuidToHex,
+} from './identityUtils';

@@ -244,6 +244,24 @@ pub enum PendingStorageOp {
         user_id: u128,
         json_bytes: Vec<u8>,
     },
+    /// Read preferences before updating default machine key
+    ReadPreferencesForDefaultMachine {
+        ctx: RequestContext,
+        user_id: u128,
+        new_default_machine_id: u128,
+    },
+    /// Write updated preferences with new default machine key
+    WritePreferencesForDefaultMachine {
+        ctx: RequestContext,
+        user_id: u128,
+        json_bytes: Vec<u8>,
+    },
+    /// Read preferences before ZID login to get default_machine_id
+    ReadPreferencesForZidLogin {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+    },
 }
 
 /// Tracks pending keystore operations awaiting results.

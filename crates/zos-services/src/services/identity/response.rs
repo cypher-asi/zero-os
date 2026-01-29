@@ -586,6 +586,35 @@ pub fn send_set_default_key_scheme_error(
     )
 }
 
+/// Send set default machine key success response.
+pub fn send_set_default_machine_key_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    response: zos_identity::ipc::SetDefaultMachineKeyResponse,
+) -> Result<(), AppError> {
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_prefs::MSG_SET_DEFAULT_MACHINE_KEY_RESPONSE,
+        &response,
+    )
+}
+
+/// Send set default machine key error response.
+pub fn send_set_default_machine_key_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: KeyError,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::SetDefaultMachineKeyResponse { result: Err(error) };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_prefs::MSG_SET_DEFAULT_MACHINE_KEY_RESPONSE,
+        &response,
+    )
+}
+
 // =============================================================================
 // Combined Machine Key + ZID Enrollment responses
 // =============================================================================

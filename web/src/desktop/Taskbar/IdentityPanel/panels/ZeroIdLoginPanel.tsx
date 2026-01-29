@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Label, Spinner } from '@cypher-asi/zui';
+import { Button, Label, Spinner, Menu } from '@cypher-asi/zui';
 import {
   Key,
   Clock,
@@ -10,22 +10,25 @@ import {
   Copy,
   Check,
   LogOut,
+  RefreshCw,
 } from 'lucide-react';
 import { useZeroIdAuth } from '../../../hooks/useZeroIdAuth';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 import { useMachineKeys } from '../../../hooks/useMachineKeys';
+import { usePanelDrillOptional } from '../context';
 import styles from './ZeroIdLoginPanel.module.css';
 
 interface ZeroIdLoginPanelProps {
-  /** Callback to close the subpanel (e.g., after disconnect) */
+  /** Callback to close the subpanel (e.g., after disconnect) - optional fallback */
   onClose?: () => void;
 }
 
 /**
  * ZeroIdLoginPanel - Shows connected session info
- * 
+ *
  * This panel is only displayed when the user is connected to ZERO ID.
  * Login functionality is handled by the LoginModal.
+ * Uses PanelDrill context for navigation when available.
  */
 export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
   const {
@@ -40,6 +43,9 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
 
   const { copy, isCopied } = useCopyToClipboard();
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+
+  // PanelDrill navigation (optional - allows component to work both inside and outside drill context)
+  const panelDrill = usePanelDrillOptional();
 
   // Machine keys data (using hook triggers auto-refresh from keystore cache)
   const { state: machineKeysState } = useMachineKeys();
@@ -61,8 +67,12 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
     setIsDisconnecting(true);
     try {
       await disconnect();
-      // Close subpanel after successful disconnect
-      onClose?.();
+      // Navigate back using PanelDrill context if available, otherwise use fallback
+      if (panelDrill) {
+        panelDrill.navigateBack();
+      } else {
+        onClose?.();
+      }
     } catch {
       // Error is already set in the hook
     } finally {
@@ -140,8 +150,22 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
               <Clock size={12} />
               <span>Expires</span>
             </div>
-            <div className={expired ? styles.infoValueWarning : styles.infoValueAccent}>
-              {getTimeRemaining()}
+            <div className={styles.infoValueWithCopy}>
+              <span className={expired ? styles.infoValueWarning : styles.infoValueAccent}>
+                {getTimeRemaining()}
+              </span>
+              {remoteAuthState.refreshToken && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={handleRefresh}
+                  disabled={isAuthenticating}
+                  className={styles.copyButton}
+                  title="Refresh token"
+                >
+                  {isAuthenticating ? <Spinner size="small" /> : <RefreshCw size={12} />}
+                </Button>
+              )}
             </div>
           </div>
 
@@ -160,7 +184,7 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
                   <Button
                     variant={isCopied('auth-key') ? 'primary' : 'ghost'}
                     size="xs"
-                    onClick={() => copy(authorizedMachine.publicKey, 'auth-key')}
+                    onClick={() => copy(authorizedMachine.signingPublicKey, 'auth-key')}
                     className={styles.copyButton}
                   >
                     {isCopied('auth-key') ? <Check size={12} /> : <Copy size={12} />}
@@ -207,21 +231,6 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
           </div>
         </div>
 
-        {/* Actions */}
-        {expired && remoteAuthState.refreshToken && (
-          <div className={styles.actions}>
-            <Button
-              variant="secondary"
-              onClick={handleRefresh}
-              disabled={isAuthenticating}
-              className={styles.actionButton}
-            >
-              {isAuthenticating ? <Spinner size="small" /> : <Key size={14} />}
-              Refresh Token
-            </Button>
-          </div>
-        )}
-
         {error && (
           <Label variant="error" className={styles.error}>
             {error}
@@ -231,14 +240,19 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
 
       {/* Footer - Disconnect Button pinned to bottom */}
       <div className={styles.footer}>
-        <button
-          className={styles.disconnectButton}
-          onClick={handleDisconnect}
-          disabled={isDisconnecting || isAuthenticating}
-        >
-          {isDisconnecting ? <Spinner size="small" /> : <LogOut size={14} />}
-          <span>Disconnect</span>
-        </button>
+        <Menu
+          items={[
+            {
+              id: 'disconnect',
+              label: isDisconnecting ? 'Disconnecting...' : 'Disconnect',
+              icon: isDisconnecting ? <Spinner size="small" /> : <LogOut size={14} />,
+              disabled: isDisconnecting || isAuthenticating,
+            },
+          ]}
+          onChange={(id) => id === 'disconnect' && handleDisconnect()}
+          background="none"
+          border="none"
+        />
       </div>
     </div>
   );

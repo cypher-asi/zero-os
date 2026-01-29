@@ -49,6 +49,8 @@ interface SettingsStoreState {
 
   // Identity preferences
   defaultKeyScheme: KeyScheme;
+  /** Default machine key ID for authentication (hex string) */
+  defaultMachineId: string | null;
   isLoadingPreferences: boolean;
 
   // Navigation state (replaces module-level pendingNavigation)
@@ -71,6 +73,7 @@ interface SettingsStoreState {
   // Identity preferences actions
   loadIdentityPreferences: (userId: bigint) => Promise<void>;
   setDefaultKeyScheme: (userId: bigint, scheme: KeyScheme) => Promise<void>;
+  setDefaultMachineKey: (userId: bigint, machineId: string) => Promise<void>;
 
   // Navigation actions
   setPendingNavigation: (navigation: PendingNavigation) => void;
@@ -94,6 +97,7 @@ export const useSettingsStore = create<SettingsStoreState>()(
         timezone: DEFAULT_TIME_SETTINGS.timezone,
         rpcEndpoint: DEFAULT_RPC_ENDPOINT,
         defaultKeyScheme: 'classical',
+        defaultMachineId: null,
         isLoadingPreferences: false,
 
         // Navigation state
@@ -136,7 +140,11 @@ export const useSettingsStore = create<SettingsStoreState>()(
           set({ isLoadingPreferences: true });
           try {
             const prefs = await client.getIdentityPreferences(userId);
-            set({ defaultKeyScheme: prefs.default_key_scheme, isLoadingPreferences: false });
+            set({
+              defaultKeyScheme: prefs.default_key_scheme,
+              defaultMachineId: prefs.default_machine_id ?? null,
+              isLoadingPreferences: false,
+            });
             console.log('[SettingsStore] Loaded identity preferences:', prefs);
           } catch (err) {
             console.error('[SettingsStore] Failed to load preferences:', err);
@@ -163,6 +171,29 @@ export const useSettingsStore = create<SettingsStoreState>()(
             console.error('[SettingsStore] Failed to set default key scheme:', err);
             // Revert on error
             set({ defaultKeyScheme: prevScheme });
+            throw err;
+          }
+        },
+
+        // Set default machine key in VFS
+        setDefaultMachineKey: async (userId: bigint, machineId: string) => {
+          const client = get()._identityClient;
+          if (!client) {
+            console.log('[SettingsStore] No identity client available');
+            return;
+          }
+
+          const prevMachineId = get().defaultMachineId;
+          // Optimistic update
+          set({ defaultMachineId: machineId });
+
+          try {
+            await client.setDefaultMachineKey(userId, machineId);
+            console.log('[SettingsStore] Updated default machine key:', machineId);
+          } catch (err) {
+            console.error('[SettingsStore] Failed to set default machine key:', err);
+            // Revert on error
+            set({ defaultMachineId: prevMachineId });
             throw err;
           }
         },

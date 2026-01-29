@@ -21,7 +21,7 @@ use alloc::format;
 use zos_apps::{syscall, AppError, Message};
 use zos_identity::ipc::{
     GetIdentityPreferencesRequest, IdentityPreferences,
-    SetDefaultKeySchemeRequest,
+    SetDefaultKeySchemeRequest, SetDefaultMachineKeyRequest,
 };
 use zos_identity::KeyError;
 
@@ -105,6 +105,48 @@ pub fn handle_set_default_key_scheme(
             ctx,
             user_id: request.user_id,
             new_key_scheme: request.key_scheme,
+        },
+    )
+}
+
+/// Handle set default machine key - update default_machine_id in VFS preferences
+pub fn handle_set_default_machine_key(
+    service: &mut IdentityService,
+    msg: &Message,
+) -> Result<(), AppError> {
+    // Rule 1: Parse request - return InvalidRequest on parse failure
+    let request: SetDefaultMachineKeyRequest = match serde_json::from_slice(&msg.data) {
+        Ok(r) => r,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Failed to parse request: {}", e));
+            return response::send_set_default_machine_key_error(
+                msg.from_pid,
+                &msg.cap_slots,
+                KeyError::InvalidRequest(format!("JSON parse error: {}", e)),
+            );
+        }
+    };
+
+    // Rule 4: Authorization check (FAIL-CLOSED)
+    if check_user_authorization(msg.from_pid, request.user_id) == AuthResult::Denied {
+        log_denial("set_default_machine_key", msg.from_pid, request.user_id);
+        return response::send_set_default_machine_key_error(
+            msg.from_pid,
+            &msg.cap_slots,
+            KeyError::Unauthorized,
+        );
+    }
+
+    let prefs_path = IdentityPreferences::storage_path(request.user_id);
+
+    // Read existing preferences first (or use default), then update default_machine_id
+    let ctx = RequestContext::new(msg.from_pid, msg.cap_slots.clone());
+    service.start_vfs_read(
+        &prefs_path,
+        PendingStorageOp::ReadPreferencesForDefaultMachine {
+            ctx,
+            user_id: request.user_id,
+            new_default_machine_id: request.machine_id,
         },
     )
 }

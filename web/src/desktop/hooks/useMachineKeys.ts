@@ -5,6 +5,7 @@ import {
   selectCurrentUser,
   useMachineKeysStore,
   selectMachineKeysState,
+  useSettingsStore,
 } from '@/stores';
 import type { KeyScheme, MachineKeyCapability } from '@/stores';
 import { useIdentityServiceClient } from './useIdentityServiceClient';
@@ -15,6 +16,7 @@ import {
   type ZidTokens,
   KeystoreClient,
   getMachineKeysDir,
+  uuidToBigInt,
 } from '@/client-services';
 
 // Import converters from shared module
@@ -162,7 +164,9 @@ export function useMachineKeys(): UseMachineKeysReturn {
       });
 
       // Warn about zero-ID machines (indicates entropy generation failure)
+      // Check both UUID format (new) and hex format (backward compat)
       const zeroIdMachines = uniqueMachines.filter(m => 
+        m.machineId === '00000000-0000-0000-0000-000000000000' ||
         m.machineId === '0x00000000000000000000000000000000' || 
         m.machineId === '0x0' ||
         m.machineId === '0'
@@ -219,6 +223,9 @@ export function useMachineKeys(): UseMachineKeysReturn {
         throw new Error('Password is required to create a machine key');
       }
 
+      // Check if this is the first machine key (for auto-setting default)
+      const isFirstMachine = state.machines.length === 0;
+
       setLoading(true);
 
       try {
@@ -239,6 +246,19 @@ export function useMachineKeys(): UseMachineKeysReturn {
 
         addMachine(newMachine);
 
+        // Auto-set as default if this is the first machine key
+        if (isFirstMachine) {
+          console.log(
+            `[useMachineKeys] First machine key created, auto-setting as default: ${newMachine.machineId}`
+          );
+          try {
+            await useSettingsStore.getState().setDefaultMachineKey(userIdVal, newMachine.machineId);
+          } catch (defaultErr) {
+            // Don't fail the whole operation if setting default fails
+            console.warn('[useMachineKeys] Failed to auto-set default machine key:', defaultErr);
+          }
+        }
+
         return newMachine;
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to create machine key';
@@ -247,7 +267,7 @@ export function useMachineKeys(): UseMachineKeysReturn {
         throw err;
       }
     },
-    [getClientOrThrow, getUserIdOrThrow, state.currentMachineId, setLoading, addMachine, setError]
+    [getClientOrThrow, getUserIdOrThrow, state.machines.length, state.currentMachineId, setLoading, addMachine, setError]
   );
 
   const createMachineKeyAndEnroll = useCallback(
@@ -273,6 +293,9 @@ export function useMachineKeys(): UseMachineKeysReturn {
         throw new Error('ZID endpoint is required');
       }
 
+      // Check if this is the first machine key (for auto-setting default)
+      const isFirstMachine = state.machines.length === 0;
+
       setLoading(true);
 
       try {
@@ -297,6 +320,19 @@ export function useMachineKeys(): UseMachineKeysReturn {
 
         addMachine(newMachine);
 
+        // Auto-set as default if this is the first machine key
+        if (isFirstMachine) {
+          console.log(
+            `[useMachineKeys] First machine key created, auto-setting as default: ${newMachine.machineId}`
+          );
+          try {
+            await useSettingsStore.getState().setDefaultMachineKey(userIdVal, newMachine.machineId);
+          } catch (defaultErr) {
+            // Don't fail the whole operation if setting default fails
+            console.warn('[useMachineKeys] Failed to auto-set default machine key:', defaultErr);
+          }
+        }
+
         console.log(
           `[useMachineKeys] Machine key created and enrolled successfully: ${newMachine.machineId}`
         );
@@ -310,7 +346,7 @@ export function useMachineKeys(): UseMachineKeysReturn {
         throw err;
       }
     },
-    [getClientOrThrow, getUserIdOrThrow, state.currentMachineId, setLoading, addMachine, setError]
+    [getClientOrThrow, getUserIdOrThrow, state.machines.length, state.currentMachineId, setLoading, addMachine, setError]
   );
 
   const revokeMachineKey = useCallback(
@@ -327,8 +363,8 @@ export function useMachineKeys(): UseMachineKeysReturn {
 
       try {
         console.log(`[useMachineKeys] Revoking machine key ${machineId}`);
-        // Parse machine ID from hex string to bigint
-        const machineIdBigInt = BigInt(machineId);
+        // Parse machine ID from UUID string to bigint
+        const machineIdBigInt = uuidToBigInt(machineId);
         await client.revokeMachineKey(userIdVal, machineIdBigInt);
 
         removeMachine(machineId);
@@ -366,7 +402,8 @@ export function useMachineKeys(): UseMachineKeysReturn {
         console.log(
           `[useMachineKeys] Rotating machine key ${machineId} (current epoch: ${oldEpoch})`
         );
-        const machineIdBigInt = BigInt(machineId);
+        // Parse machine ID from UUID string to bigint
+        const machineIdBigInt = uuidToBigInt(machineId);
         const serviceRecord = await client.rotateMachineKey(userIdVal, machineIdBigInt);
         const rotatedMachine = convertMachineRecord(
           serviceRecord,
@@ -421,6 +458,36 @@ export function useMachineKeys(): UseMachineKeysReturn {
       refresh();
     }
   }, [currentUser?.id, refresh]);
+
+  // Subscribe to settings store for auto-default logic
+  const defaultMachineId = useSettingsStore((s) => s.defaultMachineId);
+  const isLoadingPreferences = useSettingsStore((s) => s.isLoadingPreferences);
+
+  // Auto-set default machine key if machines exist but no default is set
+  // This ensures the UI always shows a default when machines are available
+  useEffect(() => {
+    // Wait for preferences to finish loading before auto-setting
+    // This prevents race condition where we set a default, then preferences load and overwrite
+    if (isLoadingPreferences) {
+      return;
+    }
+
+    // Only proceed if we have machines loaded and no default is set
+    if (state.machines.length === 0 || defaultMachineId || !userId) {
+      return;
+    }
+
+    // Prefer current device as default, otherwise use first machine
+    const defaultMachine = state.machines.find((m) => m.isCurrentDevice) || state.machines[0];
+    if (defaultMachine) {
+      console.log(
+        `[useMachineKeys] No default machine set, auto-setting: ${defaultMachine.machineId}`
+      );
+      useSettingsStore.getState().setDefaultMachineKey(userId, defaultMachine.machineId).catch((err) => {
+        console.warn('[useMachineKeys] Failed to auto-set default machine key:', err);
+      });
+    }
+  }, [state.machines, userId, defaultMachineId, isLoadingPreferences]);
 
   return {
     state,

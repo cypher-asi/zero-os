@@ -201,6 +201,7 @@ export function formatUserId(userId: bigint | string | number): string {
 /**
  * Format a machine ID as a 32-character hex string.
  * This matches the Rust format: {:032x}
+ * Handles UUID format (with dashes), hex format (with 0x prefix), and numeric values.
  */
 export function formatMachineIdHex(machineId: bigint | string | number): string {
   let value: bigint;
@@ -210,6 +211,10 @@ export function formatMachineIdHex(machineId: bigint | string | number): string 
   } else if (typeof machineId === 'string') {
     if (machineId.startsWith('0x')) {
       value = BigInt(machineId);
+    } else if (machineId.includes('-')) {
+      // UUID format: remove dashes and parse as hex
+      const hex = machineId.replace(/-/g, '');
+      value = BigInt('0x' + hex);
     } else {
       // Try to parse as hex if it looks like hex
       if (/^[0-9a-fA-F]+$/.test(machineId)) {

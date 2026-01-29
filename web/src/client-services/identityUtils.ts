@@ -87,3 +87,94 @@ export function u128ToHex(value: number | string | bigint): string {
     return value.toString();
   }
 }
+
+/**
+ * Convert a u128 value to UUID format (8-4-4-4-12 with dashes).
+ *
+ * This matches the ZID server's canonical format for machine IDs.
+ * The output is a lowercase UUID string without prefix.
+ *
+ * @param value - A u128 value as number, string, or bigint
+ * @returns UUID-formatted string (e.g., "f0154fd0-6cc1-428e-c8d3-7c034447f839")
+ *
+ * @example
+ * u128ToUuid(BigInt("0xf0154fd06cc1428ec8d37c034447f839"))
+ * // => "f0154fd0-6cc1-428e-c8d3-7c034447f839"
+ */
+export function u128ToUuid(value: number | string | bigint): string {
+  let hex: string;
+
+  if (typeof value === 'number') {
+    hex = value.toString(16).padStart(32, '0');
+  } else if (typeof value === 'bigint') {
+    hex = value.toString(16).padStart(32, '0');
+  } else {
+    // String: try to parse as BigInt
+    try {
+      const bigVal = BigInt(value);
+      hex = bigVal.toString(16).padStart(32, '0');
+    } catch {
+      // If parsing fails and it looks like a UUID already, return it
+      if (value.includes('-') && value.length === 36) {
+        return value.toLowerCase();
+      }
+      // Otherwise try to format as-is
+      hex = value.replace(/^0x/, '').padStart(32, '0');
+    }
+  }
+
+  // Format as UUID: 8-4-4-4-12
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
+ * Convert a UUID string to BigInt.
+ *
+ * Parses the canonical UUID format (with dashes) back to a numeric value.
+ * Also handles hex strings with "0x" prefix for backward compatibility.
+ *
+ * @param uuid - UUID string (e.g., "f0154fd0-6cc1-428e-c8d3-7c034447f839") or hex string
+ * @returns BigInt representation of the UUID
+ * @throws Error if the string cannot be parsed
+ *
+ * @example
+ * uuidToBigInt("f0154fd0-6cc1-428e-c8d3-7c034447f839")
+ * // => BigInt("0xf0154fd06cc1428ec8d37c034447f839")
+ */
+export function uuidToBigInt(uuid: string): bigint {
+  // Handle hex strings (backward compatibility)
+  if (uuid.startsWith('0x')) {
+    return BigInt(uuid);
+  }
+
+  // Remove dashes and parse as hex
+  const hex = uuid.replace(/-/g, '');
+  if (hex.length !== 32) {
+    throw new Error(`Invalid UUID format: expected 32 hex chars, got ${hex.length}`);
+  }
+
+  return BigInt('0x' + hex);
+}
+
+/**
+ * Convert a UUID string to hex format with "0x" prefix.
+ *
+ * Useful for sending machine IDs to the Rust backend which expects hex format.
+ *
+ * @param uuid - UUID string (e.g., "f0154fd0-6cc1-428e-c8d3-7c034447f839")
+ * @returns Hex string with "0x" prefix (e.g., "0xf0154fd06cc1428ec8d37c034447f839")
+ *
+ * @example
+ * uuidToHex("f0154fd0-6cc1-428e-c8d3-7c034447f839")
+ * // => "0xf0154fd06cc1428ec8d37c034447f839"
+ */
+export function uuidToHex(uuid: string): string {
+  // Already hex format
+  if (uuid.startsWith('0x')) {
+    return uuid;
+  }
+
+  // Remove dashes and add prefix
+  const hex = uuid.replace(/-/g, '');
+  return '0x' + hex;
+}

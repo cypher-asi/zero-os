@@ -256,18 +256,18 @@ describe('useMachineKeys', () => {
       });
 
       await act(async () => {
-        await result.current.revokeMachineKey('0x0000000000000000000000000000002a');
+        await result.current.revokeMachineKey('00000000-0000-0000-0000-00000000002a');
       });
 
       expect(mockIdentityServiceClient.revokeMachineKey).toHaveBeenCalled();
       expect(mockStoreFunctions.removeMachine).toHaveBeenCalledWith(
-        '0x0000000000000000000000000000002a'
+        '00000000-0000-0000-0000-00000000002a'
       );
     });
 
     it('prevents revoking current machine', async () => {
-      // Set up current machine ID
-      mockMachineKeysState.currentMachineId = '0x0000000000000000000000000000001';
+      // Set up current machine ID (UUID format)
+      mockMachineKeysState.currentMachineId = '00000000-0000-0000-0000-000000000001';
 
       const { result } = renderHook(() => useMachineKeys(), {
         wrapper: createWrapper(mockSupervisor),
@@ -275,7 +275,7 @@ describe('useMachineKeys', () => {
 
       await act(async () => {
         try {
-          await result.current.revokeMachineKey('0x0000000000000000000000000000001');
+          await result.current.revokeMachineKey('00000000-0000-0000-0000-000000000001');
         } catch (error) {
           expect((error as Error).message).toBe('Cannot revoke the current machine key');
         }
@@ -288,11 +288,11 @@ describe('useMachineKeys', () => {
   describe('rotateMachineKey', () => {
     it('calls identity service client and updates state', async () => {
       const existingMachine = {
-        machineId: '0x0000000000000000000000000000002a',
+        machineId: '00000000-0000-0000-0000-00000000002a',
         signingPublicKey: '00'.repeat(32),
         encryptionPublicKey: '00'.repeat(32),
         authorizedAt: Date.now(),
-        authorizedBy: '0x12345',
+        authorizedBy: '00000000-0000-0000-0000-000000012345',
         capabilities: {
           canAuthenticate: true,
           canEncrypt: true,
@@ -333,7 +333,7 @@ describe('useMachineKeys', () => {
       });
 
       await act(async () => {
-        await result.current.rotateMachineKey('0x0000000000000000000000000000002a');
+        await result.current.rotateMachineKey('00000000-0000-0000-0000-00000000002a');
       });
 
       expect(mockIdentityServiceClient.rotateMachineKey).toHaveBeenCalled();
@@ -360,11 +360,11 @@ describe('useMachineKeys', () => {
   describe('getMachineKey', () => {
     it('returns machine from state if found', async () => {
       const existingMachine = {
-        machineId: '0x0000000000000000000000000000002a',
+        machineId: '00000000-0000-0000-0000-00000000002a',
         signingPublicKey: '00'.repeat(32),
         encryptionPublicKey: '00'.repeat(32),
         authorizedAt: Date.now(),
-        authorizedBy: '0x12345',
+        authorizedBy: '00000000-0000-0000-0000-000000012345',
         capabilities: {
           canAuthenticate: true,
           canEncrypt: true,
@@ -384,7 +384,7 @@ describe('useMachineKeys', () => {
         wrapper: createWrapper(mockSupervisor),
       });
 
-      const machine = await result.current.getMachineKey('0x0000000000000000000000000000002a');
+      const machine = await result.current.getMachineKey('00000000-0000-0000-0000-00000000002a');
       expect(machine).toEqual(existingMachine);
     });
 
@@ -395,7 +395,7 @@ describe('useMachineKeys', () => {
         wrapper: createWrapper(mockSupervisor),
       });
 
-      const machine = await result.current.getMachineKey('0x999');
+      const machine = await result.current.getMachineKey('00000000-0000-0000-0000-000000000999');
       expect(machine).toBeNull();
     });
   });

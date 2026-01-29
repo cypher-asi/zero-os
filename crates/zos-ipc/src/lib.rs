@@ -763,6 +763,12 @@ pub mod identity_prefs {
     /// Set default key scheme response.
     /// Payload: JSON-serialized SetDefaultKeySchemeResponse
     pub const MSG_SET_DEFAULT_KEY_SCHEME_RESPONSE: u32 = 0x7093;
+    /// Set default machine key request.
+    /// Payload: JSON-serialized SetDefaultMachineKeyRequest
+    pub const MSG_SET_DEFAULT_MACHINE_KEY: u32 = 0x7094;
+    /// Set default machine key response.
+    /// Payload: JSON-serialized SetDefaultMachineKeyResponse
+    pub const MSG_SET_DEFAULT_MACHINE_KEY_RESPONSE: u32 = 0x7095;
 }
 
 // =============================================================================
