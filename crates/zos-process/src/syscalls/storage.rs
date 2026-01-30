@@ -9,7 +9,8 @@
 use crate::error;
 #[allow(unused_imports)]
 use crate::{
-    SYS_STORAGE_DELETE, SYS_STORAGE_EXISTS, SYS_STORAGE_LIST, SYS_STORAGE_READ, SYS_STORAGE_WRITE,
+    SYS_STORAGE_BATCH_WRITE, SYS_STORAGE_DELETE, SYS_STORAGE_EXISTS, SYS_STORAGE_LIST,
+    SYS_STORAGE_READ, SYS_STORAGE_WRITE,
 };
 #[allow(unused_imports)]
 use alloc::vec::Vec;
@@ -185,5 +186,52 @@ pub fn storage_exists_async(key: &str) -> Result<u32, u32> {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn storage_exists_async(_key: &str) -> Result<u32, u32> {
+    Err(error::E_NOSYS)
+}
+
+/// Start async batch storage write operation.
+///
+/// This syscall writes multiple key-value pairs in a single IndexedDB transaction,
+/// significantly reducing round-trip latency compared to individual writes.
+/// Used by VFS mkdir with create_parents=true to write all parent inodes atomically.
+///
+/// # Arguments
+/// - `items`: Array of (key, value) pairs to write
+///
+/// # Returns
+/// - `Ok(request_id)`: Request ID to match with result
+/// - `Err(code)`: Failed to start operation
+#[cfg(target_arch = "wasm32")]
+pub fn storage_batch_write_async(items: &[(&str, &[u8])]) -> Result<u32, u32> {
+    // Data format: [count: u32, (key_len: u32, key: [u8], value_len: u32, value: [u8])*]
+    let mut data = Vec::new();
+    data.extend_from_slice(&(items.len() as u32).to_le_bytes());
+
+    for (key, value) in items {
+        let key_bytes = key.as_bytes();
+        data.extend_from_slice(&(key_bytes.len() as u32).to_le_bytes());
+        data.extend_from_slice(key_bytes);
+        data.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        data.extend_from_slice(value);
+    }
+
+    unsafe {
+        zos_send_bytes(data.as_ptr(), data.len() as u32);
+        let result = zos_syscall(
+            SYS_STORAGE_BATCH_WRITE,
+            items.len() as u32,
+            0,
+            0,
+        );
+        if result as i32 >= 0 {
+            Ok(result)
+        } else {
+            Err(result)
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn storage_batch_write_async(_items: &[(&str, &[u8])]) -> Result<u32, u32> {
     Err(error::E_NOSYS)
 }

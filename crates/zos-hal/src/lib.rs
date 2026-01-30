@@ -269,6 +269,29 @@ pub trait HAL: Send + Sync + 'static {
         Err(HalError::NotSupported)
     }
 
+    /// Start async batch write to platform storage (returns immediately)
+    ///
+    /// Writes multiple key-value pairs in a single IndexedDB transaction,
+    /// significantly reducing round-trip latency for operations like mkdir
+    /// with create_parents=true.
+    ///
+    /// The result will be delivered via notify_storage_write_complete callback.
+    ///
+    /// # Arguments
+    /// * `pid` - Process ID requesting the operation
+    /// * `items` - Array of (key, value) pairs to write
+    ///
+    /// # Returns
+    /// * `Ok(request_id)` - Unique request ID to match with result
+    /// * `Err(HalError)` - Failed to start operation
+    fn storage_batch_write_async(
+        &self,
+        _pid: u64,
+        _items: &[(&str, &[u8])],
+    ) -> Result<StorageRequestId, HalError> {
+        Err(HalError::NotSupported)
+    }
+
     /// Get the PID associated with a pending storage request
     ///
     /// # Arguments

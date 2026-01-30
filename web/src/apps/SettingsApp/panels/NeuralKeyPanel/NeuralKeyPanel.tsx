@@ -2,7 +2,6 @@ import { useState, useCallback, useMemo } from 'react';
 import {
   GroupCollapsible,
   Button,
-  ButtonCopy,
   Card,
   CardItem,
   Text,
@@ -13,10 +12,6 @@ import {
 } from '@cypher-asi/zui';
 import {
   Brain,
-  Copy,
-  Check,
-  Key,
-  Calendar,
   AlertTriangle,
   Loader,
   Eye,
@@ -24,15 +19,13 @@ import {
   ShieldCheck,
   RefreshCw,
   Laptop,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Wifi,
 } from 'lucide-react';
 import { useNeuralKey } from '@desktop/hooks/useNeuralKey';
 import { useCopyToClipboard } from '@desktop/hooks/useCopyToClipboard';
 import { useMachineKeys } from '@desktop/hooks/useMachineKeys';
 import { useZeroIdAuth } from '@desktop/hooks/useZeroIdAuth';
+import { NeuralKeyStatus } from './NeuralKeyStatus';
+import { ShardDisplay } from './ShardDisplay';
 import styles from './NeuralKeyPanel.module.css';
 
 /** Minimum password length */
@@ -98,7 +91,6 @@ export function NeuralKeyPanel() {
     setIsGenerating(true);
     try {
       await generateNeuralKey(password);
-      // Note: Don't clear password yet - needed for machine key creation
       return true;
     } catch (err) {
       console.error('Failed to generate Neural Key:', err);
@@ -110,7 +102,6 @@ export function NeuralKeyPanel() {
 
   // Handle step change - intercept to trigger generation when leaving password step
   const handleStepChange = useCallback(async (newStep: number) => {
-    // When moving from password step (1) to machine key step (2), generate the neural key first
     if (currentStep === 1 && newStep === 2) {
       const success = await handleGenerate();
       if (success) {
@@ -122,8 +113,6 @@ export function NeuralKeyPanel() {
   }, [currentStep, handleGenerate]);
 
   // Handle combined device setup (creates machine key AND enrolls with ZID atomically)
-  // This solves the signature mismatch problem by ensuring the same keypair is used
-  // for both local storage and ZID registration.
   const handleDeviceSetup = useCallback(async () => {
     if (!state.pendingShards || state.pendingShards.length === 0) {
       setDeviceSetupError('No shards available');
@@ -140,18 +129,16 @@ export function NeuralKeyPanel() {
     setDeviceSetupError(null);
 
     try {
-      // Use the first pending shard for the combined operation
       const shard = state.pendingShards[0];
       await createMachineKeyAndEnroll(
-        'This Device', // Machine name
-        undefined, // Default capabilities
-        undefined, // Default key scheme
-        shard, // Use first shard
+        'This Device',
+        undefined,
+        undefined,
+        shard,
         password,
         DEFAULT_ZID_ENDPOINT
       );
       setDeviceSetupState('success');
-      // Clear password now that device setup is complete
       setPassword('');
       setPasswordConfirm('');
     } catch (err) {
@@ -180,30 +167,19 @@ export function NeuralKeyPanel() {
   // Setup Status - Derived state and retry handlers for active view
   // ===========================================================================
   
-  // Derive machine key status
   const hasMachineKey = machineKeysState.machines.length > 0;
-  
-  // Derive enrollment status (if we have a session, we were enrolled at some point)
   const isEnrolled = remoteAuthState !== null;
   
-  // Derive session status
   const sessionStatus = useMemo(() => {
-    if (!remoteAuthState) return 'none';
-    if (isTokenExpired()) return 'expired';
-    return 'active';
+    if (!remoteAuthState) return 'none' as const;
+    if (isTokenExpired()) return 'expired' as const;
+    return 'active' as const;
   }, [remoteAuthState, isTokenExpired]);
   
-  // Handle retry enrollment (for when machine key exists but ZID connection failed)
-  // Uses loginWithMachineKey since the machine key was already created during initial setup.
-  // The initial createMachineKeyAndEnroll may have created the identity on ZID, but the
-  // subsequent login step failed. Using loginWithMachineKey will authenticate with the
-  // existing machine key rather than trying to create a new identity.
   const handleRetryEnrollment = useCallback(async () => {
     setEnrollmentRetrying(true);
     setEnrollmentError(null);
     try {
-      // Use loginWithMachineKey to authenticate with the existing machine key
-      // This properly uses the stored machine key's ID and signing keys
       await loginWithMachineKey(DEFAULT_ZID_ENDPOINT);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Connection failed';
@@ -213,7 +189,6 @@ export function NeuralKeyPanel() {
     }
   }, [loginWithMachineKey]);
   
-  // Handle retry session (refresh/re-authenticate)
   const handleRetrySession = useCallback(async () => {
     setSessionRetrying(true);
     setSessionError(null);
@@ -227,35 +202,12 @@ export function NeuralKeyPanel() {
     }
   }, [loginWithMachineKey]);
 
-  // Truncate shard hex for display (first 8...last 8 chars)
-  const truncateShardHex = (hex: string) => {
-    if (hex.length <= 20) return hex;
-    return `${hex.slice(0, 10)}...${hex.slice(-10)}`;
-  };
-
-  // Format date for display
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  // Format public key for display (truncate)
-  const formatPubKey = (key: string) => {
-    if (key.length <= 20) return key;
-    return `${key.slice(0, 10)}...${key.slice(-8)}`;
-  };
-
-  // Handle wizard finish - must be defined before early returns (Rules of Hooks)
+  // Handle wizard finish
   const handleWizardFinish = useCallback(() => {
     confirmShardsSaved();
   }, [confirmShardsSaved]);
 
-  // Build wizard steps array - must be defined before early returns (Rules of Hooks)
+  // Build wizard steps array
   const wizardSteps: WizardStep[] = useMemo(
     () => [
       {
@@ -278,7 +230,7 @@ export function NeuralKeyPanel() {
             </div>
           </div>
         ),
-        isComplete: true, // Always complete - informational step
+        isComplete: true,
         nextLabel: 'Generate Neural Key',
       },
       {
@@ -345,7 +297,6 @@ export function NeuralKeyPanel() {
                 )}
               </div>
             </div>
-
           </div>
         ),
         isComplete: passwordValidation.isValid,
@@ -438,100 +389,36 @@ export function NeuralKeyPanel() {
       {
         id: 'backup',
         label: 'Backup',
-        content: (
-          <div className={styles.wizardStepContent}>
-            <Card className={styles.warningCard}>
-              <CardItem
-                icon={<AlertTriangle size={16} />}
-                title="Save these shards now!"
-                description="These will only be shown once. Store each shard in a separate secure location. To recover your identity on a new device, you'll need 1 shard plus your password."
-                className={styles.warningCardItem}
-              />
-            </Card>
-
-            {state.pendingShards && (
-              <>
-                <div className={styles.copyAllContainer}>
-                  <Button
-                    variant={isCopied('all') ? 'primary' : 'secondary'}
-                    size="sm"
-                    onClick={handleCopyAll}
-                  >
-                    {isCopied('all') ? (
-                      <>
-                        <Check size={14} />
-                        Copied All Shards
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={14} />
-                        Copy All Shards
-                      </>
-                    )}
-                  </Button>
-                </div>
-
-                <div className={styles.shardsContainer}>
-                  {state.pendingShards.map((shard, index) => (
-                    <div key={shard.index} className={styles.shardItem}>
-                      <div className={styles.shardInfo}>
-                        <Label size="xs" variant="default">
-                          Shard {shard.index}
-                        </Label>
-                        <code className={styles.shardCodeInline}>{truncateShardHex(shard.hex)}</code>
-                      </div>
-                      <Button
-                        variant={isCopied(`shard-${index}`) ? 'primary' : 'ghost'}
-                        size="xs"
-                        onClick={() => copy(shard.hex, `shard-${index}`)}
-                      >
-                        {isCopied(`shard-${index}`) ? (
-                          <>
-                            <Check size={12} />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy size={12} />
-                            Copy
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        ),
-        isComplete: true, // Always complete - user must explicitly confirm
+        content: state.pendingShards ? (
+          <ShardDisplay
+            shards={state.pendingShards}
+            isCopied={isCopied}
+            onCopyAll={handleCopyAll}
+            onCopyShard={(hex, key) => copy(hex, key)}
+          />
+        ) : null,
+        isComplete: true,
       },
     ],
     [
       showPassword,
       password,
-      setPassword,
-      setShowPassword,
       passwordValidation,
       showPasswordConfirm,
       passwordConfirm,
-      setPasswordConfirm,
-      setShowPasswordConfirm,
       isGenerating,
       deviceSetupState,
       deviceSetupError,
-      setDeviceSetupState,
       handleDeviceSetup,
       state.pendingShards,
       isCopied,
       handleCopyAll,
       copy,
-      truncateShardHex,
     ]
   );
 
   // =========================================================================
-  // Render Logic - Early returns AFTER all hooks
+  // Render Logic
   // =========================================================================
 
   // Show nothing during initial settling period
@@ -539,7 +426,7 @@ export function NeuralKeyPanel() {
     return null;
   }
 
-  // Show loading state (only for operations like generate/recover, not initial load)
+  // Show loading state
   if (state.isLoading && !isGenerating) {
     return (
       <div className={styles.panelContainer}>
@@ -597,163 +484,20 @@ export function NeuralKeyPanel() {
 
   // Active neural key - show status
   return (
-    <div className={styles.panelContainer}>
-      <GroupCollapsible title="Neural Key" defaultOpen className={styles.collapsibleSection}>
-        <div className={styles.identitySection}>
-          {state.publicIdentifiers && (
-            <div className={styles.keyDetailsRow}>
-              <div className={styles.statusHeroColumn}>
-                <div className={styles.statusIconActive}>
-                  <Brain size={32} />
-                </div>
-                <Label size="sm" variant="success">
-                  Neural Key Active
-                </Label>
-              </div>
-
-              <div className={styles.keyDetailsColumn}>
-                <div className={styles.keyDetailItem}>
-                  <div className={styles.keyDetailLabel}>
-                    <Key size={14} />
-                    <span>Identity Key</span>
-                  </div>
-                  <div className={styles.neuralprintRow}>
-                    <code className={styles.keyDetailValue}>
-                      {formatPubKey(state.publicIdentifiers.identitySigningPubKey)}
-                    </code>
-                    <ButtonCopy text={state.publicIdentifiers.identitySigningPubKey} />
-                  </div>
-                </div>
-
-                <div className={styles.keyDetailItem}>
-                  <div className={styles.keyDetailLabel}>
-                    <Calendar size={14} />
-                    <span>Created</span>
-                  </div>
-                  <span className={styles.keyDetailValue}>
-                    {state.createdAt ? formatDate(state.createdAt) : 'Unknown'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Setup Status Section */}
-          <div className={styles.setupStatusSection}>
-            <div className={styles.setupStatusHeader}>
-              <ShieldCheck size={14} />
-              <span className={styles.setupStatusTitle}>Setup Status</span>
-            </div>
-
-            {/* Machine Key Status */}
-            <div className={styles.setupStatusRow}>
-              <div className={`${styles.setupStatusIcon} ${hasMachineKey ? styles.setupStatusIconSuccess : styles.setupStatusIconError}`}>
-                {hasMachineKey ? <CheckCircle size={16} /> : <XCircle size={16} />}
-              </div>
-              <span className={styles.setupStatusLabel}>Machine Key</span>
-              <div className={styles.setupStatusValue}>
-                {hasMachineKey ? 'Created' : 'Not Found'}
-              </div>
-            </div>
-
-            {/* ZID Enrollment Status */}
-            <div className={styles.setupStatusRow}>
-              <div className={`${styles.setupStatusIcon} ${isEnrolled ? styles.setupStatusIconSuccess : styles.setupStatusIconError}`}>
-                {isEnrolled ? <CheckCircle size={16} /> : <XCircle size={16} />}
-              </div>
-              <span className={styles.setupStatusLabel}>ZERO ID</span>
-              <div className={styles.setupStatusValue}>
-                {enrollmentRetrying ? (
-                  <>
-                    <Loader size={12} className={styles.spinner} />
-                    Connecting...
-                  </>
-                ) : isEnrolled ? (
-                  'Verified'
-                ) : (
-                  <>
-                    {enrollmentError || 'Not Connected'}
-                    {hasMachineKey && (
-                      <button
-                        className={styles.setupStatusRetryBtn}
-                        onClick={handleRetryEnrollment}
-                        disabled={enrollmentRetrying || isAuthenticating}
-                      >
-                        <RefreshCw size={12} />
-                        Connect
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Session Status */}
-            <div className={styles.setupStatusRow}>
-              <div className={`${styles.setupStatusIcon} ${
-                sessionStatus === 'active' 
-                  ? styles.setupStatusIconSuccess 
-                  : sessionStatus === 'expired' 
-                    ? styles.setupStatusIconWarning 
-                    : styles.setupStatusIconPending
-              }`}>
-                {sessionStatus === 'active' ? (
-                  <Wifi size={16} />
-                ) : sessionStatus === 'expired' ? (
-                  <AlertCircle size={16} />
-                ) : (
-                  <Wifi size={16} />
-                )}
-              </div>
-              <span className={styles.setupStatusLabel}>Session</span>
-              <div className={styles.setupStatusValue}>
-                {sessionRetrying ? (
-                  <>
-                    <Loader size={12} className={styles.spinner} />
-                    Connecting...
-                  </>
-                ) : sessionStatus === 'active' ? (
-                  `Active (${getTimeRemaining()})`
-                ) : sessionStatus === 'expired' ? (
-                  <>
-                    Expired
-                    <button
-                      className={styles.setupStatusRetryBtn}
-                      onClick={handleRetrySession}
-                      disabled={sessionRetrying || isAuthenticating}
-                    >
-                      <RefreshCw size={12} />
-                      Refresh
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {sessionError || 'Not Connected'}
-                    {isEnrolled && (
-                      <button
-                        className={styles.setupStatusRetryBtn}
-                        onClick={handleRetrySession}
-                        disabled={sessionRetrying || isAuthenticating}
-                      >
-                        <RefreshCw size={12} />
-                        Connect
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <Card className={styles.infoCard}>
-            <CardItem
-              icon={<AlertTriangle size={16} />}
-              title="Lost your shards or password?"
-              description="If you forget your password and lose all 3 backup shards, you won't be able to recover your identity on a new device."
-            />
-          </Card>
-        </div>
-      </GroupCollapsible>
-    </div>
+    <NeuralKeyStatus
+      publicIdentifiers={state.publicIdentifiers}
+      createdAt={state.createdAt}
+      hasMachineKey={hasMachineKey}
+      isEnrolled={isEnrolled}
+      sessionStatus={sessionStatus}
+      enrollmentRetrying={enrollmentRetrying}
+      sessionRetrying={sessionRetrying}
+      enrollmentError={enrollmentError}
+      sessionError={sessionError}
+      isAuthenticating={isAuthenticating}
+      getTimeRemaining={getTimeRemaining}
+      onRetryEnrollment={handleRetryEnrollment}
+      onRetrySession={handleRetrySession}
+    />
   );
 }

@@ -138,7 +138,47 @@ pub fn validate_password(password: &str) -> Result<(), KeyError> {
     Ok(())
 }
 
-/// Derive an encryption key from a password using Argon2id.
+/// Derived encryption key from password.
+///
+/// This is a thin wrapper around the raw key bytes, enabling reuse
+/// across multiple shard encryptions without re-running Argon2id.
+#[derive(Clone)]
+pub struct DerivedKey([u8; 32]);
+
+impl DerivedKey {
+    /// Get the raw key bytes (for internal use only)
+    fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+impl Drop for DerivedKey {
+    fn drop(&mut self) {
+        // Zero out key material on drop for security
+        self.0.fill(0);
+    }
+}
+
+/// Derive an encryption key from a password using Argon2id (public API).
+///
+/// Call this once, then use [`encrypt_shard_with_key`] for each shard.
+/// This avoids running the expensive Argon2id derivation multiple times.
+///
+/// # Parameters
+/// - `password`: User-provided password
+/// - `kdf`: Key derivation parameters (includes salt)
+///
+/// # Returns
+/// - `DerivedKey` wrapper containing the 32-byte AES-256 key
+///
+/// # Security
+/// - Uses Argon2id with 64KB memory cost (WASM-compatible minimum)
+/// - The returned key is zeroed on drop
+pub fn derive_key_from_password_public(password: &str, kdf: &KeyDerivation) -> Result<DerivedKey, KeyError> {
+    derive_key_from_password(password, kdf).map(DerivedKey)
+}
+
+/// Derive an encryption key from a password using Argon2id (internal).
 ///
 /// # Parameters
 /// - `password`: User-provided password
@@ -176,6 +216,10 @@ fn derive_key_from_password(password: &str, kdf: &KeyDerivation) -> Result<[u8; 
 
 /// Encrypt a Neural Shard with password-derived key (Argon2id + AES-256-GCM).
 ///
+/// **Note**: For encrypting multiple shards, prefer using [`derive_key_from_password_public`]
+/// once followed by [`encrypt_shard_with_key`] for each shard. This avoids redundant
+/// Argon2id derivations which are expensive in WASM (10-100x slower than native).
+///
 /// # Parameters
 /// - `shard`: The shard to encrypt (hex string from zid-crypto)
 /// - `shard_index`: Original shard index (1-5)
@@ -186,7 +230,7 @@ fn derive_key_from_password(password: &str, kdf: &KeyDerivation) -> Result<[u8; 
 /// - `EncryptedShard` containing ciphertext, nonce, and auth tag
 ///
 /// # Security
-/// - Uses Argon2id with 2MB memory cost for password hardening (WASM-compatible)
+/// - Uses Argon2id with 64KB memory cost for password hardening (WASM-compatible minimum)
 /// - Uses AES-256-GCM for authenticated encryption
 /// - Each shard gets a unique random nonce
 pub fn encrypt_shard(
@@ -195,16 +239,40 @@ pub fn encrypt_shard(
     password: &str,
     kdf: &KeyDerivation,
 ) -> Result<EncryptedShard, KeyError> {
+    // Derive encryption key from password (runs Argon2id)
+    let derived_key = derive_key_from_password_public(password, kdf)?;
+    encrypt_shard_with_key(shard_hex, shard_index, &derived_key)
+}
+
+/// Encrypt a Neural Shard with a pre-derived key (AES-256-GCM only).
+///
+/// Use this function when encrypting multiple shards to avoid running
+/// Argon2id multiple times. First derive the key once with
+/// [`derive_key_from_password_public`], then call this for each shard.
+///
+/// # Parameters
+/// - `shard_hex`: The shard to encrypt (hex string from zid-crypto)
+/// - `shard_index`: Original shard index (1-5)
+/// - `derived_key`: Pre-derived encryption key from [`derive_key_from_password_public`]
+///
+/// # Returns
+/// - `EncryptedShard` containing ciphertext, nonce, and auth tag
+///
+/// # Security
+/// - Uses AES-256-GCM for authenticated encryption
+/// - Each shard gets a unique random nonce
+pub fn encrypt_shard_with_key(
+    shard_hex: &str,
+    shard_index: u8,
+    derived_key: &DerivedKey,
+) -> Result<EncryptedShard, KeyError> {
     use aes_gcm::{
         aead::{Aead, KeyInit},
         Aes256Gcm, Nonce,
     };
 
-    // Derive encryption key from password
-    let key = derive_key_from_password(password, kdf)?;
-
-    // Create AES-256-GCM cipher
-    let cipher = Aes256Gcm::new_from_slice(&key)
+    // Create AES-256-GCM cipher from pre-derived key
+    let cipher = Aes256Gcm::new_from_slice(derived_key.as_bytes())
         .map_err(|e| KeyError::CryptoError(alloc::format!("Cipher init failed: {:?}", e)))?;
 
     // Generate random nonce (12 bytes)

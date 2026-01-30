@@ -813,6 +813,86 @@ const ZosStorage = {
   },
 
   /**
+   * Start async batch write operation.
+   * Writes multiple key-value pairs in a single IndexedDB transaction.
+   * Used by VFS mkdir with create_parents=true for performance.
+   * Calls supervisor.notify_storage_write_complete when done.
+   * @param {number} requestId - Unique request ID
+   * @param {Array<{key: string, value: Uint8Array}>} items - Array of key-value pairs
+   */
+  async startBatchWrite(requestId, items) {
+    console.log(`[ZosStorage] startBatchWrite: request_id=${requestId}, items=${items.length}`);
+
+    if (!this.supervisor) {
+      console.error('[ZosStorage] startBatchWrite: supervisor not initialized');
+      return;
+    }
+
+    // Capture supervisor reference for deferred callback
+    const supervisor = this.supervisor;
+
+    try {
+      await this.init();
+
+      // Use a single transaction for all writes (atomic and faster)
+      await new Promise((resolve, reject) => {
+        const tx = this.db.transaction([this.INODES_STORE, this.CONTENT_STORE], 'readwrite');
+        const inodeStore = tx.objectStore(this.INODES_STORE);
+        const contentStore = tx.objectStore(this.CONTENT_STORE);
+
+        for (const { key, value } of items) {
+          if (key.startsWith('content:')) {
+            const path = key.substring(8);
+            contentStore.put({ path, data: value });
+            // Update cache
+            this.contentCache.set(path, value);
+          } else if (key.startsWith('inode:')) {
+            const path = key.substring(6);
+            try {
+              const inodeJson = new TextDecoder().decode(value);
+              const inode = JSON.parse(inodeJson);
+              inodeStore.put({ ...inode, path });
+              // Update caches
+              this.pathCache.add(path);
+              this.inodeCache.set(path, inode);
+            } catch (e) {
+              console.error(`[ZosStorage] startBatchWrite: failed to parse inode for ${path}:`, e);
+            }
+          } else {
+            // Default: treat as inode write
+            try {
+              const inodeJson = new TextDecoder().decode(value);
+              const inode = JSON.parse(inodeJson);
+              inodeStore.put({ ...inode, path: key });
+              // Update caches
+              this.pathCache.add(key);
+              this.inodeCache.set(key, inode);
+            } catch (e) {
+              console.error(`[ZosStorage] startBatchWrite: failed to parse inode for ${key}:`, e);
+            }
+          }
+        }
+
+        tx.oncomplete = () => {
+          console.log(`[ZosStorage] Batch write completed: ${items.length} items`);
+          resolve();
+        };
+
+        tx.onerror = (event) => {
+          console.error('[ZosStorage] startBatchWrite transaction error:', event.target.error);
+          reject(event.target.error);
+        };
+      });
+
+      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      setTimeout(() => supervisor.notify_storage_write_complete(requestId), 0);
+    } catch (e) {
+      console.error(`[ZosStorage] startBatchWrite error: ${e.message}`);
+      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
+    }
+  },
+
+  /**
    * Start async exists check.
    * Calls supervisor.notify_storage_exists_complete with boolean.
    * @param {number} requestId - Unique request ID

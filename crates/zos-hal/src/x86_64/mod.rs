@@ -492,6 +492,31 @@ impl HAL for X86_64Hal {
         Ok(request_id)
     }
 
+    fn storage_batch_write_async(
+        &self,
+        pid: u64,
+        items: &[(&str, &[u8])],
+    ) -> Result<StorageRequestId, HalError> {
+        let mut requests = self.storage_requests.lock();
+        if requests.len() >= MAX_PENDING_STORAGE_REQUESTS {
+            return Err(HalError::ResourceExhausted);
+        }
+
+        let request_id = self.alloc_storage_request_id();
+
+        // Perform synchronous batch write (x86_64 doesn't have true batch, just iterate)
+        let mut success = true;
+        for (key, value) in items {
+            if storage::write(key, value).is_err() {
+                success = false;
+                break;
+            }
+        }
+
+        requests.insert(request_id, (pid, StorageRequestState::WriteComplete(success)));
+        Ok(request_id)
+    }
+
     fn get_storage_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
         self.storage_requests.lock().get(&request_id).map(|(pid, _)| *pid)
     }

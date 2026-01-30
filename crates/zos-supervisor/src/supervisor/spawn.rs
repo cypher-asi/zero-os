@@ -116,23 +116,28 @@ impl Supervisor {
             spawn.pid_assigned(process_pid.0);
         }
 
+        // PERFORMANCE OPTIMIZATION: Grant capabilities BEFORE spawning the worker.
+        // This eliminates the capability race condition where user requests arrive
+        // at Init before the service capability is registered. By granting caps
+        // and sending pre-registration to Init BEFORE the worker starts, Init
+        // already has the PID -> slot mapping when the first user request arrives.
+        //
+        // Previous flow: spawn worker -> grant caps -> notify Init (race window)
+        // New flow: grant caps -> notify Init -> spawn worker (no race)
+        self.setup_process_capabilities(process_pid, name);
+
+        // Mark spawn state as having caps granted (before worker starts)
+        if let Some(spawn) = self.spawn_tracker.get_mut(request_id) {
+            spawn.endpoint_created(0); // Placeholder endpoint ID
+            spawn.caps_granted();
+        }
+
         match self.spawn_worker_for_process(process_pid, name, wasm_binary) {
             Ok(handle) => {
                 log(&format!(
                     "[supervisor] Spawned Worker '{}' with PID {}",
                     name, handle.id
                 ));
-
-                // Track init spawn and grant capabilities
-                self.setup_process_capabilities(process_pid, name);
-
-                // Mark spawn as ready (all capabilities granted)
-                if let Some(spawn) = self.spawn_tracker.get_mut(request_id) {
-                    // Note: endpoint_created() and caps_granted() are called here for completeness
-                    // In the future Init-driven flow, these would be called as responses arrive
-                    spawn.endpoint_created(0); // Placeholder endpoint ID
-                    spawn.caps_granted();
-                }
 
                 // Clean up completed spawns periodically
                 let _ = self.spawn_tracker.cleanup_completed();

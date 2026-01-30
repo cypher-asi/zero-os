@@ -43,6 +43,49 @@ impl Init {
         syscall::debug(&format!("INIT:SPAWN:{}", name));
     }
 
+    /// Handle service capability pre-registration from supervisor.
+    ///
+    /// The supervisor sends this BEFORE spawning the worker to pre-register
+    /// the PID -> slot mapping. This eliminates the capability race condition
+    /// where user requests arrive before capability grants are processed.
+    ///
+    /// Unlike MSG_SERVICE_CAP_GRANTED, this does NOT retry pending deliveries
+    /// since the service hasn't started yet and there shouldn't be any pending.
+    ///
+    /// Payload: [service_pid: u32, cap_slot: u32]
+    pub fn handle_service_cap_preregister(&mut self, msg: &syscall::ReceivedMessage) {
+        self.log(&format!(
+            "AGENT_LOG:cap_preregister:received:from_pid={}:data_len={}",
+            msg.from_pid, msg.data.len()
+        ));
+
+        // Verify sender is supervisor (PID 0)
+        if msg.from_pid != 0 {
+            self.log(&format!(
+                "SECURITY: Service cap preregister from non-supervisor PID {}",
+                msg.from_pid
+            ));
+            return;
+        }
+
+        // Parse: [service_pid: u32, cap_slot: u32]
+        if msg.data.len() < 8 {
+            self.log("ServiceCapPreregister: message too short");
+            return;
+        }
+
+        let service_pid = u32::from_le_bytes([msg.data[0], msg.data[1], msg.data[2], msg.data[3]]);
+        let cap_slot = u32::from_le_bytes([msg.data[4], msg.data[5], msg.data[6], msg.data[7]]);
+
+        self.log(&format!(
+            "AGENT_LOG:cap_preregister:registered:service_pid={}:cap_slot={}:total_caps={}",
+            service_pid, cap_slot, self.service_cap_slots.len() + 1
+        ));
+
+        // Pre-register the mapping - service worker hasn't started yet
+        self.service_cap_slots.insert(service_pid, cap_slot);
+    }
+
     /// Handle service capability granted notification from supervisor.
     ///
     /// The supervisor notifies Init when it grants Init a capability to a

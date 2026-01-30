@@ -203,14 +203,22 @@ impl IdentityService {
             } => match result {
                 Ok(data) if !data.is_empty() => {
                     match serde_json::from_slice::<LocalKeyStore>(&data) {
-                        Ok(key_store) => keys::continue_recover_after_identity_read(
-                            self,
-                            ctx.client_pid,
-                            user_id,
-                            zid_shards,
-                            key_store.identity_signing_public_key,
-                            ctx.cap_slots,
-                        ),
+                        Ok(key_store) => {
+                            // CRITICAL: Two different user_id concepts:
+                            // - derivation_user_id (key_store.user_id) - ORIGINAL user_id for crypto
+                            // - storage_user_id (user_id from request) - derived_user_id for paths
+                            let derivation_user_id = key_store.user_id;
+                            let storage_user_id = user_id;
+                            keys::continue_recover_after_identity_read(
+                                self,
+                                ctx.client_pid,
+                                derivation_user_id,
+                                storage_user_id,
+                                zid_shards,
+                                key_store.identity_signing_public_key,
+                                ctx.cap_slots,
+                            )
+                        }
                         Err(e) => {
                             syscall::debug(&format!(
                                 "IdentityService: Failed to parse LocalKeyStore for recovery: {}",

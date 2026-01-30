@@ -228,6 +228,10 @@ pub mod syscall {
     pub const SYS_STORAGE_LIST: u32 = 0x73;
     /// Check if key exists (async - returns request_id)
     pub const SYS_STORAGE_EXISTS: u32 = 0x74;
+    /// Batch write multiple key-value pairs (async - returns request_id)
+    /// Used by VFS mkdir with create_parents=true to write all parent inodes atomically.
+    /// Payload: [count: u32, (key_len: u32, key: [u8], value_len: u32, value: [u8])*]
+    pub const SYS_STORAGE_BATCH_WRITE: u32 = 0x79;
 
     // === Keystore (0x80 - 0x8F) ===
     // HAL-level key storage operations. VfsService uses these for /keys/ paths.
@@ -389,6 +393,13 @@ pub mod init {
     /// VFS response endpoint capability granted notification (supervisor → init).
     /// Payload: [service_pid: u32, cap_slot: u32]
     pub const MSG_VFS_RESPONSE_CAP_GRANTED: u32 = 0x1007;
+
+    /// Pre-register service capability slot (supervisor → init).
+    /// Sent BEFORE worker spawn to eliminate capability race condition.
+    /// Init stores the PID -> slot mapping immediately, so user requests
+    /// arriving after spawn can be delivered without waiting for async grant.
+    /// Payload: [service_pid: u32, cap_slot: u32]
+    pub const MSG_SERVICE_CAP_PREREGISTER: u32 = 0x1008;
 }
 
 // =============================================================================

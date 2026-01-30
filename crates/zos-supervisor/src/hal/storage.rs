@@ -158,6 +158,49 @@ pub(crate) fn start_storage_exists(request_id: u32, key: &str) {
     ));
 }
 
+/// Start a batch write operation - writes multiple key-value pairs in a single IndexedDB transaction
+pub(crate) fn start_storage_batch_write(request_id: u32, items: &[(&str, &[u8])]) {
+    log(&format!(
+        "[wasm-hal] start_storage_batch_write: request_id={}, items={}",
+        request_id,
+        items.len()
+    ));
+
+    if let Some(window) = web_sys::window() {
+        let zos_storage = js_sys::Reflect::get(&window, &"ZosStorage".into()).ok();
+        if let Some(storage) = zos_storage {
+            if !storage.is_undefined() {
+                // Convert items to JavaScript array of {key, value} objects
+                let items_array = js_sys::Array::new();
+                for (key, value) in items {
+                    let obj = js_sys::Object::new();
+                    let _ = js_sys::Reflect::set(&obj, &"key".into(), &(*key).into());
+                    let _ = js_sys::Reflect::set(
+                        &obj,
+                        &"value".into(),
+                        &js_sys::Uint8Array::from(*value),
+                    );
+                    items_array.push(&obj);
+                }
+
+                let _ = js_sys::Reflect::apply(
+                    &js_sys::Reflect::get(&storage, &"startBatchWrite".into())
+                        .ok()
+                        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+                        .unwrap_or_else(|| js_sys::Function::new_no_args("")),
+                    &storage,
+                    &js_sys::Array::of2(&request_id.into(), &items_array),
+                );
+                return;
+            }
+        }
+    }
+    log(&format!(
+        "[wasm-hal] ZosStorage.startBatchWrite not available for request_id={}",
+        request_id
+    ));
+}
+
 // =============================================================================
 // Keystore Helper Functions (ZosKeystore)
 // =============================================================================
@@ -399,6 +442,34 @@ impl WasmHal {
 
         // Call JavaScript to start IndexedDB operation
         start_storage_exists(request_id, key);
+
+        Ok(request_id)
+    }
+
+    /// Start an async batch storage write operation
+    ///
+    /// Writes multiple key-value pairs in a single IndexedDB transaction,
+    /// significantly reducing round-trip latency for operations like mkdir
+    /// with create_parents=true.
+    pub fn do_storage_batch_write_async(
+        &self,
+        pid: u64,
+        items: &[(&str, &[u8])],
+    ) -> Result<StorageRequestId, HalError> {
+        let request_id = self.next_request_id();
+        if !self.record_pending_request(request_id, pid) {
+            return Err(HalError::ResourceExhausted);
+        }
+
+        log(&format!(
+            "[wasm-hal] storage_batch_write_async: request_id={}, pid={}, items={}",
+            request_id,
+            pid,
+            items.len()
+        ));
+
+        // Call JavaScript to start IndexedDB batch write
+        start_storage_batch_write(request_id, items);
 
         Ok(request_id)
     }

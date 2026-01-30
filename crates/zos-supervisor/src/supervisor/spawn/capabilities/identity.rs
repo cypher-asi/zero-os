@@ -192,7 +192,10 @@ impl Supervisor {
 
     /// Notify Init about a granted service capability via IPC.
     ///
-    /// Sends MSG_SERVICE_CAP_GRANTED to Init with [service_pid, cap_slot].
+    /// Sends MSG_SERVICE_CAP_PREREGISTER to Init with [service_pid, cap_slot].
+    /// This is sent BEFORE the worker spawns, allowing Init to pre-register
+    /// the capability mapping and eliminate the race condition where user
+    /// requests arrive before Init knows which slot to use for the service.
     fn notify_init_service_cap(&mut self, service_pid: u64, cap_slot: u32) {
         let init_slot = match self.init_endpoint_slot {
             Some(slot) => slot,
@@ -202,7 +205,8 @@ impl Supervisor {
             }
         };
 
-        use zos_ipc::init::MSG_SERVICE_CAP_GRANTED;
+        // Use MSG_SERVICE_CAP_PREREGISTER since this is sent BEFORE worker spawn
+        use zos_ipc::init::MSG_SERVICE_CAP_PREREGISTER;
 
         // Build message: [service_pid: u32, cap_slot: u32]
         let mut payload = Vec::with_capacity(8);
@@ -213,31 +217,31 @@ impl Supervisor {
 
         match self
             .system
-            .ipc_send(supervisor_pid, init_slot, MSG_SERVICE_CAP_GRANTED, payload)
+            .ipc_send(supervisor_pid, init_slot, MSG_SERVICE_CAP_PREREGISTER, payload)
         {
             Ok(()) => {
                 // #region agent log - hypothesis B
                 log(&format!(
-                    "AGENT_LOG:notify_init:sent:service_pid={}:cap_slot={}:init_slot={}",
+                    "AGENT_LOG:notify_init:preregister:service_pid={}:cap_slot={}:init_slot={}",
                     service_pid, cap_slot, init_slot
                 ));
                 // #endregion
 
                 log(&format!(
-                    "[supervisor] Notified Init of service PID {} cap at slot {}",
+                    "[supervisor] Pre-registered service PID {} cap at slot {} with Init",
                     service_pid, cap_slot
                 ));
             }
             Err(e) => {
                 // #region agent log - hypothesis B
                 log(&format!(
-                    "AGENT_LOG:notify_init:failed:service_pid={}:error={:?}",
+                    "AGENT_LOG:notify_init:preregister_failed:service_pid={}:error={:?}",
                     service_pid, e
                 ));
                 // #endregion
 
                 log(&format!(
-                    "[supervisor] Failed to notify Init of service cap: {:?}",
+                    "[supervisor] Failed to pre-register service cap with Init: {:?}",
                     e
                 ));
             }

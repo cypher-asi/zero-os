@@ -30,6 +30,12 @@ export type {
 } from '@/shared/types';
 
 /**
+ * Request deduplication timeout in milliseconds.
+ * Prevents duplicate requests from being sent within this window.
+ */
+const DEDUP_TIMEOUT_MS = 60000; // 60 seconds - keygen can be slow
+
+/**
  * Hook return type
  */
 export interface UseNeuralKeyReturn {
@@ -76,64 +82,42 @@ export function useNeuralKey(): UseNeuralKeyReturn {
   // Track if we've completed the initial load (to avoid premature "no key" flash)
   const hasCompletedInitialLoadRef = useRef(false);
 
+  // Track in-flight generate requests to prevent duplicates
+  // Uses a ref to persist across renders without triggering re-renders
+  const generateInFlightRef = useRef<{
+    promise: Promise<NeuralKeyGenerated> | null;
+    startedAt: number;
+  }>({ promise: null, startedAt: 0 });
+
+  // Track in-flight recover requests to prevent duplicates
+  const recoverInFlightRef = useRef<{
+    promise: Promise<NeuralKeyGenerated> | null;
+    startedAt: number;
+  }>({ promise: null, startedAt: 0 });
+
   const generateNeuralKey = useCallback(async (password: string): Promise<NeuralKeyGenerated> => {
+    const now = Date.now();
+
+    // DEDUPLICATION: Check if there's an in-flight request that's still valid
+    // This prevents duplicate IPC requests when the UI re-renders or user double-clicks
+    if (
+      generateInFlightRef.current.promise &&
+      now - generateInFlightRef.current.startedAt < DEDUP_TIMEOUT_MS
+    ) {
+      console.log('[useNeuralKey] Reusing in-flight generateNeuralKey request (dedup)');
+      return generateInFlightRef.current.promise;
+    }
+
     const userIdVal = getUserIdOrThrow();
     const client = getClientOrThrow();
 
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-    try {
-      console.log(`[useNeuralKey] Generating Neural Key for user ${userIdVal}`);
-      const serviceResult = await client.generateNeuralKey(userIdVal, password);
-      const result = convertNeuralKeyGenerated(serviceResult);
-
-      // Update identity store with the derived user ID from the neural key
-      if (result.userId && currentUser) {
-        console.log(`[useNeuralKey] Updating user ID from ${currentUser.id} to ${result.userId}`);
-        const updatedUser: User = {
-          ...currentUser,
-          id: result.userId,
-        };
-        setCurrentUser(updatedUser);
-      }
-
-      setState((prev) => ({
-        ...prev,
-        hasNeuralKey: true,
-        publicIdentifiers: result.publicIdentifiers,
-        createdAt: result.createdAt,
-        pendingShards: result.shards, // Now 3 external shards
-        isLoading: false,
-      }));
-
-      return result;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to generate Neural Key';
-      console.error('[useNeuralKey] generateNeuralKey error:', errorMsg);
-      setState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: errorMsg,
-      }));
-      throw err;
-    }
-  }, [getClientOrThrow, getUserIdOrThrow, currentUser, setCurrentUser]);
-
-  const recoverNeuralKey = useCallback(
-    async (shards: NeuralShard[]): Promise<NeuralKeyGenerated> => {
-      const userIdVal = getUserIdOrThrow();
-      const client = getClientOrThrow();
-
-      if (shards.length < 3) {
-        throw new Error('At least 3 shards are required for recovery');
-      }
-
-      setState((prev) => ({ ...prev, isLoading: true, error: null }));
-
+    // Create and track the promise for deduplication
+    const generatePromise = (async (): Promise<NeuralKeyGenerated> => {
       try {
-        console.log(`[useNeuralKey] Recovering Neural Key for user ${userIdVal}`);
-        const serviceShards = convertShardsForService(shards);
-        const serviceResult = await client.recoverNeuralKey(userIdVal, serviceShards);
+        console.log(`[useNeuralKey] Generating Neural Key for user ${userIdVal}`);
+        const serviceResult = await client.generateNeuralKey(userIdVal, password);
         const result = convertNeuralKeyGenerated(serviceResult);
 
         // Update identity store with the derived user ID from the neural key
@@ -151,21 +135,101 @@ export function useNeuralKey(): UseNeuralKeyReturn {
           hasNeuralKey: true,
           publicIdentifiers: result.publicIdentifiers,
           createdAt: result.createdAt,
-          pendingShards: result.shards,
+          pendingShards: result.shards, // Now 3 external shards
           isLoading: false,
         }));
 
         return result;
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'Failed to recover Neural Key';
-        console.error('[useNeuralKey] recoverNeuralKey error:', errorMsg);
+        const errorMsg = err instanceof Error ? err.message : 'Failed to generate Neural Key';
+        console.error('[useNeuralKey] generateNeuralKey error:', errorMsg);
         setState((prev) => ({
           ...prev,
           isLoading: false,
           error: errorMsg,
         }));
         throw err;
+      } finally {
+        // Clear the in-flight ref when the request completes (success or failure)
+        generateInFlightRef.current = { promise: null, startedAt: 0 };
       }
+    })();
+
+    // Store the promise for deduplication
+    generateInFlightRef.current = { promise: generatePromise, startedAt: now };
+
+    return generatePromise;
+  }, [getClientOrThrow, getUserIdOrThrow, currentUser, setCurrentUser]);
+
+  const recoverNeuralKey = useCallback(
+    async (shards: NeuralShard[]): Promise<NeuralKeyGenerated> => {
+      const now = Date.now();
+
+      // DEDUPLICATION: Check if there's an in-flight request that's still valid
+      if (
+        recoverInFlightRef.current.promise &&
+        now - recoverInFlightRef.current.startedAt < DEDUP_TIMEOUT_MS
+      ) {
+        console.log('[useNeuralKey] Reusing in-flight recoverNeuralKey request (dedup)');
+        return recoverInFlightRef.current.promise;
+      }
+
+      const userIdVal = getUserIdOrThrow();
+      const client = getClientOrThrow();
+
+      if (shards.length < 3) {
+        throw new Error('At least 3 shards are required for recovery');
+      }
+
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+      // Create and track the promise for deduplication
+      const recoverPromise = (async (): Promise<NeuralKeyGenerated> => {
+        try {
+          console.log(`[useNeuralKey] Recovering Neural Key for user ${userIdVal}`);
+          const serviceShards = convertShardsForService(shards);
+          const serviceResult = await client.recoverNeuralKey(userIdVal, serviceShards);
+          const result = convertNeuralKeyGenerated(serviceResult);
+
+          // Update identity store with the derived user ID from the neural key
+          if (result.userId && currentUser) {
+            console.log(`[useNeuralKey] Updating user ID from ${currentUser.id} to ${result.userId}`);
+            const updatedUser: User = {
+              ...currentUser,
+              id: result.userId,
+            };
+            setCurrentUser(updatedUser);
+          }
+
+          setState((prev) => ({
+            ...prev,
+            hasNeuralKey: true,
+            publicIdentifiers: result.publicIdentifiers,
+            createdAt: result.createdAt,
+            pendingShards: result.shards,
+            isLoading: false,
+          }));
+
+          return result;
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : 'Failed to recover Neural Key';
+          console.error('[useNeuralKey] recoverNeuralKey error:', errorMsg);
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: errorMsg,
+          }));
+          throw err;
+        } finally {
+          // Clear the in-flight ref when the request completes (success or failure)
+          recoverInFlightRef.current = { promise: null, startedAt: 0 };
+        }
+      })();
+
+      // Store the promise for deduplication
+      recoverInFlightRef.current = { promise: recoverPromise, startedAt: now };
+
+      return recoverPromise;
     },
     [getClientOrThrow, getUserIdOrThrow, currentUser, setCurrentUser]
   );

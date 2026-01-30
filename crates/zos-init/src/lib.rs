@@ -62,7 +62,7 @@ pub use zos_process::{
 };
 
 // Additional Init-specific constants from zos-ipc
-pub use zos_process::init::{MSG_SERVICE_CAP_GRANTED, MSG_VFS_RESPONSE_CAP_GRANTED};
+pub use zos_process::init::{MSG_SERVICE_CAP_GRANTED, MSG_SERVICE_CAP_PREREGISTER, MSG_VFS_RESPONSE_CAP_GRANTED};
 
 // Spawn protocol messages for Init-driven spawn
 pub use zos_process::supervisor::{
@@ -202,6 +202,10 @@ impl Init {
             MSG_SERVICE_CAP_GRANTED => {
                 self.log("AGENT_LOG:dispatching_to_cap_granted_handler");
                 self.handle_service_cap_granted(msg);
+            }
+            MSG_SERVICE_CAP_PREREGISTER => {
+                self.log("AGENT_LOG:dispatching_to_cap_preregister_handler");
+                self.handle_service_cap_preregister(msg);
             }
             MSG_VFS_RESPONSE_CAP_GRANTED => self.handle_vfs_response_cap_granted(msg),
 

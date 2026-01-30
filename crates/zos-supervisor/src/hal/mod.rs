@@ -451,6 +451,14 @@ impl HAL for WasmHal {
         self.do_storage_exists_async(pid, key)
     }
 
+    fn storage_batch_write_async(
+        &self,
+        pid: u64,
+        items: &[(&str, &[u8])],
+    ) -> Result<StorageRequestId, HalError> {
+        self.do_storage_batch_write_async(pid, items)
+    }
+
     fn get_storage_request_pid(&self, request_id: StorageRequestId) -> Option<u64> {
         self.do_get_storage_request_pid(request_id)
     }
