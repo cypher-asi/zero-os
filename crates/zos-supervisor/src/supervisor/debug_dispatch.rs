@@ -115,8 +115,9 @@ impl Supervisor {
             service_name, target_pid
         ));
 
-        // Re-grant capability from this service's endpoint to Init
-        self.grant_init_capability_to_service(&service_name, ProcessId(target_pid as u64));
+        // Re-grant capability and trigger pending delivery retry
+        // Uses MSG_SERVICE_CAP_GRANTED instead of PREREGISTER to trigger retry
+        self.regrant_init_capability_to_service(&service_name, ProcessId(target_pid as u64));
     }
 
     /// Handle SPAWN:RESPONSE from Init (Init-driven spawn protocol).

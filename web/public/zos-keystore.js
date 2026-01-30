@@ -51,6 +51,22 @@ const ZosKeystore = {
   /** @type {object|null} Reference to the WASM supervisor for callbacks */
   supervisor: null,
 
+  /**
+   * Safely invoke a supervisor callback, queuing it if supervisor is busy.
+   * This prevents re-entrancy panics in wasm-bindgen's RefCell when IndexedDB
+   * callbacks fire while poll_syscalls() is still running.
+   * @param {Function} callback - The callback to invoke
+   */
+  safeSupervisorCallback(callback) {
+    if (window.__supervisorBusy?.()) {
+      // Supervisor busy - queue for later processing in the main loop
+      window.__supervisorCallbackQueue?.push(callback) ?? setTimeout(callback, 0);
+    } else {
+      // Supervisor idle - execute immediately
+      callback();
+    }
+  },
+
   // ==========================================================================
   // Initialization
   // ==========================================================================
@@ -510,15 +526,15 @@ const ZosKeystore = {
 
       const data = await this.getKey(path);
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
       if (data) {
-        setTimeout(() => supervisor.notify_keystore_read_complete(requestId, data), 0);
+        this.safeSupervisorCallback(() => supervisor.notify_keystore_read_complete(requestId, data));
       } else {
-        setTimeout(() => supervisor.notify_keystore_not_found(requestId), 0);
+        this.safeSupervisorCallback(() => supervisor.notify_keystore_not_found(requestId));
       }
     } catch (e) {
       console.error(`[ZosKeystore] startRead error: ${e.message}`);
-      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_keystore_error(requestId, e.message));
     }
   },
 
@@ -549,11 +565,11 @@ const ZosKeystore = {
       const userId = this.extractUserIdFromPath(path);
       await this.putKey(path, value, userId);
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_keystore_write_complete(requestId), 0);
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      this.safeSupervisorCallback(() => supervisor.notify_keystore_write_complete(requestId));
     } catch (e) {
       console.error(`[ZosKeystore] startWrite error: ${e.message}`);
-      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_keystore_error(requestId, e.message));
     }
   },
 
@@ -578,11 +594,11 @@ const ZosKeystore = {
       await this.init();
       await this.deleteKey(path);
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_keystore_write_complete(requestId), 0);
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      this.safeSupervisorCallback(() => supervisor.notify_keystore_write_complete(requestId));
     } catch (e) {
       console.error(`[ZosKeystore] startDelete error: ${e.message}`);
-      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_keystore_error(requestId, e.message));
     }
   },
 
@@ -609,11 +625,11 @@ const ZosKeystore = {
       const paths = await this.listKeys(prefix);
       const pathsJson = JSON.stringify(paths);
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_keystore_list_complete(requestId, pathsJson), 0);
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      this.safeSupervisorCallback(() => supervisor.notify_keystore_list_complete(requestId, pathsJson));
     } catch (e) {
       console.error(`[ZosKeystore] startList error: ${e.message}`);
-      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_keystore_error(requestId, e.message));
     }
   },
 
@@ -644,11 +660,11 @@ const ZosKeystore = {
         exists = key !== null;
       }
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_keystore_exists_complete(requestId, exists), 0);
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      this.safeSupervisorCallback(() => supervisor.notify_keystore_exists_complete(requestId, exists));
     } catch (e) {
       console.error(`[ZosKeystore] startExists error: ${e.message}`);
-      setTimeout(() => supervisor.notify_keystore_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_keystore_error(requestId, e.message));
     }
   },
 

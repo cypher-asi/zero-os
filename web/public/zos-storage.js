@@ -60,6 +60,22 @@ const ZosStorage = {
   /** @type {object|null} Reference to the WASM supervisor for callbacks */
   supervisor: null,
 
+  /**
+   * Safely invoke a supervisor callback, queuing it if supervisor is busy.
+   * This prevents re-entrancy panics in wasm-bindgen's RefCell when IndexedDB
+   * callbacks fire while poll_syscalls() is still running.
+   * @param {Function} callback - The callback to invoke
+   */
+  safeSupervisorCallback(callback) {
+    if (window.__supervisorBusy?.()) {
+      // Supervisor busy - queue for later processing in the main loop
+      window.__supervisorCallbackQueue?.push(callback) ?? setTimeout(callback, 0);
+    } else {
+      // Supervisor idle - execute immediately
+      callback();
+    }
+  },
+
   // ==========================================================================
   // Initialization
   // ==========================================================================
@@ -664,15 +680,15 @@ const ZosStorage = {
         }
       }
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
       if (data) {
-        setTimeout(() => supervisor.notify_storage_read_complete(requestId, data), 0);
+        this.safeSupervisorCallback(() => supervisor.notify_storage_read_complete(requestId, data));
       } else {
-        setTimeout(() => supervisor.notify_storage_not_found(requestId), 0);
+        this.safeSupervisorCallback(() => supervisor.notify_storage_not_found(requestId));
       }
     } catch (e) {
       console.error(`[ZosStorage] startRead error: ${e.message}`);
-      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_storage_error(requestId, e.message));
     }
   },
 
@@ -724,15 +740,13 @@ const ZosStorage = {
         await this.putInode(key, inode);
       }
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow.
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow.
       // The supervisor may still be borrowed from the call that initiated this
-      // storage operation, so we use setTimeout to ensure the callback happens
-      // after the current Rust call stack completes.
-      setTimeout(() => supervisor.notify_storage_write_complete(requestId), 0);
+      // storage operation, so we queue the callback to ensure it happens safely.
+      this.safeSupervisorCallback(() => supervisor.notify_storage_write_complete(requestId));
     } catch (e) {
       console.error(`[ZosStorage] startWrite error: ${e.message}`);
-      // Defer error callback for the same reason
-      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_storage_error(requestId, e.message));
     }
   },
 
@@ -766,11 +780,11 @@ const ZosStorage = {
         await this.deleteInode(key);
       }
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_storage_write_complete(requestId), 0);
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      this.safeSupervisorCallback(() => supervisor.notify_storage_write_complete(requestId));
     } catch (e) {
       console.error(`[ZosStorage] startDelete error: ${e.message}`);
-      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_storage_error(requestId, e.message));
     }
   },
 
@@ -804,11 +818,11 @@ const ZosStorage = {
       const keys = children.map((inode) => inode.path);
       const keysJson = JSON.stringify(keys);
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_storage_list_complete(requestId, keysJson), 0);
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      this.safeSupervisorCallback(() => supervisor.notify_storage_list_complete(requestId, keysJson));
     } catch (e) {
       console.error(`[ZosStorage] startList error: ${e.message}`);
-      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_storage_error(requestId, e.message));
     }
   },
 
@@ -884,11 +898,11 @@ const ZosStorage = {
         };
       });
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_storage_write_complete(requestId), 0);
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      this.safeSupervisorCallback(() => supervisor.notify_storage_write_complete(requestId));
     } catch (e) {
       console.error(`[ZosStorage] startBatchWrite error: ${e.message}`);
-      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_storage_error(requestId, e.message));
     }
   },
 
@@ -938,11 +952,11 @@ const ZosStorage = {
         }
       }
 
-      // Defer callback to avoid re-entrancy with wasm-bindgen's RefCell borrow
-      setTimeout(() => supervisor.notify_storage_exists_complete(requestId, exists), 0);
+      // Use safeSupervisorCallback to avoid re-entrancy with wasm-bindgen's RefCell borrow
+      this.safeSupervisorCallback(() => supervisor.notify_storage_exists_complete(requestId, exists));
     } catch (e) {
       console.error(`[ZosStorage] startExists error: ${e.message}`);
-      setTimeout(() => supervisor.notify_storage_error(requestId, e.message), 0);
+      this.safeSupervisorCallback(() => supervisor.notify_storage_error(requestId, e.message));
     }
   },
 };

@@ -246,11 +246,12 @@ fn generate_neural_key_and_identity(
             ));
             syscall::debug("IdentityService: This usually means getrandom could not access crypto.getRandomValues");
             syscall::debug("IdentityService: Check browser console for wasm-bindgen import shim errors");
-            return Err(response::send_neural_key_error(
+            response::send_neural_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
                 KeyError::CryptoError(format!("Neural Key generation failed: {:?}", e)),
-            ).unwrap_err());
+            )?;
+            return Err(AppError::Internal("Neural Key generation failed".into()));
         }
     };
 
@@ -260,14 +261,15 @@ fn generate_neural_key_and_identity(
         match derive_identity_signing_keypair(&neural_key, &temp_identity_id) {
             Ok(keypair) => keypair,
             Err(e) => {
-                return Err(response::send_neural_key_error(
+                response::send_neural_key_error(
                     ctx.client_pid,
                     &ctx.cap_slots,
                     KeyError::CryptoError(format!(
                         "Identity key derivation failed during generation: {:?}",
                         e
                     )),
-                ).unwrap_err());
+                )?;
+                return Err(AppError::Internal("Identity key derivation failed".into()));
             }
         };
 
@@ -283,11 +285,12 @@ fn split_and_select_shards(
     let zid_shards = match split_neural_key(neural_key) {
         Ok(shards) => shards,
         Err(e) => {
-            return Err(response::send_neural_key_error(
+            response::send_neural_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
                 KeyError::CryptoError(format!("Shamir split failed: {:?}", e)),
-            ).unwrap_err());
+            )?;
+            return Err(AppError::Internal("Shamir split failed".into()));
         }
     };
 
@@ -305,11 +308,12 @@ fn split_and_select_shards(
     let (encrypted_indices, external_indices) = match select_shards_to_encrypt() {
         Ok(indices) => indices,
         Err(e) => {
-            return Err(response::send_neural_key_error(
+            response::send_neural_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
                 e,
-            ).unwrap_err());
+            )?;
+            return Err(AppError::Internal("Shard selection failed".into()));
         }
     };
 
@@ -329,11 +333,12 @@ fn create_kdf_and_derive_key(
     let kdf = match create_kdf_params() {
         Ok(k) => k,
         Err(e) => {
-            return Err(response::send_neural_key_error(
+            response::send_neural_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
                 e,
-            ).unwrap_err());
+            )?;
+            return Err(AppError::Internal("KDF creation failed".into()));
         }
     };
 
@@ -341,11 +346,12 @@ fn create_kdf_and_derive_key(
     let derived_key = match derive_key_from_password_public(password, &kdf) {
         Ok(k) => k,
         Err(e) => {
-            return Err(response::send_neural_key_error(
+            response::send_neural_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
                 e,
-            ).unwrap_err());
+            )?;
+            return Err(AppError::Internal("Key derivation failed".into()));
         }
     };
 
@@ -365,11 +371,12 @@ fn encrypt_selected_shards(
         match encrypt_shard_with_key(&shard.hex, idx, derived_key) {
             Ok(encrypted) => encrypted_shards.push(encrypted),
             Err(e) => {
-                return Err(response::send_neural_key_error(
+                response::send_neural_key_error(
                     ctx.client_pid,
                     &ctx.cap_slots,
                     e,
-                ).unwrap_err());
+                )?;
+                return Err(AppError::Internal("Shard encryption failed".into()));
             }
         }
     }

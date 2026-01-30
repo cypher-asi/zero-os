@@ -86,7 +86,7 @@ export function ShardDisplay({
             <Button
               variant={isCopied(`shard-${index}`) ? 'primary' : 'ghost'}
               size="xs"
-              onClick={() => onCopyShard(shard.hex, `shard-${index}`)}
+              onClick={() => onCopyShard(`Shard ${shard.index}: ${shard.hex}`, `shard-${index}`)}
             >
               {isCopied(`shard-${index}`) ? (
                 <>

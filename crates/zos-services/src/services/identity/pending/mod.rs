@@ -12,7 +12,7 @@ mod storage;
 mod keystore;
 mod network;
 
-pub use storage::PendingStorageOp;
+pub use storage::{ExpectedVfsResponse, PendingStorageOp};
 pub use keystore::PendingKeystoreOp;
 pub use network::PendingNetworkOp;
 

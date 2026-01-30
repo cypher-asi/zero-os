@@ -14,7 +14,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::services::identity::pending::{PendingNetworkOp, PendingStorageOp, RequestContext};
+    use crate::services::identity::pending::{ExpectedVfsResponse, PendingNetworkOp, PendingStorageOp, RequestContext};
     use crate::services::identity::{IdentityService, MAX_PENDING_NET_OPS, MAX_PENDING_VFS_OPS};
     use alloc::string::String;
     use alloc::vec;
@@ -427,6 +427,7 @@ mod tests {
         let op = PendingStorageOp::CheckIdentityDirectory {
             ctx: RequestContext::new(10, vec![]),
             user_id: large_user_id,
+            password: String::from("test"),
         };
 
         if let PendingStorageOp::CheckIdentityDirectory { user_id, .. } = op {
@@ -442,6 +443,7 @@ mod tests {
         let op = PendingStorageOp::CheckIdentityDirectory {
             ctx: RequestContext::new(10, vec![]),
             user_id: 0,
+            password: String::from("test"),
         };
 
         if let PendingStorageOp::CheckIdentityDirectory { user_id, .. } = op {
@@ -449,5 +451,138 @@ mod tests {
         } else {
             panic!("Wrong variant");
         }
+    }
+
+    // =========================================================================
+    // ExpectedVfsResponse and type-based matching tests
+    // =========================================================================
+
+    #[test]
+    fn test_expected_response_exists_operations() {
+        // CheckIdentityDirectory expects EXISTS response
+        let op = PendingStorageOp::CheckIdentityDirectory {
+            ctx: RequestContext::new(10, vec![]),
+            user_id: 1,
+            password: String::from("test"),
+        };
+        assert_eq!(op.expected_response(), ExpectedVfsResponse::Exists);
+
+        // CheckKeyExists expects EXISTS response
+        let op = PendingStorageOp::CheckKeyExists {
+            ctx: RequestContext::new(10, vec![]),
+            user_id: 1,
+            password: String::from("test"),
+        };
+        assert_eq!(op.expected_response(), ExpectedVfsResponse::Exists);
+    }
+
+    #[test]
+    fn test_expected_response_read_operations() {
+        // GetIdentityKey expects READ response
+        let op = PendingStorageOp::GetIdentityKey {
+            ctx: RequestContext::new(10, vec![]),
+        };
+        assert_eq!(op.expected_response(), ExpectedVfsResponse::Read);
+
+        // ReadIdentityPreferences expects READ response
+        let op = PendingStorageOp::ReadIdentityPreferences {
+            ctx: RequestContext::new(10, vec![]),
+            user_id: 1,
+        };
+        assert_eq!(op.expected_response(), ExpectedVfsResponse::Read);
+    }
+
+    #[test]
+    fn test_expected_response_mkdir_operations() {
+        // CreateIdentityDirectoryComplete expects MKDIR response
+        let op = PendingStorageOp::CreateIdentityDirectoryComplete {
+            ctx: RequestContext::new(10, vec![]),
+            user_id: 1,
+            password: String::from("test"),
+        };
+        assert_eq!(op.expected_response(), ExpectedVfsResponse::Mkdir);
+    }
+
+    #[test]
+    fn test_type_based_matching_finds_correct_operation() {
+        // Simulate concurrent operations of different types
+        let mut service = IdentityService::default();
+
+        // Add a READ operation first (key=1)
+        service.pending_vfs_ops.insert(
+            1,
+            PendingStorageOp::ReadIdentityPreferences {
+                ctx: RequestContext::new(10, vec![]),
+                user_id: 100,
+            },
+        );
+
+        // Add an EXISTS operation second (key=2)
+        service.pending_vfs_ops.insert(
+            2,
+            PendingStorageOp::CheckIdentityDirectory {
+                ctx: RequestContext::new(20, vec![]),
+                user_id: 200,
+                password: String::from("test"),
+            },
+        );
+
+        // When EXISTS response arrives, it should find the EXISTS operation (key=2)
+        // even though the READ operation (key=1) was inserted first
+        let key_to_remove = service.pending_vfs_ops
+            .iter()
+            .find(|(_, op)| op.expected_response() == ExpectedVfsResponse::Exists)
+            .map(|(k, _)| *k);
+        
+        assert_eq!(key_to_remove, Some(2)); // Should find key=2, not key=1
+
+        // When READ response arrives, it should find the READ operation (key=1)
+        let key_to_remove = service.pending_vfs_ops
+            .iter()
+            .find(|(_, op)| op.expected_response() == ExpectedVfsResponse::Read)
+            .map(|(k, _)| *k);
+        
+        assert_eq!(key_to_remove, Some(1)); // Should find key=1
+    }
+
+    #[test]
+    fn test_type_based_matching_out_of_order_responses() {
+        // This test verifies the fix for the state machine error when
+        // VFS responses arrive out of order
+        let mut service = IdentityService::default();
+
+        // Simulate: user requests neural key generation (VFS exists check)
+        // followed by preferences read (VFS read)
+        service.pending_vfs_ops.insert(
+            1,
+            PendingStorageOp::CheckIdentityDirectory {
+                ctx: RequestContext::new(1, vec![]),
+                user_id: 100,
+                password: String::from("test"),
+            },
+        );
+
+        service.pending_vfs_ops.insert(
+            2,
+            PendingStorageOp::ReadIdentityPreferences {
+                ctx: RequestContext::new(1, vec![]),
+                user_id: 100,
+            },
+        );
+
+        // If READ response arrives first (out of order), type-based matching
+        // will correctly find the READ operation (key=2)
+        let read_key = service.pending_vfs_ops
+            .iter()
+            .find(|(_, op)| op.expected_response() == ExpectedVfsResponse::Read)
+            .map(|(k, _)| *k);
+        assert_eq!(read_key, Some(2));
+
+        // And EXISTS response will correctly find EXISTS operation (key=1)
+        let exists_key = service.pending_vfs_ops
+            .iter()
+            .find(|(_, op)| op.expected_response() == ExpectedVfsResponse::Exists)
+            .map(|(k, _)| *k);
+        assert_eq!(exists_key, Some(1));
     }
 }

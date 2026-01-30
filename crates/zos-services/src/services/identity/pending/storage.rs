@@ -9,6 +9,20 @@ use zos_identity::keystore::{CredentialType, MachineKeyRecord};
 
 use super::RequestContext;
 
+/// The type of VFS response expected by a pending operation.
+///
+/// This is used to match VFS responses to pending operations correctly
+/// when multiple operations of different types are in flight concurrently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpectedVfsResponse {
+    Read,
+    Write,
+    Exists,
+    Mkdir,
+    Readdir,
+    Unlink,
+}
+
 /// Tracks pending storage operations awaiting results.
 ///
 /// Each variant captures the state needed to continue processing
@@ -297,4 +311,66 @@ pub enum PendingStorageOp {
         tokens: ZidTokens,
         json_bytes: Vec<u8>,
     },
+}
+
+impl PendingStorageOp {
+    /// Returns the type of VFS response this operation expects.
+    ///
+    /// This enables matching VFS responses to the correct pending operation
+    /// when multiple operations of different types are in flight concurrently.
+    pub fn expected_response(&self) -> ExpectedVfsResponse {
+        match self {
+            // EXISTS response operations
+            PendingStorageOp::CheckIdentityDirectory { .. } |
+            PendingStorageOp::CheckKeyExists { .. } => ExpectedVfsResponse::Exists,
+
+            // MKDIR response operations
+            PendingStorageOp::CreateIdentityDirectory { .. } |
+            PendingStorageOp::CreateIdentityDirectoryComplete { .. } |
+            PendingStorageOp::CreateDerivedUserDirectory { .. } |
+            PendingStorageOp::CreateCredentialsDirectory { .. } |
+            PendingStorageOp::CreateIdentityDirForPreferences { .. } => ExpectedVfsResponse::Mkdir,
+
+            // READ response operations
+            PendingStorageOp::GetIdentityKey { .. } |
+            PendingStorageOp::ReadIdentityForRecovery { .. } |
+            PendingStorageOp::ReadIdentityForMachine { .. } |
+            PendingStorageOp::ReadMachineKey { .. } |
+            PendingStorageOp::ReadMachineForRotate { .. } |
+            PendingStorageOp::ReadSingleMachineKey { .. } |
+            PendingStorageOp::ReadCredentialsForAttach { .. } |
+            PendingStorageOp::GetCredentials { .. } |
+            PendingStorageOp::ReadCredentialsForUnlink { .. } |
+            PendingStorageOp::ReadMachineKeyForZidLogin { .. } |
+            PendingStorageOp::ReadMachineKeyForZidEnroll { .. } |
+            PendingStorageOp::ReadIdentityPreferences { .. } |
+            PendingStorageOp::ReadPreferencesForUpdate { .. } |
+            PendingStorageOp::ReadPreferencesForDefaultMachine { .. } |
+            PendingStorageOp::ReadPreferencesForZidLogin { .. } |
+            PendingStorageOp::ReadZidSessionForRefresh { .. } => ExpectedVfsResponse::Read,
+
+            // WRITE response operations
+            PendingStorageOp::WriteKeyStore { .. } |
+            PendingStorageOp::WriteRecoveredKeyStore { .. } |
+            PendingStorageOp::WriteMachineKey { .. } |
+            PendingStorageOp::WriteRotatedMachineKey { .. } |
+            PendingStorageOp::WriteUnlinkedCredential { .. } |
+            PendingStorageOp::WriteEmailCredential { .. } |
+            PendingStorageOp::WriteEmailCredentialRetry { .. } |
+            PendingStorageOp::WriteZidSession { .. } |
+            PendingStorageOp::WriteZidEnrollSession { .. } |
+            PendingStorageOp::WriteZidEmailLoginSession { .. } |
+            PendingStorageOp::WritePreferences { .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachine { .. } |
+            PendingStorageOp::WritePreferencesForDefaultMachineRetry { .. } |
+            PendingStorageOp::WriteRefreshedZidSession { .. } => ExpectedVfsResponse::Write,
+
+            // READDIR response operations
+            PendingStorageOp::ListMachineKeys { .. } => ExpectedVfsResponse::Readdir,
+
+            // UNLINK response operations
+            PendingStorageOp::DeleteMachineKey { .. } |
+            PendingStorageOp::DeleteZidSession { .. } => ExpectedVfsResponse::Unlink,
+        }
+    }
 }

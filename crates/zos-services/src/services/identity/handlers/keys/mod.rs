@@ -84,6 +84,7 @@ mod generate;
 mod recover;
 mod machine;
 mod enroll;
+mod shared;
 
 // Re-export all public handlers
 pub use generate::{

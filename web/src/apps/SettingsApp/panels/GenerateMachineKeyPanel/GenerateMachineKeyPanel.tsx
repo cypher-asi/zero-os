@@ -20,6 +20,30 @@ function isValidHex(value: string): boolean {
 }
 
 /**
+ * Parse a shard string that may include the index prefix.
+ * Supports formats:
+ * - "Shard 3: abc123..."
+ * - "abc123..." (just hex)
+ * Returns { index: number | null, hex: string }
+ */
+function parseShardInput(input: string): { index: number | null; hex: string } {
+  const trimmed = input.trim();
+  
+  // Try to match "Shard N: hex" format
+  const shardMatch = trimmed.match(/^Shard\s*(\d+)\s*:\s*(.+)$/i);
+  if (shardMatch) {
+    const index = parseInt(shardMatch[1], 10);
+    const hex = shardMatch[2].trim().replace(/^0x/i, '');
+    if (index >= 1 && index <= 5 && isValidHex(hex)) {
+      return { index, hex };
+    }
+  }
+  
+  // Just hex
+  return { index: null, hex: trimmed.replace(/^0x/i, '') };
+}
+
+/**
  * Generate Machine Key Panel
  *
  * Drill-down panel for creating a new machine key.
@@ -178,8 +202,14 @@ export function GenerateMachineKeyPanel() {
                 <textarea
                   className={`${styles.shardInput} ${externalShard && !isValidHex(externalShard) ? styles.shardInputError : ''}`}
                   value={externalShard}
-                  onChange={(e) => setExternalShard(e.target.value)}
-                  placeholder="Paste hex shard (e.g., 01abc23def...)"
+                  onChange={(e) => {
+                    const parsed = parseShardInput(e.target.value);
+                    setExternalShard(parsed.hex);
+                    if (parsed.index !== null) {
+                      setExternalShardIndex(parsed.index);
+                    }
+                  }}
+                  placeholder="Paste shard (e.g., 'Shard 3: abc123...' or just hex)"
                   rows={2}
                 />
               </div>

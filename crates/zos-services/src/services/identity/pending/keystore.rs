@@ -77,6 +77,8 @@ pub enum PendingKeystoreOp {
         request: CreateMachineKeyRequest,
         /// Stored identity public key for verification
         stored_identity_pubkey: [u8; 32],
+        /// User ID used for identity key derivation (may differ from request.user_id)
+        derivation_user_id: u128,
     },
     /// Write machine key to keystore
     WriteMachineKey {

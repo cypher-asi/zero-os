@@ -302,6 +302,10 @@ pub fn encrypt_shard_with_key(
 
 /// Decrypt an encrypted shard with password-derived key.
 ///
+/// **Note**: For decrypting multiple shards, prefer using [`derive_key_from_password_public`]
+/// once followed by [`decrypt_shard_with_key`] for each shard. This avoids redundant
+/// Argon2id derivations which are expensive in WASM (10-100x slower than native).
+///
 /// # Parameters
 /// - `encrypted`: The encrypted shard
 /// - `password`: User-provided password
@@ -317,16 +321,41 @@ pub fn decrypt_shard(
     password: &str,
     kdf: &KeyDerivation,
 ) -> Result<String, KeyError> {
+    // Derive encryption key from password (runs Argon2id)
+    let derived_key = derive_key_from_password_public(password, kdf)?;
+    decrypt_shard_with_key(encrypted, &derived_key)
+}
+
+/// Decrypt an encrypted shard with a pre-derived key (AES-256-GCM only).
+///
+/// Use this function when decrypting multiple shards to avoid running
+/// Argon2id multiple times. First derive the key once with
+/// [`derive_key_from_password_public`], then call this for each shard.
+///
+/// # Parameters
+/// - `encrypted`: The encrypted shard
+/// - `derived_key`: Pre-derived encryption key from [`derive_key_from_password_public`]
+///
+/// # Returns
+/// - Decrypted shard hex string
+///
+/// # Errors
+/// - `KeyError::DecryptionFailed` if the key is wrong or data is corrupted
+///
+/// # Security
+/// - Uses AES-256-GCM for authenticated decryption
+/// - Authentication tag is verified before returning plaintext
+pub fn decrypt_shard_with_key(
+    encrypted: &EncryptedShard,
+    derived_key: &DerivedKey,
+) -> Result<String, KeyError> {
     use aes_gcm::{
         aead::{Aead, KeyInit},
         Aes256Gcm, Nonce,
     };
 
-    // Derive encryption key from password
-    let key = derive_key_from_password(password, kdf)?;
-
-    // Create AES-256-GCM cipher
-    let cipher = Aes256Gcm::new_from_slice(&key)
+    // Create AES-256-GCM cipher from pre-derived key
+    let cipher = Aes256Gcm::new_from_slice(derived_key.as_bytes())
         .map_err(|e| KeyError::CryptoError(alloc::format!("Cipher init failed: {:?}", e)))?;
 
     // Reconstruct ciphertext with tag for decryption
@@ -441,6 +470,53 @@ mod tests {
 
         let encrypted = encrypt_shard(shard_hex, 1, password, &kdf).unwrap();
         let result = decrypt_shard(&encrypted, wrong_password, &kdf);
+        assert!(matches!(result, Err(KeyError::DecryptionFailed)));
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_with_precomputed_key_roundtrip() {
+        // Test that encrypt_shard_with_key and decrypt_shard_with_key work together
+        // This simulates the optimized path where we derive the key ONCE and reuse it
+        let shard1_hex = "deadbeef1234567890abcdef";
+        let shard2_hex = "cafebabe9876543210fedcba";
+        let password = "secure-password-123";
+        let kdf = create_kdf_params().unwrap();
+
+        // Derive key ONCE
+        let derived_key = derive_key_from_password_public(password, &kdf).unwrap();
+
+        // Encrypt both shards with the same pre-derived key
+        let encrypted1 = encrypt_shard_with_key(shard1_hex, 1, &derived_key).unwrap();
+        let encrypted2 = encrypt_shard_with_key(shard2_hex, 2, &derived_key).unwrap();
+
+        assert_eq!(encrypted1.index, 1);
+        assert_eq!(encrypted2.index, 2);
+
+        // Decrypt both shards with the same pre-derived key
+        let decrypted1 = decrypt_shard_with_key(&encrypted1, &derived_key).unwrap();
+        let decrypted2 = decrypt_shard_with_key(&encrypted2, &derived_key).unwrap();
+
+        assert_eq!(decrypted1, shard1_hex);
+        assert_eq!(decrypted2, shard2_hex);
+    }
+
+    #[test]
+    fn test_decrypt_shard_with_key_wrong_key_fails() {
+        // Test that using a different key for decryption fails
+        let shard_hex = "deadbeef1234567890abcdef";
+        let password1 = "secure-password-123";
+        let password2 = "different-password-456";
+        let kdf = create_kdf_params().unwrap();
+
+        // Derive two different keys
+        let key1 = derive_key_from_password_public(password1, &kdf).unwrap();
+        let key2 = derive_key_from_password_public(password2, &kdf).unwrap();
+
+        // Encrypt with key1
+        let encrypted = encrypt_shard_with_key(shard_hex, 1, &key1).unwrap();
+
+        // Try to decrypt with key2 - should fail
+        let result = decrypt_shard_with_key(&encrypted, &key2);
         assert!(matches!(result, Err(KeyError::DecryptionFailed)));
     }
 

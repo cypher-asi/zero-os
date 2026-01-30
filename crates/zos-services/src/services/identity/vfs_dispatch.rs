@@ -6,7 +6,7 @@
 use alloc::format;
 
 use super::handlers::{credentials, keys, session};
-use super::pending::{PendingKeystoreOp, PendingStorageOp, RequestContext};
+use super::pending::{ExpectedVfsResponse, PendingKeystoreOp, PendingStorageOp, RequestContext};
 use super::{response, IdentityService};
 use zos_apps::syscall;
 use zos_apps::{AppError, Message};
@@ -48,20 +48,29 @@ impl IdentityService {
         }
     }
 
-    /// Take the next pending VFS operation (FIFO order).
-    /// Returns None if no operations are pending.
-    fn take_next_pending_vfs_op(&mut self) -> Option<PendingStorageOp> {
-        // Get the smallest key (oldest operation)
-        let key = *self.pending_vfs_ops.keys().next()?;
+    /// Take the next pending VFS operation matching the expected response type.
+    ///
+    /// Instead of FIFO ordering, this searches for an operation that expects
+    /// the given response type. This is necessary because VFS responses can
+    /// arrive out of order when multiple operations of different types are
+    /// in flight concurrently.
+    ///
+    /// Returns None if no matching operations are pending.
+    fn take_pending_vfs_op_for(&mut self, expected: ExpectedVfsResponse) -> Option<PendingStorageOp> {
+        // Find the first operation that expects this response type
+        let key = self.pending_vfs_ops
+            .iter()
+            .find(|(_, op)| op.expected_response() == expected)
+            .map(|(k, _)| *k)?;
         self.pending_vfs_ops.remove(&key)
     }
 
     /// Handle VFS read response (MSG_VFS_READ_RESPONSE)
     fn handle_vfs_read_response(&mut self, msg: &Message) -> Result<(), AppError> {
-        let pending_op = match self.take_next_pending_vfs_op() {
+        let pending_op = match self.take_pending_vfs_op_for(ExpectedVfsResponse::Read) {
             Some(op) => op,
             None => {
-                syscall::debug("IdentityService: VFS read response but no pending operation");
+                syscall::debug("IdentityService: VFS read response but no pending read operation");
                 return Ok(());
             }
         };
@@ -75,10 +84,10 @@ impl IdentityService {
 
     /// Handle VFS write response (MSG_VFS_WRITE_RESPONSE)
     fn handle_vfs_write_response(&mut self, msg: &Message) -> Result<(), AppError> {
-        let pending_op = match self.take_next_pending_vfs_op() {
+        let pending_op = match self.take_pending_vfs_op_for(ExpectedVfsResponse::Write) {
             Some(op) => op,
             None => {
-                syscall::debug("IdentityService: VFS write response but no pending operation");
+                syscall::debug("IdentityService: VFS write response but no pending write operation");
                 return Ok(());
             }
         };
@@ -92,10 +101,10 @@ impl IdentityService {
 
     /// Handle VFS exists response (MSG_VFS_EXISTS_RESPONSE)
     fn handle_vfs_exists_response(&mut self, msg: &Message) -> Result<(), AppError> {
-        let pending_op = match self.take_next_pending_vfs_op() {
+        let pending_op = match self.take_pending_vfs_op_for(ExpectedVfsResponse::Exists) {
             Some(op) => op,
             None => {
-                syscall::debug("IdentityService: VFS exists response but no pending operation");
+                syscall::debug("IdentityService: VFS exists response but no pending exists operation");
                 return Ok(());
             }
         };
@@ -109,10 +118,10 @@ impl IdentityService {
 
     /// Handle VFS mkdir response (MSG_VFS_MKDIR_RESPONSE)
     fn handle_vfs_mkdir_response(&mut self, msg: &Message) -> Result<(), AppError> {
-        let pending_op = match self.take_next_pending_vfs_op() {
+        let pending_op = match self.take_pending_vfs_op_for(ExpectedVfsResponse::Mkdir) {
             Some(op) => op,
             None => {
-                syscall::debug("IdentityService: VFS mkdir response but no pending operation");
+                syscall::debug("IdentityService: VFS mkdir response but no pending mkdir operation");
                 return Ok(());
             }
         };
@@ -126,10 +135,10 @@ impl IdentityService {
 
     /// Handle VFS readdir response (MSG_VFS_READDIR_RESPONSE)
     fn handle_vfs_readdir_response(&mut self, msg: &Message) -> Result<(), AppError> {
-        let pending_op = match self.take_next_pending_vfs_op() {
+        let pending_op = match self.take_pending_vfs_op_for(ExpectedVfsResponse::Readdir) {
             Some(op) => op,
             None => {
-                syscall::debug("IdentityService: VFS readdir response but no pending operation");
+                syscall::debug("IdentityService: VFS readdir response but no pending readdir operation");
                 return Ok(());
             }
         };
@@ -143,10 +152,10 @@ impl IdentityService {
 
     /// Handle VFS unlink response (MSG_VFS_UNLINK_RESPONSE)
     fn handle_vfs_unlink_response(&mut self, msg: &Message) -> Result<(), AppError> {
-        let pending_op = match self.take_next_pending_vfs_op() {
+        let pending_op = match self.take_pending_vfs_op_for(ExpectedVfsResponse::Unlink) {
             Some(op) => op,
             None => {
-                syscall::debug("IdentityService: VFS unlink response but no pending operation");
+                syscall::debug("IdentityService: VFS unlink response but no pending unlink operation");
                 return Ok(());
             }
         };

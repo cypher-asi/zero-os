@@ -9,9 +9,11 @@ use crate::services::identity::pending::{PendingKeystoreOp, RequestContext};
 use crate::services::identity::response;
 use crate::services::identity::{check_user_authorization, log_denial, AuthResult, IdentityService};
 use zos_identity::crypto::{
-    combine_shards_verified, decrypt_shard, derive_machine_keypair_with_scheme,
-    KeyScheme as ZidKeyScheme, MachineKeyPair, NeuralKey, ZidMachineKeyCapabilities,
-    ZidNeuralShard,
+    derive_machine_keypair_with_scheme, KeyScheme as ZidKeyScheme, MachineKeyPair,
+    NeuralKey, ZidMachineKeyCapabilities,
+};
+use super::super::shared::{
+    collect_and_validate_shards, decrypt_shards_with_password, reconstruct_neural_key,
 };
 use zos_apps::syscall;
 use zos_apps::{AppError, Message};
@@ -87,29 +89,68 @@ pub fn continue_create_machine_after_identity_read(
 /// 3. Reconstructs the Neural Key
 /// 4. Verifies against stored identity public key
 /// 5. Derives machine keypair
+///
+/// # Arguments
+/// * `derivation_user_id` - The user_id that was used to derive the identity signing keypair.
+///   This may differ from `request.user_id` if the user_id was derived from the pubkey.
+///   Verification must use this value to re-derive and compare the pubkey.
 pub fn continue_create_machine_after_shards_read(
     service: &mut IdentityService,
     client_pid: u32,
     request: CreateMachineKeyRequest,
     stored_identity_pubkey: [u8; 32],
+    derivation_user_id: u128,
     encrypted_store: EncryptedShardStore,
     cap_slots: Vec<u32>,
 ) -> Result<(), AppError> {
     let ctx = RequestContext::new(client_pid, cap_slots);
 
-    // Step 1: Decrypt shards
-    let decrypted_shard_hexes = decrypt_stored_shards(&encrypted_store, &request.password, &ctx)?;
+    // Step 1: Decrypt shards (derives key ONCE, decrypts each shard)
+    let decrypted_shard_hexes = match decrypt_shards_with_password(&encrypted_store, &request.password) {
+        Ok(hexes) => hexes,
+        Err(e) => {
+            syscall::debug(&format!("IdentityService: Shard decryption failed: {:?}", e));
+            return response::send_create_machine_key_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                e,
+            );
+        }
+    };
     
     // Step 2: Validate and collect all shards
-    let all_shards = collect_and_validate_shards(
+    let all_shards = match collect_and_validate_shards(
         &request.external_shard,
         &decrypted_shard_hexes,
         &encrypted_store,
-        &ctx,
-    )?;
+    ) {
+        Ok(shards) => shards,
+        Err(e) => {
+            return response::send_create_machine_key_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                e,
+            );
+        }
+    };
     
     // Step 3: Reconstruct and verify Neural Key
-    let neural_key = reconstruct_neural_key(&all_shards, request.user_id, &stored_identity_pubkey, &ctx)?;
+    // IMPORTANT: Use derivation_user_id (from key_store.user_id), not request.user_id
+    // The identity keypair was derived using derivation_user_id during generation
+    let neural_key = match reconstruct_neural_key(&all_shards, derivation_user_id, &stored_identity_pubkey) {
+        Ok(key) => key,
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Neural Key verification failed: {:?} (derivation_user_id={:032x})",
+                e, derivation_user_id
+            ));
+            return response::send_create_machine_key_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                e,
+            );
+        }
+    };
     
     // Step 4: Generate machine ID and derive keypair
     let (machine_id, machine_keypair) = derive_machine_keypair(
@@ -132,139 +173,6 @@ pub fn continue_create_machine_after_shards_read(
 // ============================================================================
 // Helper functions for continue_create_machine_after_shards_read
 // ============================================================================
-
-/// Decrypt the 2 stored shards using the password
-fn decrypt_stored_shards(
-    encrypted_store: &EncryptedShardStore,
-    password: &str,
-    ctx: &RequestContext,
-) -> Result<Vec<(u8, alloc::string::String)>, AppError> {
-    let mut decrypted_shard_hexes = Vec::new();
-    for encrypted_shard in &encrypted_store.encrypted_shards {
-        match decrypt_shard(encrypted_shard, password, &encrypted_store.kdf) {
-            Ok(hex) => decrypted_shard_hexes.push((encrypted_shard.index, hex)),
-            Err(e) => {
-                syscall::debug(&format!(
-                    "IdentityService: Failed to decrypt shard {}: {:?}",
-                    encrypted_shard.index, e
-                ));
-                return Err(response::send_create_machine_key_error(
-                    ctx.client_pid,
-                    &ctx.cap_slots,
-                    e,
-                ).unwrap_err());
-            }
-        }
-    }
-
-    syscall::debug(&format!(
-        "IdentityService: Successfully decrypted {} stored shards",
-        decrypted_shard_hexes.len()
-    ));
-
-    Ok(decrypted_shard_hexes)
-}
-
-/// Collect and validate all shards (1 external + 2 decrypted)
-fn collect_and_validate_shards(
-    external_shard: &zos_identity::ipc::NeuralShard,
-    decrypted_shard_hexes: &[(u8, alloc::string::String)],
-    encrypted_store: &EncryptedShardStore,
-    ctx: &RequestContext,
-) -> Result<Vec<ZidNeuralShard>, AppError> {
-    // Validate external shard index is expected and unique
-    if !encrypted_store.external_shard_indices.contains(&external_shard.index) {
-        return Err(response::send_create_machine_key_error(
-            ctx.client_pid,
-            &ctx.cap_slots,
-            KeyError::InvalidShard("External shard index not recognized".into()),
-        ).unwrap_err());
-    }
-
-    let mut shard_indices = Vec::new();
-    shard_indices.push(external_shard.index);
-    shard_indices.extend(encrypted_store.encrypted_shards.iter().map(|s| s.index));
-
-    shard_indices.sort_unstable();
-    shard_indices.dedup();
-    if shard_indices.len() != 3 {
-        return Err(response::send_create_machine_key_error(
-            ctx.client_pid,
-            &ctx.cap_slots,
-            KeyError::InvalidShard("Shard indices must be unique (3 total)".into()),
-        ).unwrap_err());
-    }
-
-    // Convert all shards (1 external + 2 decrypted) to zid-crypto format
-    let mut all_shards = Vec::new();
-
-    // Add external shard
-    match ZidNeuralShard::from_hex(&external_shard.hex) {
-        Ok(shard) => all_shards.push(shard),
-        Err(e) => {
-            syscall::debug(&format!(
-                "IdentityService: Invalid external shard format: {:?}",
-                e
-            ));
-            return Err(response::send_create_machine_key_error(
-                ctx.client_pid,
-                &ctx.cap_slots,
-                KeyError::InvalidShard(format!("Invalid external shard format: {:?}", e)),
-            ).unwrap_err());
-        }
-    }
-
-    // Add decrypted shards
-    for (_idx, hex) in decrypted_shard_hexes {
-        match ZidNeuralShard::from_hex(hex) {
-            Ok(shard) => all_shards.push(shard),
-            Err(e) => {
-                syscall::debug(&format!(
-                    "IdentityService: Invalid decrypted shard format: {:?}",
-                    e
-                ));
-                return Err(response::send_create_machine_key_error(
-                    ctx.client_pid,
-                    &ctx.cap_slots,
-                    KeyError::InvalidShard(format!("Invalid decrypted shard format: {:?}", e)),
-                ).unwrap_err());
-            }
-        }
-    }
-
-    syscall::debug(&format!(
-        "IdentityService: Total shards for reconstruction: {}",
-        all_shards.len()
-    ));
-
-    Ok(all_shards)
-}
-
-/// Reconstruct Neural Key from shards with verification
-fn reconstruct_neural_key(
-    all_shards: &[ZidNeuralShard],
-    user_id: u128,
-    stored_identity_pubkey: &[u8; 32],
-    ctx: &RequestContext,
-) -> Result<NeuralKey, AppError> {
-    match combine_shards_verified(all_shards, user_id, stored_identity_pubkey) {
-        Ok(key) => {
-            syscall::debug("IdentityService: Neural Key reconstructed and verified against stored identity");
-            Ok(key)
-        }
-        Err(e) => {
-            syscall::debug(&format!(
-                "IdentityService: Neural Key verification failed: {:?}",
-                e
-            ));
-            Err(response::send_create_machine_key_error(
-                ctx.client_pid,
-                &ctx.cap_slots,
-                e,
-            ).unwrap_err())
-        }
-    }
-}
 
 /// Generate machine ID and derive keypair from Neural Key
 fn derive_machine_keypair(
@@ -293,11 +201,12 @@ fn derive_machine_keypair(
                 "IdentityService: CRITICAL - Machine ID generation FAILED! Error: {:?}",
                 e
             ));
-            return Err(response::send_create_machine_key_error(
+            response::send_create_machine_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
                 KeyError::CryptoError("Failed to generate machine ID".into()),
-            ).unwrap_err());
+            )?;
+            return Err(AppError::Internal("Machine ID generation failed".into()));
         }
     };
     let machine_id = u128::from_le_bytes(machine_id_bytes);
@@ -330,11 +239,12 @@ fn derive_machine_keypair(
                 "IdentityService: Machine keypair derivation failed: {:?}",
                 e
             ));
-            return Err(response::send_create_machine_key_error(
+            response::send_create_machine_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
                 KeyError::CryptoError(format!("Machine keypair derivation failed: {:?}", e)),
-            ).unwrap_err());
+            )?;
+            return Err(AppError::Internal("Machine keypair derivation failed".into()));
         }
     };
 

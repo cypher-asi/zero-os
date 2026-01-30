@@ -129,9 +129,32 @@ impl Supervisor {
         service_name: &str,
         service_pid: ProcessId,
     ) {
+        self.grant_init_capability_to_service_inner(service_name, service_pid, false);
+    }
+
+    /// Re-grant Init capability to a service and trigger pending delivery retry.
+    ///
+    /// This is called during capability recovery when Init was missing a capability
+    /// and has pending messages queued for the service. Unlike the initial grant,
+    /// this uses MSG_SERVICE_CAP_GRANTED which triggers Init to retry pending deliveries.
+    pub(in crate::supervisor) fn regrant_init_capability_to_service(
+        &mut self,
+        service_name: &str,
+        service_pid: ProcessId,
+    ) {
+        self.grant_init_capability_to_service_inner(service_name, service_pid, true);
+    }
+
+    /// Internal implementation for granting Init capability to a service.
+    fn grant_init_capability_to_service_inner(
+        &mut self,
+        service_name: &str,
+        service_pid: ProcessId,
+        trigger_retry: bool,
+    ) {
         log(&format!(
-            "AGENT_LOG:grant_init_cap:start:service={}:pid={}:init_slot={:?}",
-            service_name, service_pid.0, self.init_endpoint_slot
+            "AGENT_LOG:grant_init_cap:start:service={}:pid={}:init_slot={:?}:trigger_retry={}",
+            service_name, service_pid.0, self.init_endpoint_slot, trigger_retry
         ));
         
         let init_pid = ProcessId(1);
@@ -173,13 +196,13 @@ impl Supervisor {
 
                 // #region agent log - hypothesis B
                 log(&format!(
-                    "AGENT_LOG:grant_init_cap:granted:service={}:pid={}:slot={}:will_notify",
-                    service_name, service_pid.0, slot
+                    "AGENT_LOG:grant_init_cap:granted:service={}:pid={}:slot={}:will_notify:trigger_retry={}",
+                    service_name, service_pid.0, slot, trigger_retry
                 ));
                 // #endregion
 
                 // Notify Init about the capability via IPC message
-                self.notify_init_service_cap(service_pid.0, slot);
+                self.notify_init_service_cap_with_retry(service_pid.0, slot, trigger_retry);
             }
             Err(e) => {
                 log(&format!(
@@ -190,13 +213,16 @@ impl Supervisor {
         }
     }
 
-    /// Notify Init about a granted service capability via IPC.
+    /// Notify Init about a service capability with explicit retry control.
     ///
-    /// Sends MSG_SERVICE_CAP_PREREGISTER to Init with [service_pid, cap_slot].
-    /// This is sent BEFORE the worker spawns, allowing Init to pre-register
-    /// the capability mapping and eliminate the race condition where user
-    /// requests arrive before Init knows which slot to use for the service.
-    fn notify_init_service_cap(&mut self, service_pid: u64, cap_slot: u32) {
+    /// When `trigger_retry` is true, uses MSG_SERVICE_CAP_GRANTED which causes
+    /// Init to retry any pending deliveries for this service.
+    pub(in crate::supervisor) fn notify_init_service_cap_with_retry(
+        &mut self,
+        service_pid: u64,
+        cap_slot: u32,
+        trigger_retry: bool,
+    ) {
         let init_slot = match self.init_endpoint_slot {
             Some(slot) => slot,
             None => {
@@ -205,8 +231,17 @@ impl Supervisor {
             }
         };
 
-        // Use MSG_SERVICE_CAP_PREREGISTER since this is sent BEFORE worker spawn
-        use zos_ipc::init::MSG_SERVICE_CAP_PREREGISTER;
+        use zos_ipc::init::{MSG_SERVICE_CAP_GRANTED, MSG_SERVICE_CAP_PREREGISTER};
+
+        // Use GRANTED when we need to trigger pending retry (capability recovery)
+        // Use PREREGISTER when this is initial registration before service starts
+        let msg_tag = if trigger_retry {
+            MSG_SERVICE_CAP_GRANTED
+        } else {
+            MSG_SERVICE_CAP_PREREGISTER
+        };
+
+        let msg_type = if trigger_retry { "granted" } else { "preregister" };
 
         // Build message: [service_pid: u32, cap_slot: u32]
         let mut payload = Vec::with_capacity(8);
@@ -215,34 +250,31 @@ impl Supervisor {
 
         let supervisor_pid = ProcessId(0);
 
-        match self
-            .system
-            .ipc_send(supervisor_pid, init_slot, MSG_SERVICE_CAP_PREREGISTER, payload)
-        {
+        match self.system.ipc_send(supervisor_pid, init_slot, msg_tag, payload) {
             Ok(()) => {
                 // #region agent log - hypothesis B
                 log(&format!(
-                    "AGENT_LOG:notify_init:preregister:service_pid={}:cap_slot={}:init_slot={}",
-                    service_pid, cap_slot, init_slot
+                    "AGENT_LOG:notify_init:{}:service_pid={}:cap_slot={}:init_slot={}",
+                    msg_type, service_pid, cap_slot, init_slot
                 ));
                 // #endregion
 
                 log(&format!(
-                    "[supervisor] Pre-registered service PID {} cap at slot {} with Init",
-                    service_pid, cap_slot
+                    "[supervisor] Notified Init of service PID {} cap at slot {} ({})",
+                    service_pid, cap_slot, msg_type
                 ));
             }
             Err(e) => {
                 // #region agent log - hypothesis B
                 log(&format!(
-                    "AGENT_LOG:notify_init:preregister_failed:service_pid={}:error={:?}",
-                    service_pid, e
+                    "AGENT_LOG:notify_init:{}_failed:service_pid={}:error={:?}",
+                    msg_type, service_pid, e
                 ));
                 // #endregion
 
                 log(&format!(
-                    "[supervisor] Failed to pre-register service cap with Init: {:?}",
-                    e
+                    "[supervisor] Failed to notify Init of service cap ({}): {:?}",
+                    msg_type, e
                 ));
             }
         }

@@ -1401,7 +1401,7 @@ pub fn continue_zid_email_login_after_network(
 /// 1. Parse request (user_id, zid_endpoint)
 /// 2. Authorization check
 /// 3. Read stored ZID session from VFS (to get refresh_token)
-/// 4. POST to {zid_endpoint}/v1/auth/session/refresh
+/// 4. POST to {zid_endpoint}/v1/auth/refresh
 /// 5. Update stored session with new tokens
 /// 6. Return ZidRefreshResponse with new tokens
 pub fn handle_zid_refresh(service: &mut IdentityService, msg: &Message) -> Result<(), AppError> {

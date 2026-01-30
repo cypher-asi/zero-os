@@ -113,11 +113,12 @@ fn generate_rotated_keypair(
                 "IdentityService: CRITICAL - Signing seed generation FAILED! Error: {:?}",
                 e
             ));
-            return Err(response::send_rotate_machine_key_error(
+            response::send_rotate_machine_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
                 KeyError::CryptoError("Failed to generate signing seed".into()),
-            ).unwrap_err())
+            )?;
+            return Err(AppError::Internal("Signing seed generation failed".into()));
         }
     };
 
@@ -136,11 +137,12 @@ fn generate_rotated_keypair(
                 "IdentityService: CRITICAL - Encryption seed generation FAILED! Error: {:?}",
                 e
             ));
-            return Err(response::send_rotate_machine_key_error(
+            response::send_rotate_machine_key_error(
                 ctx.client_pid,
                 &ctx.cap_slots,
                 KeyError::CryptoError("Failed to generate encryption seed".into()),
-            ).unwrap_err())
+            )?;
+            return Err(AppError::Internal("Encryption seed generation failed".into()));
         }
     };
 
@@ -161,11 +163,14 @@ fn generate_rotated_keypair(
         zid_scheme,
     ) {
         Ok(keypair) => Ok(keypair),
-        Err(e) => Err(response::send_rotate_machine_key_error(
-            ctx.client_pid,
-            &ctx.cap_slots,
-            KeyError::CryptoError(format!("Machine keypair rotation failed: {:?}", e)),
-        ).unwrap_err())
+        Err(e) => {
+            response::send_rotate_machine_key_error(
+                ctx.client_pid,
+                &ctx.cap_slots,
+                KeyError::CryptoError(format!("Machine keypair rotation failed: {:?}", e)),
+            )?;
+            Err(AppError::Internal("Machine keypair rotation failed".into()))
+        }
     }
 }
 

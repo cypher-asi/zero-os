@@ -30,8 +30,8 @@ pub fn dispatch_keystore_read_result(
         PendingKeystoreOp::ReadIdentityForMachine { ctx, request } => {
             handle_read_identity_for_machine(service, ctx, request, result)
         }
-        PendingKeystoreOp::ReadEncryptedShardsForMachine { ctx, request, stored_identity_pubkey } => {
-            handle_read_encrypted_shards_for_machine(service, ctx, request, stored_identity_pubkey, result)
+        PendingKeystoreOp::ReadEncryptedShardsForMachine { ctx, request, stored_identity_pubkey, derivation_user_id } => {
+            handle_read_encrypted_shards_for_machine(service, ctx, request, stored_identity_pubkey, derivation_user_id, result)
         }
         PendingKeystoreOp::ReadIdentityForMachineEnroll { ctx, request } => {
             handle_read_identity_for_machine_enroll(service, ctx, request, result)
@@ -178,10 +178,14 @@ fn handle_read_identity_for_machine(
             match serde_json::from_slice::<LocalKeyStore>(&data) {
                 Ok(key_store) => {
                     // Chain to read encrypted shards
+                    // CRITICAL: key_store.user_id is the derivation_user_id used for identity key derivation.
+                    // This may differ from request.user_id if user_id was derived from the pubkey.
+                    // Verification must use derivation_user_id to re-derive and compare the pubkey.
+                    let derivation_user_id = key_store.user_id;
                     let shards_path = EncryptedShardStore::storage_path(request.user_id);
                     syscall::debug(&format!(
-                        "IdentityService: Identity read success, now reading encrypted shards from {}",
-                        shards_path
+                        "IdentityService: Identity read success, reading encrypted shards (derivation_user_id={:032x})",
+                        derivation_user_id
                     ));
                     service.start_keystore_read(
                         &shards_path,
@@ -189,6 +193,7 @@ fn handle_read_identity_for_machine(
                             ctx,
                             request,
                             stored_identity_pubkey: key_store.identity_signing_public_key,
+                            derivation_user_id,
                         },
                     )
                 }
@@ -221,6 +226,7 @@ fn handle_read_encrypted_shards_for_machine(
     ctx: RequestContext,
     request: zos_identity::ipc::CreateMachineKeyRequest,
     stored_identity_pubkey: [u8; 32],
+    derivation_user_id: u128,
     result: Result<Vec<u8>, String>,
 ) -> Result<(), AppError> {
     match result {
@@ -231,6 +237,7 @@ fn handle_read_encrypted_shards_for_machine(
                     ctx.client_pid,
                     request,
                     stored_identity_pubkey,
+                    derivation_user_id,
                     encrypted_store,
                     ctx.cap_slots,
                 ),

@@ -455,7 +455,7 @@ export class IdentityServiceClient {
    *
    * This calls the ZID server's refresh endpoint to get new tokens:
    * 1. Identity service reads stored session from VFS (to get refresh_token)
-   * 2. POSTs to /v1/auth/session/refresh with refresh_token
+   * 2. POSTs to /v1/auth/refresh with refresh_token
    * 3. Updates stored session with new tokens
    * 4. Returns new tokens
    *

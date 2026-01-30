@@ -357,6 +357,7 @@ mod tests {
                 path: String::from("/tmp/newdir"),
                 perm_ctx: make_test_perm_ctx(),
                 stage: MkdirStage::CheckingExists,
+                create_parents: false,
             },
         );
         

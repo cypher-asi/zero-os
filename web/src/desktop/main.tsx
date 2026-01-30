@@ -65,6 +65,13 @@ export function isSupervisorBusy(): boolean {
   return supervisorBusy;
 }
 
+// Expose supervisor busy guard and callback queue globally for storage/keystore callbacks
+// This allows async callbacks (from IndexedDB operations) to safely queue themselves
+// when the supervisor is busy, avoiding re-entrancy panics in wasm-bindgen's RefCell
+(window as unknown as { __supervisorBusy: () => boolean }).__supervisorBusy = () => supervisorBusy;
+(window as unknown as { __supervisorCallbackQueue: Array<() => void> }).__supervisorCallbackQueue =
+  [];
+
 // Cleanup for page unload - only terminates workers, does NOT free WASM memory
 // (browser handles memory cleanup on unload, and .free() causes closure errors)
 function performUnloadCleanup() {
@@ -385,6 +392,16 @@ function App() {
           withSupervisorGuard(() => {
             supervisor.poll_syscalls();
             supervisor.process_worker_messages();
+
+            // Process any queued storage/keystore callbacks that arrived while supervisor was busy
+            // These callbacks are queued by safeSupervisorCallback in zos-storage.js and zos-keystore.js
+            const queue = (
+              window as unknown as { __supervisorCallbackQueue: Array<() => void> }
+            ).__supervisorCallbackQueue;
+            while (queue.length > 0) {
+              const cb = queue.shift();
+              cb?.();
+            }
           });
         }, 10);
 
