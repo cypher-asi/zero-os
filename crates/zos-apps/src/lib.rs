@@ -58,6 +58,8 @@ pub use zos_process as syscall;
 // This allows apps to use consistent message constants.
 pub use zos_process::{init, kernel, permission, pm, storage, supervisor};
 
+// Re-export canonical slot constants from zos-ipc (single source of truth)
+pub use zos_ipc::slots::{INPUT_ENDPOINT_SLOT, OUTPUT_ENDPOINT_SLOT, VFS_RESPONSE_SLOT};
 
 /// Generate the entry point and runtime setup for a Zero app.
 ///
@@ -98,13 +100,12 @@ macro_rules! app_main {
             let manifest = <$app_type as $crate::ZeroApp>::manifest();
             runtime.set_app_id(manifest.id);
 
-            // Setup endpoints from capability slots
+            // Setup endpoints from capability slots (using canonical constants from zos-ipc).
             // The supervisor creates two endpoints for each process:
             // - Slot 0: UI output endpoint (for sending state updates)
             // - Slot 1: Input endpoint (for receiving messages)
-            // This matches SERVICE_INPUT_SLOT constant in zos-supervisor.
-            runtime.set_ui_endpoint(0);
-            runtime.set_input_endpoint(1);
+            runtime.set_ui_endpoint($crate::OUTPUT_ENDPOINT_SLOT);
+            runtime.set_input_endpoint($crate::INPUT_ENDPOINT_SLOT);
             
             $crate::syscall::debug(&format!(
                 "[{}] starting (PID={})",

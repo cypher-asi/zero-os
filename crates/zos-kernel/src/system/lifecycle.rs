@@ -95,8 +95,8 @@ pub(in crate::system) fn execute_create_endpoint_for<H: HAL>(
     }
 
     let target_pid = ProcessId(args[0] as u64);
-    let (result, mut commits) = core.create_endpoint(target_pid, timestamp);
-    let mut commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
+    let (result, commits) = core.create_endpoint(target_pid, timestamp);
+    let commit_types: Vec<CommitType> = commits.into_iter().map(|c| c.commit_type).collect();
 
     match result {
         Ok((eid, _owner_slot)) => {

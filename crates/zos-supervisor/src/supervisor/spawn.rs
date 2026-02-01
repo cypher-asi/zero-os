@@ -214,16 +214,17 @@ impl Supervisor {
     /// Set up endpoints for a process based on its role
     fn setup_process_endpoints(&mut self, process_pid: ProcessId, name: &str) {
         if name == "init" {
-            // Init gets: slot 0 = init endpoint, slot 1 = console output
+            // Init follows standard convention: slot 0 = output, slot 1 = input
+            // Slot 1 is where Init receives IPC messages (MSG_SERVICE_CAP_*, etc.)
             if let Ok((eid, slot)) = self.system.create_endpoint(process_pid) {
                 log(&format!(
-                    "[supervisor] Created init endpoint {} at slot {} for init",
+                    "[supervisor] Created output endpoint {} at slot {} for init",
                     eid.0, slot
                 ));
             }
             if let Ok((eid, slot)) = self.system.create_endpoint(process_pid) {
                 log(&format!(
-                    "[supervisor] Created console output endpoint {} at slot {} for init",
+                    "[supervisor] Created input endpoint {} at slot {} for init",
                     eid.0, slot
                 ));
             }

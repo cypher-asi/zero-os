@@ -5,7 +5,7 @@
 
 use zos_kernel::ProcessId;
 
-use crate::constants::{INIT_ENDPOINT_SLOT, PS_INPUT_SLOT};
+use crate::constants::{INPUT_ENDPOINT_SLOT, PS_INPUT_SLOT};
 use crate::supervisor::Supervisor;
 use crate::util::log;
 
@@ -20,12 +20,12 @@ impl Supervisor {
     ) {
         let supervisor_pid = ProcessId(0);
 
-        // Get Init's endpoint ID from slot 0
+        // Get Init's input endpoint ID from slot 1 (where Init receives IPC messages)
         let endpoint_id = match self.system.get_cap_space(init_pid) {
-            Some(cspace) => match cspace.get(INIT_ENDPOINT_SLOT) {
+            Some(cspace) => match cspace.get(INPUT_ENDPOINT_SLOT) {
                 Some(cap) => zos_kernel::EndpointId(cap.object_id),
                 None => {
-                    log("[supervisor] Init has no endpoint at slot 0");
+                    log("[supervisor] Init has no endpoint at INPUT_ENDPOINT_SLOT (slot 1)");
                     return;
                 }
             },

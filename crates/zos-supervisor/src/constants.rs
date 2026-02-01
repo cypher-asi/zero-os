@@ -13,23 +13,21 @@
 //! - Slot 4: VFS response endpoint (dedicated to avoid race conditions)
 
 // =============================================================================
-// Capability Slot Conventions
+// Capability Slot Conventions (re-exported from zos-ipc single source of truth)
 // =============================================================================
 
-/// Init's primary endpoint slot
-pub const INIT_ENDPOINT_SLOT: u32 = 0;
+/// Re-export canonical slot constants from zos-ipc.
+pub use zos_ipc::slots::{
+    INIT_ENDPOINT_SLOT,
+    INPUT_ENDPOINT_SLOT,
+    VFS_RESPONSE_SLOT,
+};
 
-/// Service input endpoint slot (for receiving IPC)
+/// Service input endpoint slot (alias for INPUT_ENDPOINT_SLOT).
 ///
 /// Used by services like PermissionService, Identity, VFS, Terminal, etc.
 /// This is where they receive incoming IPC messages.
-pub const SERVICE_INPUT_SLOT: u32 = 1;
-
-/// VFS response endpoint slot (dedicated to avoid race conditions)
-///
-/// VFS responses are routed here instead of the general input endpoint (slot 1)
-/// to prevent the VFS client's blocking receive from consuming other IPC messages.
-pub const VFS_RESPONSE_SLOT: u32 = 4;
+pub const SERVICE_INPUT_SLOT: u32 = INPUT_ENDPOINT_SLOT;
 
 /// Terminal input endpoint slot
 pub const TERMINAL_INPUT_SLOT: u32 = SERVICE_INPUT_SLOT;

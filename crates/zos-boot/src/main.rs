@@ -605,9 +605,14 @@ fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
                 Ok(handle) => {
                     serial_println!("  Spawned Init process (handle {})", handle.id());
                     
-                    // Create Init's main endpoint
-                    if let Ok((endpoint_id, _slot)) = kernel_system.create_endpoint(init_pid) {
-                        serial_println!("  Created Init endpoint {}", endpoint_id.0);
+                    // Create Init's two endpoints (matching WASM supervisor convention).
+                    // Slot 0: output endpoint (for sending state updates)
+                    // Slot 1: input endpoint (for receiving IPC messages)
+                    if let Ok((eid0, slot0)) = kernel_system.create_endpoint(init_pid) {
+                        serial_println!("  Created Init output endpoint {} at slot {}", eid0.0, slot0);
+                    }
+                    if let Ok((eid1, slot1)) = kernel_system.create_endpoint(init_pid) {
+                        serial_println!("  Created Init input endpoint {} at slot {}", eid1.0, slot1);
                     }
                     
                     // Enter kernel main loop

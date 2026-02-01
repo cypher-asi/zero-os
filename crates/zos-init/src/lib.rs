@@ -83,8 +83,9 @@ pub use zos_process::supervisor::{
 // Well-known Capability Slots
 // =============================================================================
 
-/// Init's main endpoint for receiving service messages (slot 0)
-const INIT_ENDPOINT_SLOT: u32 = 0;
+/// Init's input endpoint for receiving IPC messages (slot 1).
+/// Follows the standard convention: slot 0 = output, slot 1 = input.
+const INIT_ENDPOINT_SLOT: u32 = 1;
 
 // Note: Console output now uses SYS_CONSOLE_WRITE syscall (no slot needed)
 

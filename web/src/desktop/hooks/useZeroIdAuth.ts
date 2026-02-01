@@ -57,6 +57,9 @@ const DEFAULT_ZID_ENDPOINT = 'http://127.0.0.1:9999';
 
 let globalRefreshInProgress = false;
 let globalRefreshPromise: Promise<void> | null = null;
+// Track the last refresh token that was consumed globally (across all hook instances)
+// This prevents any hook instance from reusing a token that another instance already consumed
+let globalLastUsedRefreshToken: string | null = null;
 
 // =============================================================================
 // Helpers
@@ -114,9 +117,8 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
   const lastSuccessfulRefreshRef = useRef<number>(0);
   const MIN_REFRESH_COOLDOWN_MS = 5000; // Minimum 5 seconds between refreshes
 
-  // Track the last refresh token used to prevent duplicate refresh with same token
-  // This catches race conditions where the same token is sent multiple times
-  const lastUsedRefreshTokenRef = useRef<string | null>(null);
+  // Note: lastUsedRefreshToken tracking is now global (globalLastUsedRefreshToken)
+  // to prevent token reuse across different hook instances
 
   // Create client instance when supervisor is available
   const clientRef = useRef<IdentityServiceClient | null>(null);
@@ -125,6 +127,9 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
   }
 
   // Load session from VFS cache on mount (or when user changes)
+  // IMPORTANT: Only load from VFS if zustand store is empty. This prevents overwriting
+  // a valid in-memory session with potentially stale VFS data (e.g., if VFS write failed
+  // during a previous refresh but React state was updated correctly).
   useEffect(() => {
     if (!currentUserId || initializedRef.current) {
       setIsLoadingSession(false);
@@ -133,6 +138,16 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
 
     const loadSession = () => {
       try {
+        // Check if zustand store already has a valid session
+        // This can happen if another hook instance already loaded/refreshed the session
+        const existingState = useIdentityStore.getState().remoteAuthState;
+        if (existingState?.refreshToken) {
+          console.log('[useZeroIdAuth] Zustand store already has session, skipping VFS load');
+          setIsLoadingSession(false);
+          initializedRef.current = true;
+          return;
+        }
+
         const sessionPath = getZidSessionPath(currentUserId);
         const session = VfsStorageClient.readJsonSync<ZidSession>(sessionPath);
 
@@ -456,10 +471,11 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
 
     // Detect if we're trying to use the same refresh token that was already consumed
     // This catches edge cases where state hasn't been updated yet with the new token
+    // Uses global tracking to prevent reuse across different hook instances
     const currentRefreshToken = latestState.refreshToken;
-    if (currentRefreshToken === lastUsedRefreshTokenRef.current) {
+    if (currentRefreshToken === globalLastUsedRefreshToken) {
       console.warn(
-        '[useZeroIdAuth] Blocking duplicate refresh with same token - token already consumed, ' +
+        '[useZeroIdAuth] Blocking duplicate refresh with same token - token already consumed globally, ' +
         'waiting for new token'
       );
       // Return resolved promise to avoid throwing, the auto-refresh will retry later
@@ -471,9 +487,9 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
     lastRefreshAttemptRef.current = Date.now();
     globalRefreshInProgress = true;
 
-    // Mark this token as being used BEFORE making the request
-    // This prevents race conditions if another refresh attempt comes in
-    lastUsedRefreshTokenRef.current = currentRefreshToken;
+    // Mark this token as being used BEFORE making the request (globally)
+    // This prevents race conditions if another refresh attempt comes in from any hook instance
+    globalLastUsedRefreshToken = currentRefreshToken;
 
     const doRefresh = async () => {
       try {
@@ -503,7 +519,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         // Reset fail count and record successful refresh time
         refreshFailCountRef.current = 0;
         lastSuccessfulRefreshRef.current = Date.now();
-        // Note: We intentionally do NOT update lastUsedRefreshTokenRef here.
+        // Note: We intentionally do NOT update globalLastUsedRefreshToken here.
         // It should remain set to the OLD token that was just consumed.
         // This allows future refreshes with the NEW token (tokens.refresh_token)
         // while still blocking any stale attempts to use the old consumed token.
@@ -515,9 +531,9 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         // This is a startup timing issue, not a real refresh problem
         if (err instanceof ServiceNotFoundError) {
           console.log('[useZeroIdAuth] Identity service not ready, will retry later');
-          // Don't set error or increment fail count - just clear the used token ref
+          // Don't set error or increment fail count - just clear the used token tracking
           // so the next attempt with same token is allowed
-          lastUsedRefreshTokenRef.current = null;
+          globalLastUsedRefreshToken = null;
           throw err;
         }
 
@@ -533,7 +549,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
           );
           setRemoteAuthState(null);
           // Clear the tracked token since session is being cleared
-          lastUsedRefreshTokenRef.current = null;
+          globalLastUsedRefreshToken = null;
         }
 
         throw err;

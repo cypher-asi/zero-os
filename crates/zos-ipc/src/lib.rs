@@ -1010,9 +1010,29 @@ pub mod debug {
 // =============================================================================
 
 /// Well-known capability slots.
+///
+/// These are the canonical slot assignments for process endpoints.
+/// Both WASM supervisor and QEMU boot code MUST create endpoints
+/// in these slots to ensure consistent behavior.
 pub mod slots {
     /// Init's endpoint slot (every process gets this at spawn).
     pub const INIT_ENDPOINT_SLOT: u32 = 2;
+
+    /// Process output/UI endpoint slot (slot 0).
+    /// Used for sending state updates to UI surfaces.
+    /// Every process gets this endpoint at spawn.
+    pub const OUTPUT_ENDPOINT_SLOT: u32 = 0;
+
+    /// Process input endpoint slot (slot 1).
+    /// Used for receiving IPC messages from other processes.
+    /// Every process gets this endpoint at spawn.
+    pub const INPUT_ENDPOINT_SLOT: u32 = 1;
+
+    /// VFS response endpoint slot (slot 4).
+    /// Dedicated slot for VFS responses to avoid race conditions.
+    /// VFS responses are routed here instead of the general input endpoint (slot 1)
+    /// to prevent the VFS client's blocking receive from consuming other IPC messages.
+    pub const VFS_RESPONSE_SLOT: u32 = 4;
 }
 
 // =============================================================================

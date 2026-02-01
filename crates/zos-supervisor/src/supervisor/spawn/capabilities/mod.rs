@@ -17,7 +17,7 @@ mod vfs;
 
 use zos_kernel::ProcessId;
 
-use crate::constants::{INIT_ENDPOINT_SLOT, VFS_RESPONSE_SLOT};
+use crate::constants::{INPUT_ENDPOINT_SLOT, VFS_RESPONSE_SLOT};
 use crate::util::log;
 
 use super::super::Supervisor;
@@ -44,11 +44,11 @@ impl Supervisor {
             // Grant supervisor (PID 0) capability to PS's endpoint for IPC
             self.grant_supervisor_capability_to_ps(process_pid);
         } else if self.init_spawned {
-            // Grant this process a capability to init's endpoint (slot 0 of PID 1)
+            // Grant this process a capability to Init's input endpoint (slot 1 of PID 1)
             let init_pid = ProcessId(1);
             match self.system.grant_capability(
                 init_pid,
-                INIT_ENDPOINT_SLOT, // init's endpoint at slot 0
+                INPUT_ENDPOINT_SLOT, // Init's input endpoint at slot 1
                 process_pid,
                 zos_kernel::Permissions {
                     read: false,
