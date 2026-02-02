@@ -3,11 +3,31 @@ import { PanelLogin, Text, Button, type LoginProvider } from '@cypher-asi/zui';
 import { Key, Github } from 'lucide-react';
 import { useZeroIdAuth } from '../../../hooks/useZeroIdAuth';
 import { useLinkedAccounts } from '../../../hooks/useLinkedAccounts';
+import { ZidServerError, ZidNetworkError } from '@/client-services/identity/errors';
+import { useIdentityStore, type IdentityTier } from '@/stores/identityStore';
+import type { WalletType, ZidTokens } from '@/client-services/identity/types';
+import '@/types/ethereum.d.ts';
 import styles from './LoginModal.module.css';
+
+const DEFAULT_ZID_ENDPOINT = 'http://127.0.0.1:9999';
 
 interface LoginModalProps {
   onClose: () => void;
   onShowRegister?: () => void;
+}
+
+/**
+ * Ethereum logo SVG icon
+ */
+function EthereumIcon(): ReactNode {
+  return (
+    <svg width="20" height="20" viewBox="0 0 256 417" fill="currentColor">
+      <path d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z" opacity="0.6" />
+      <path d="M127.962 0L0 212.32l127.962 75.639V154.158z" opacity="0.45" />
+      <path d="M127.961 312.187l-1.575 1.92v98.199l1.575 4.6L256 236.587z" opacity="0.8" />
+      <path d="M127.962 416.905v-104.72L0 236.585z" opacity="0.45" />
+    </svg>
+  );
 }
 
 /**
@@ -38,6 +58,9 @@ function getProviderIcon(providerName: string): ReactNode {
         </svg>
       );
 
+    case 'ethereum':
+      return <EthereumIcon />;
+
     default:
       return null;
   }
@@ -63,6 +86,12 @@ export function LoginModal({ onClose, onShowRegister }: LoginModalProps) {
   } = useZeroIdAuth();
 
   const { state: linkedAccountsState } = useLinkedAccounts();
+  
+  // Identity store setters for wallet login
+  const setRemoteAuthState = useIdentityStore((state) => state.setRemoteAuthState);
+  const setTierStatus = useIdentityStore((state) => state.setTierStatus);
+  const setCurrentUser = useIdentityStore((state) => state.setCurrentUser);
+  const setCurrentSession = useIdentityStore((state) => state.setCurrentSession);
 
   // Form state
   const [email, setEmail] = useState('');
@@ -80,9 +109,29 @@ export function LoginModal({ onClose, onShowRegister }: LoginModalProps) {
       // Success - close modal
       onClose();
     } catch (err) {
-      // Error is set in useZeroIdAuth hook, display it
-      const errorMsg = err instanceof Error ? err.message : 'Login failed';
-      setError(errorMsg);
+      console.error('[LoginModal] Email login error:', err);
+
+      // Handle specific error types
+      if (err instanceof ZidServerError) {
+        const reason = err.reason.toLowerCase();
+        if (reason.includes('internal_error')) {
+          setError('The ZERO ID server encountered an error. Please ensure the ZID server is running and try again.');
+          console.error('[LoginModal] ZID server internal error - check server logs for details');
+        } else if (reason.includes('invalid_credentials') || reason.includes('authentication_failed')) {
+          setError('Invalid email or password. Please check your credentials and try again.');
+        } else if (reason.includes('account_locked') || reason.includes('too_many_attempts')) {
+          setError('Account temporarily locked due to too many failed attempts. Please try again later.');
+        } else {
+          setError(`Server error: ${err.reason}`);
+        }
+      } else if (err instanceof ZidNetworkError) {
+        setError('Unable to reach the ZERO ID server. Please check your connection and ensure the server is running.');
+        console.error('[LoginModal] Network error:', err.message);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -98,27 +147,232 @@ export function LoginModal({ onClose, onShowRegister }: LoginModalProps) {
       // Success - close modal
       onClose();
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Machine key login failed';
-      setError(errorMsg);
+      console.error('[LoginModal] Machine key login error:', err);
+
+      // Handle specific error types
+      if (err instanceof ZidServerError) {
+        const reason = err.reason.toLowerCase();
+        if (reason.includes('internal_error')) {
+          setError('The ZERO ID server encountered an error. Please ensure the ZID server is running and try again.');
+        } else if (reason.includes('machine_not_registered') || reason.includes('not_found')) {
+          setError('This machine is not registered. Please enroll this machine first.');
+        } else {
+          setError(`Server error: ${err.reason}`);
+        }
+      } else if (err instanceof ZidNetworkError) {
+        setError('Unable to reach the ZERO ID server. Please check your connection and ensure the server is running.');
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Machine key login failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
   }, [loginWithMachineKey, onClose]);
 
-  // Build login providers (OAuth from linked accounts only)
+  // Handle wallet login (Ethereum/MetaMask flow)
+  // Uses direct POST to /v1/auth/login/wallet with client-constructed message
+  const handleWalletLogin = useCallback(
+    async (_walletType: WalletType) => {
+      // Check for Ethereum wallet (MetaMask)
+      if (!window.ethereum) {
+        setError('No Ethereum wallet detected. Please install MetaMask or another Web3 wallet.');
+        return;
+      }
+
+      // IMPORTANT: Call eth_requestAccounts FIRST, before any state updates!
+      // MetaMask requires this to be called synchronously in response to a user click.
+      let accounts: string[] | null = null;
+      try {
+        accounts = await window.ethereum.request<string[]>({
+          method: 'eth_requestAccounts',
+        });
+      } catch (err: unknown) {
+        const ethError = err as { code?: number; message?: string };
+        const errorCode = ethError?.code;
+        const errorMessage = (ethError?.message ?? '').toLowerCase();
+
+        if (errorCode === -32002 || errorMessage.includes('already pending')) {
+          setError('A wallet request is already pending. Please check MetaMask and approve or reject the pending request.');
+          return;
+        }
+        if (errorCode === 4001 || errorMessage.includes('user rejected') || errorMessage.includes('user denied')) {
+          setError('Wallet connection was rejected. Please try again.');
+          return;
+        }
+        if (errorMessage) {
+          setError(`Wallet error: ${ethError.message}`);
+          return;
+        }
+        throw err;
+      }
+
+      if (!accounts || accounts.length === 0) {
+        setError('No accounts returned from wallet. Please try again.');
+        return;
+      }
+
+      const address = accounts[0].toLowerCase();
+      console.log('[LoginModal] Connected wallet address:', address);
+
+      // Now we can set loading state - wallet is connected
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        // Step 1: Construct the login message with current timestamp
+        // Format: "Sign in to zid\nTimestamp: <unix_timestamp>\nWallet: <wallet_address>"
+        const timestamp = Math.floor(Date.now() / 1000);
+        const message = `Sign in to zid\nTimestamp: ${timestamp}\nWallet: ${address}`;
+
+        console.log('[LoginModal] Signing login message...');
+
+        // Step 2: Sign the message with MetaMask (EIP-191 personal_sign)
+        const signature = await window.ethereum.request<string>({
+          method: 'personal_sign',
+          params: [message, address],
+        });
+
+        if (!signature) {
+          throw new Error('Failed to sign message. Please try again.');
+        }
+
+        // Strip 0x prefix from signature - ZID server expects raw hex
+        const signatureHex = signature.startsWith('0x') ? signature.slice(2) : signature;
+
+        console.log('[LoginModal] Message signed, sending login request...');
+
+        // Step 3: POST to /v1/auth/login/wallet
+        const response = await fetch(`${DEFAULT_ZID_ENDPOINT}/v1/auth/login/wallet`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            wallet_address: address,
+            signature: signatureHex,
+            message: message,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.json().catch(() => ({}));
+          const errorMessage = errorBody?.error?.message || errorBody?.error || errorBody?.message;
+          
+          if (response.status === 401) {
+            throw new Error('Invalid signature. Please try again.');
+          } else if (response.status === 404) {
+            throw new Error('This wallet is not registered. Please create an account first.');
+          } else if (response.status === 400) {
+            throw new Error(errorMessage || 'Invalid request. The timestamp may have expired - please try again.');
+          } else {
+            throw new Error(errorMessage || `Login failed with status ${response.status}`);
+          }
+        }
+
+        const tokens: ZidTokens = await response.json();
+        console.log('[LoginModal] Wallet login successful');
+
+        // Step 4: Update identity store with the returned tokens
+        const expiresAt = new Date(tokens.expires_at).getTime();
+        setRemoteAuthState({
+          serverEndpoint: DEFAULT_ZID_ENDPOINT,
+          accessToken: tokens.access_token,
+          tokenExpiresAt: expiresAt,
+          refreshToken: tokens.refresh_token,
+          scopes: [],
+          sessionId: tokens.session_id,
+          machineId: tokens.machine_id,
+          loginType: 'wallet',
+          authIdentifier: address,
+        });
+
+        // Set tier status (wallet logins are managed tier)
+        setTierStatus({
+          tier: 'managed' as IdentityTier,
+          authMethodsCount: 1,
+          canUpgrade: true,
+          upgradeRequirements: ['Add second auth method'],
+        });
+
+        // Create user record
+        const odUserId = tokens.machine_id.replace(/-/g, '');
+        setCurrentUser({
+          id: odUserId,
+          displayName: `${address.slice(0, 6)}...${address.slice(-4)}`,
+          status: 'Active',
+          createdAt: Date.now(),
+          lastActiveAt: Date.now(),
+        });
+
+        // Create session record
+        setCurrentSession({
+          id: tokens.session_id.replace(/-/g, ''),
+          odUserId,
+          createdAt: Date.now(),
+          expiresAt,
+          capabilities: ['endpoint.read', 'endpoint.write'],
+          loginType: 'wallet',
+        });
+
+        // Success - close modal
+        onClose();
+      } catch (err) {
+        console.error('[LoginModal] Wallet login error:', err);
+
+        if (err instanceof TypeError && err.message.includes('fetch')) {
+          setError('Unable to reach the ZERO ID server. Please check your connection and ensure the server is running.');
+        } else if (err instanceof Error) {
+          const msg = err.message.toLowerCase();
+          if (msg.includes('user rejected') || msg.includes('user denied')) {
+            setError('Signature request was rejected. Please try again and sign the message to verify wallet ownership.');
+          } else if (msg.includes('already processing')) {
+            setError('A wallet request is already pending. Please check MetaMask.');
+          } else {
+            setError(err.message);
+          }
+        } else {
+          setError('Wallet login failed. Please try again.');
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [onClose, setRemoteAuthState, setTierStatus, setCurrentUser, setCurrentSession]
+  );
+
+  // Build login providers (wallet + OAuth from linked accounts)
   const loginProviders: LoginProvider[] = useMemo(() => {
-    const oauthCredentials = linkedAccountsState.credentials.filter((c) => c.type === 'oauth');
-    return oauthCredentials.map((cred) => ({
-      id: cred.identifier,
-      icon: getProviderIcon(cred.identifier),
-      label: `Continue with ${capitalize(cred.identifier)}`,
+    const providers: LoginProvider[] = [];
+
+    // Always show Ethereum wallet login option
+    providers.push({
+      id: 'ethereum',
+      icon: getProviderIcon('ethereum'),
+      label: 'Continue with Ethereum',
       onClick: async () => {
-        // TODO: Implement OAuth login flow
-        console.log(`[LoginModal] OAuth login with ${cred.identifier} - not yet implemented`);
-        setError(`OAuth login with ${capitalize(cred.identifier)} is not yet implemented`);
+        await handleWalletLogin('ethereum');
       },
-    }));
-  }, [linkedAccountsState.credentials]);
+    });
+
+    // Add OAuth providers from linked accounts
+    const oauthCredentials = linkedAccountsState.credentials.filter((c) => c.type === 'oauth');
+    oauthCredentials.forEach((cred) => {
+      providers.push({
+        id: cred.identifier,
+        icon: getProviderIcon(cred.identifier),
+        label: `Continue with ${capitalize(cred.identifier)}`,
+        onClick: async () => {
+          // TODO: Implement OAuth login flow
+          console.log(`[LoginModal] OAuth login with ${cred.identifier} - not yet implemented`);
+          setError(`OAuth login with ${capitalize(cred.identifier)} is not yet implemented`);
+        },
+      });
+    });
+
+    return providers;
+  }, [linkedAccountsState.credentials, handleWalletLogin]);
 
   // Click outside to close
   useEffect(() => {

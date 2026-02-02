@@ -8,6 +8,7 @@ import { useRef, useEffect, useState } from 'react';
 import { usePermissions, PermissionsProvider } from '../hooks/usePermissions';
 import { useWindowActions } from '../hooks/useWindows';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useWalletAccountWatcher } from '../hooks/useWalletAccountWatcher';
 import { PermissionDialog } from '../PermissionDialog';
 import { DesktopContextMenu } from '../DesktopContextMenu';
 import { useTheme } from '@cypher-asi/zui';
@@ -35,6 +36,9 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
 
   // Window actions (includes launchTerminal for spawning terminal with process)
   const { launchTerminal } = useWindowActions();
+
+  // Watch for wallet account changes - auto-disconnect ZID if wallet changes
+  useWalletAccountWatcher();
 
   // Ref to track current workspace info (updated by render loop in DesktopInner)
   const workspaceInfoRef = useRef<WorkspaceInfo | null>(null);

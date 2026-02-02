@@ -959,6 +959,13 @@ pub fn handle_init_wallet_result(
             }
         }
         Ok(success) => {
+            // Log raw response body for debugging server errors
+            if let Ok(body_str) = core::str::from_utf8(&success.body) {
+                syscall::debug(&format!(
+                    "IdentityService: Wallet init error response body: {}",
+                    body_str
+                ));
+            }
             let error = parse_zid_error_response(&success.body, success.status);
             syscall::debug(&format!(
                 "IdentityService: Wallet init failed with status {}: {:?}",

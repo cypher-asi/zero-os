@@ -190,10 +190,14 @@ export function formatUserId(userId: bigint | string | number): string {
   if (typeof userId === 'bigint') {
     value = userId;
   } else if (typeof userId === 'string') {
-    // Handle hex strings with 0x prefix
+    // Handle hex strings (with or without 0x prefix)
     if (userId.startsWith('0x')) {
       value = BigInt(userId);
+    } else if (/^[0-9a-fA-F]+$/.test(userId) && userId.length >= 16) {
+      // Looks like a hex string without prefix (16+ hex chars = 64+ bits)
+      value = BigInt('0x' + userId);
     } else {
+      // Treat as decimal string
       value = BigInt(userId);
     }
   } else {

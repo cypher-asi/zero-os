@@ -33,6 +33,9 @@ export { useZeroIdAuth } from './useZeroIdAuth';
 export { useTierStatus } from './useTierStatus';
 export type { UseTierStatusReturn } from './useTierStatus';
 
+// Wallet watcher hook (auto-disconnect on wallet change)
+export { useWalletAccountWatcher } from './useWalletAccountWatcher';
+
 // Desktop/window hooks
 export { useDesktops } from './useDesktops';
 export { useWindows } from './useWindows';

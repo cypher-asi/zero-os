@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Mail, Shield, User, ArrowLeft, Check } from 'lucide-react';
 import { useIdentityServiceClient } from '../../../hooks/useIdentityServiceClient';
 import type { RegistrationResult, OAuthProvider, WalletType, ZidTokens } from '@/client-services/identity/types';
+import { ZidServerError, ZidNetworkError } from '@/client-services/identity/errors';
 import { useIdentityStore, type IdentityTier } from '@/stores/identityStore';
 import styles from './RegisterWizard.module.css';
 // Import ethereum types for window.ethereum
@@ -161,8 +162,31 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
       // Move to success step
       setStep('complete');
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Registration failed';
-      setError(errorMsg);
+      console.error('[RegisterWizard] Email registration error:', err);
+
+      // Handle specific error types
+      if (err instanceof ZidServerError) {
+        const reason = err.reason.toLowerCase();
+        if (reason.includes('internal_error')) {
+          setError('The ZERO ID server encountered an error. Please ensure the ZID server is running and try again.');
+          console.error('[RegisterWizard] ZID server internal error - check server logs for details');
+        } else if (reason.includes('email_already_exists') || reason.includes('already registered')) {
+          setError('This email is already registered. Please log in or use a different email.');
+        } else if (reason.includes('invalid_email')) {
+          setError('Please enter a valid email address.');
+        } else if (reason.includes('weak_password') || reason.includes('password_too')) {
+          setError('Password does not meet requirements. Please use a stronger password.');
+        } else {
+          setError(`Server error: ${err.reason}`);
+        }
+      } else if (err instanceof ZidNetworkError) {
+        setError('Unable to reach the ZERO ID server. Please check your connection and ensure the server is running.');
+        console.error('[RegisterWizard] Network error:', err.message);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('Registration failed. Please try again.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -192,8 +216,22 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
             'Please use email registration for now.'
         );
       } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : 'OAuth registration failed';
-        setError(errorMsg);
+        console.error('[RegisterWizard] OAuth registration error:', err);
+
+        if (err instanceof ZidServerError) {
+          const reason = err.reason.toLowerCase();
+          if (reason.includes('internal_error')) {
+            setError('The ZERO ID server encountered an error. Please ensure the ZID server is running and try again.');
+          } else {
+            setError(`Server error: ${err.reason}`);
+          }
+        } else if (err instanceof ZidNetworkError) {
+          setError('Unable to reach the ZERO ID server. Please check your connection and ensure the server is running.');
+        } else if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError('OAuth registration failed. Please try again.');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -223,21 +261,55 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
         return;
       }
 
+      // IMPORTANT: Call eth_requestAccounts FIRST, before any state updates!
+      // MetaMask requires this to be called synchronously in response to a user click.
+      // If we set state first, the browser loses track of the "user gesture" and
+      // MetaMask won't open its popup (just shows notification badge instead).
+      let accounts: string[] | null = null;
+      try {
+        accounts = await window.ethereum.request<string[]>({
+          method: 'eth_requestAccounts',
+        });
+      } catch (err: unknown) {
+        // MetaMask errors are objects with code and message properties
+        const ethError = err as { code?: number; message?: string };
+        const errorCode = ethError?.code;
+        const errorMessage = (ethError?.message ?? '').toLowerCase();
+        
+        // Handle specific MetaMask error codes
+        // -32002: Request already pending
+        // 4001: User rejected the request
+        if (errorCode === -32002 || errorMessage.includes('already pending')) {
+          setError('A wallet request is already pending. Please check MetaMask and approve or reject the pending request.');
+          return;
+        }
+        if (errorCode === 4001 || errorMessage.includes('user rejected') || errorMessage.includes('user denied')) {
+          setError('Wallet connection was rejected. Please try again.');
+          return;
+        }
+        
+        // For other errors, show the message if available
+        if (errorMessage) {
+          setError(`Wallet error: ${ethError.message}`);
+          return;
+        }
+        
+        throw err;
+      }
+
+      if (!accounts || accounts.length === 0) {
+        setError('No accounts returned from wallet. Please try again.');
+        return;
+      }
+
+      const address = accounts[0].toLowerCase();
+      console.log('[RegisterWizard] Connected wallet address:', address);
+
+      // Now we can set loading state - wallet is connected
       setIsLoading(true);
       setError(null);
 
       try {
-        // Step 1: Request account access from MetaMask
-        const accounts = await window.ethereum.request<string[]>({
-          method: 'eth_requestAccounts',
-        });
-
-        if (!accounts || accounts.length === 0) {
-          throw new Error('No accounts returned from wallet. Please try again.');
-        }
-
-        const address = accounts[0].toLowerCase();
-        console.log('[RegisterWizard] Connected wallet address:', address);
 
         // Step 2: Get challenge from ZID server
         const challenge = await client.initiateWalletAuth(walletType, address, DEFAULT_ZID_ENDPOINT);
@@ -327,11 +399,28 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
       } catch (err) {
         console.error('[RegisterWizard] Wallet registration error:', err);
 
-        // Handle specific errors
-        if (err instanceof Error) {
+        // Handle specific error types
+        if (err instanceof ZidServerError) {
+          // Extract meaningful info from server errors
+          const reason = err.reason.toLowerCase();
+          if (reason.includes('internal_error')) {
+            setError('The ZERO ID server encountered an error. Please ensure the ZID server is running and try again.');
+            console.error('[RegisterWizard] ZID server internal error - check server logs for details');
+          } else if (reason.includes('rate_limit') || reason.includes('too_many')) {
+            setError('Too many requests. Please wait a moment and try again.');
+          } else if (reason.includes('maintenance') || reason.includes('unavailable')) {
+            setError('The ZERO ID server is temporarily unavailable. Please try again later.');
+          } else {
+            setError(`Server error: ${err.reason}`);
+          }
+        } else if (err instanceof ZidNetworkError) {
+          setError('Unable to reach the ZERO ID server. Please check your connection and ensure the server is running.');
+          console.error('[RegisterWizard] Network error:', err.message);
+        } else if (err instanceof Error) {
           const msg = err.message.toLowerCase();
           if (msg.includes('user rejected') || msg.includes('user denied')) {
-            setError('Request was rejected. Please try again.');
+            // This catches signature rejection (connection rejection is handled earlier)
+            setError('Signature request was rejected. Please try again and sign the message to verify wallet ownership.');
           } else if (msg.includes('already processing')) {
             setError('A wallet request is already pending. Please check MetaMask.');
           } else if (msg.includes('already linked') || msg.includes('already registered')) {
