@@ -28,4 +28,6 @@
 pub mod credentials;
 pub mod keys;
 pub mod preferences;
+pub mod registration;
 pub mod session;
+pub mod tier;

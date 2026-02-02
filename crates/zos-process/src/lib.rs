@@ -186,9 +186,9 @@ pub use syscalls::network::network_fetch_async;
 // Re-export all IPC modules for convenient access
 pub use zos_ipc::{
     console, diagnostics, identity_cred, identity_key, identity_machine, identity_perm,
-    identity_prefs, identity_query, identity_remote, identity_session, identity_user, identity_zid,
-    init, kernel, keystore, net, permission, pid, pm, revoke_reason, slots, storage, supervisor,
-    syscall_error, vfs_dir, vfs_file, vfs_meta, vfs_quota,
+    identity_prefs, identity_query, identity_reg, identity_remote, identity_session, identity_tier,
+    identity_user, identity_zid, init, kernel, keystore, net, permission, pid, pm, revoke_reason,
+    slots, storage, supervisor, syscall_error, vfs_dir, vfs_file, vfs_meta, vfs_quota,
 };
 
 /// Console input message tag - used by terminal for receiving keyboard input.

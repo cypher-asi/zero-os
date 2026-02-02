@@ -20,12 +20,13 @@ import {
   KeyRound,
   ChevronDown,
   ChevronRight,
+  Wallet,
 } from 'lucide-react';
 import { useZeroIdAuth } from '../../../hooks/useZeroIdAuth';
 import { useCopyToClipboard } from '../../../hooks/useCopyToClipboard';
 import { useMachineKeys } from '../../../hooks/useMachineKeys';
 import { usePanelDrillOptional } from '../context';
-import { formatLoginType, type LoginType } from '@/stores';
+import { formatLoginType, truncateMiddle, type LoginType } from '@/stores';
 import styles from './ZeroIdLoginPanel.module.css';
 
 /** Get the appropriate icon for a login type */
@@ -39,6 +40,8 @@ function getLoginTypeIcon(loginType: LoginType, size = 12) {
       return <Mail size={size} />;
     case 'oauth':
       return <Globe size={size} />;
+    case 'wallet':
+      return <Wallet size={size} />;
     case 'webauthn':
       return <Fingerprint size={size} />;
     case 'recovery':
@@ -198,6 +201,30 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
               )}
             </div>
           </div>
+
+          {remoteAuthState.authIdentifier && (
+            <div className={styles.infoItem}>
+              <div className={styles.infoLabel}>
+                {getLoginTypeIcon(remoteAuthState.loginType ?? 'email')}
+                <span>Identifier</span>
+              </div>
+              <div className={styles.infoValueWithCopy}>
+                <code className={styles.infoValueCode} title={remoteAuthState.authIdentifier}>
+                  {remoteAuthState.loginType === 'wallet'
+                    ? truncateMiddle(remoteAuthState.authIdentifier, 6, 4)
+                    : remoteAuthState.authIdentifier}
+                </code>
+                <Button
+                  variant={isCopied('auth-identifier') ? 'primary' : 'ghost'}
+                  size="xs"
+                  onClick={() => copy(remoteAuthState.authIdentifier!, 'auth-identifier')}
+                  className={styles.copyButton}
+                >
+                  {isCopied('auth-identifier') ? <Check size={12} /> : <Copy size={12} />}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className={styles.infoItem}>
             <div className={styles.infoLabel}>

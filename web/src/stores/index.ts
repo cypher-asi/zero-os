@@ -53,10 +53,12 @@ export {
   selectIsLoggedIn,
   selectUserById,
   selectRemoteAuthState,
+  selectTierStatus,
   formatUserId,
   getSessionTimeRemaining,
   isSessionExpired,
   formatLoginType,
+  truncateMiddle,
   type User,
   type Session,
   type UserId,
@@ -64,6 +66,8 @@ export {
   type UserStatus,
   type LoginType,
   type RemoteAuthState,
+  type TierStatus,
+  type IdentityTier,
 } from './identityStore';
 
 // Permission store

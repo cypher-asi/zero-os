@@ -788,6 +788,62 @@ pub mod identity_prefs {
     pub const MSG_SET_DEFAULT_MACHINE_KEY_RESPONSE: u32 = 0x7095;
 }
 
+/// Identity service messages - Registration (0x709A-0x70AF).
+///
+/// These messages handle managed identity registration flows
+/// including email/password, OAuth, and wallet authentication.
+pub mod identity_reg {
+    /// Register with email/password request.
+    /// Payload: JSON-serialized RegisterEmailRequest
+    pub const MSG_ZID_REGISTER_EMAIL: u32 = 0x709A;
+    /// Register with email/password response.
+    /// Payload: JSON-serialized RegisterEmailResponse
+    pub const MSG_ZID_REGISTER_EMAIL_RESPONSE: u32 = 0x709B;
+    /// Initiate OAuth flow request.
+    /// Payload: JSON-serialized InitOAuthRequest
+    pub const MSG_ZID_INIT_OAUTH: u32 = 0x709C;
+    /// Initiate OAuth flow response.
+    /// Payload: JSON-serialized InitOAuthResponse
+    pub const MSG_ZID_INIT_OAUTH_RESPONSE: u32 = 0x709D;
+    /// OAuth callback request.
+    /// Payload: JSON-serialized OAuthCallbackRequest
+    pub const MSG_ZID_OAUTH_CALLBACK: u32 = 0x709E;
+    /// OAuth callback response.
+    /// Payload: JSON-serialized OAuthCallbackResponse
+    pub const MSG_ZID_OAUTH_CALLBACK_RESPONSE: u32 = 0x709F;
+    /// Initiate wallet auth request.
+    /// Payload: JSON-serialized InitWalletAuthRequest
+    pub const MSG_ZID_INIT_WALLET: u32 = 0x70A0;
+    /// Initiate wallet auth response.
+    /// Payload: JSON-serialized InitWalletAuthResponse
+    pub const MSG_ZID_INIT_WALLET_RESPONSE: u32 = 0x70A1;
+    /// Verify wallet signature request.
+    /// Payload: JSON-serialized VerifyWalletRequest
+    pub const MSG_ZID_VERIFY_WALLET: u32 = 0x70A2;
+    /// Verify wallet signature response.
+    /// Payload: JSON-serialized VerifyWalletResponse
+    pub const MSG_ZID_VERIFY_WALLET_RESPONSE: u32 = 0x70A3;
+}
+
+/// Identity service messages - Tier/Upgrade (0x70B0-0x70BF).
+///
+/// These messages handle tier status queries and
+/// managed → self-sovereign identity upgrades.
+pub mod identity_tier {
+    /// Get tier status request.
+    /// Payload: JSON-serialized GetTierStatusRequest
+    pub const MSG_ZID_GET_TIER: u32 = 0x70B0;
+    /// Get tier status response.
+    /// Payload: JSON-serialized GetTierStatusResponse
+    pub const MSG_ZID_GET_TIER_RESPONSE: u32 = 0x70B1;
+    /// Upgrade to self-sovereign request.
+    /// Payload: JSON-serialized UpgradeToSelfSovereignRequest
+    pub const MSG_ZID_UPGRADE: u32 = 0x70B2;
+    /// Upgrade to self-sovereign response.
+    /// Payload: JSON-serialized UpgradeToSelfSovereignResponse
+    pub const MSG_ZID_UPGRADE_RESPONSE: u32 = 0x70B3;
+}
+
 // =============================================================================
 // VFS Service (0x8000 - 0x80FF)
 // =============================================================================

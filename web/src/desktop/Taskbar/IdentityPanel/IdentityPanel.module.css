@@ -12,6 +12,8 @@
   height: 100%; /* Fill the wrapper */
   display: flex;
   flex-direction: column;
+  /* Override PanelDrill's overflow:hidden to allow border-future pseudo-elements to render */
+  overflow: visible;
 }
 
 /* Content wrapper for the root panel content */

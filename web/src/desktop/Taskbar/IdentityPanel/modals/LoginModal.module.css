@@ -49,6 +49,21 @@
   gap: 8px;
 }
 
+.registerLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.registerButton {
+  padding: 0;
+  font-size: 14px;
+}
+
 .errorBox {
   position: absolute;
   top: 100%;

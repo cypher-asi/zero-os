@@ -29,6 +29,10 @@ export type { CredentialType, LinkedCredential, LinkedAccountsState, UseLinkedAc
 // ZID authentication hook
 export { useZeroIdAuth } from './useZeroIdAuth';
 
+// Tier status hook
+export { useTierStatus } from './useTierStatus';
+export type { UseTierStatusReturn } from './useTierStatus';
+
 // Desktop/window hooks
 export { useDesktops } from './useDesktops';
 export { useWindows } from './useWindows';

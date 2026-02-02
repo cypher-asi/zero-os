@@ -256,6 +256,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
           sessionId: tokens.session_id,
           machineId: tokens.machine_id,
           loginType: (tokens.login_type as RemoteAuthState['loginType']) ?? 'email',
+          authIdentifier: email, // Store the email address used for login
         };
 
         setRemoteAuthState(authState);

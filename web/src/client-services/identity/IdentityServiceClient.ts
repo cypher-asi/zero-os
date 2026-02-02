@@ -41,6 +41,20 @@ import {
   type SetDefaultMachineKeyResponse,
   type MachineKeyAndTokens,
   type CreateMachineKeyAndEnrollResponse,
+  // Registration and tier types
+  type OAuthProvider,
+  type WalletType,
+  type OAuthInitResponse,
+  type WalletChallenge,
+  type TierStatus,
+  type UpgradeRequest,
+  type RegistrationResult,
+  type RegisterEmailResponse,
+  type OAuthCallbackResponse,
+  type WalletInitResponse,
+  type WalletVerifyResponse,
+  type GetTierStatusResponse,
+  type UpgradeToSelfSovereignResponse,
 } from './types';
 
 import {
@@ -561,6 +575,219 @@ export class IdentityServiceClient {
     const response = await this.request<SetDefaultMachineKeyResponse>(MSG.SET_DEFAULT_MACHINE_KEY, {
       user_id: formatUserIdForRust(userId),
       machine_id: machineIdHex,
+    });
+    this.unwrapResult(response.result);
+  }
+
+  // ===========================================================================
+  // Registration Operations (Managed Identity)
+  // ===========================================================================
+
+  /**
+   * Register a new managed identity with email/password.
+   *
+   * Creates a new managed identity on the ZID server where the ISK is
+   * custodially managed. This is the simplest onboarding path.
+   *
+   * **Auto-login**: As of the new API, registration now returns auth tokens
+   * directly, eliminating the need for a separate login request. The caller
+   * should use the returned tokens to establish a session immediately.
+   *
+   * @param email - Email address for the new account
+   * @param password - Password (12+ characters recommended)
+   * @param zidEndpoint - ZID API endpoint (e.g., "https://api.zero-id.io")
+   * @returns RegistrationResult containing identity info + auth tokens for auto-login
+   * @throws {ZidEnrollmentFailedError} If email already registered
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async registerWithEmail(
+    email: string,
+    password: string,
+    zidEndpoint: string
+  ): Promise<RegistrationResult> {
+    const response = await this.request<RegisterEmailResponse>(MSG.ZID_REGISTER_EMAIL, {
+      email,
+      password,
+      zid_endpoint: zidEndpoint,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Initiate OAuth registration/login flow.
+   *
+   * Returns an authorization URL that the user should be redirected to.
+   * After the user authorizes, the OAuth provider will redirect back with
+   * an authorization code that should be passed to completeOAuth.
+   *
+   * @param provider - OAuth provider ('google', 'x', 'epic')
+   * @param zidEndpoint - ZID API endpoint
+   * @param redirectUri - Optional callback URL for the OAuth redirect
+   * @returns Object containing auth_url to redirect user to and state token
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async initiateOAuth(
+    provider: OAuthProvider,
+    zidEndpoint: string,
+    redirectUri?: string
+  ): Promise<{ authUrl: string; state: string }> {
+    const response = await this.request<OAuthInitResponse>(MSG.ZID_INIT_OAUTH, {
+      provider,
+      zid_endpoint: zidEndpoint,
+      redirect_uri: redirectUri ?? null,
+    });
+    const result = this.unwrapResult(response.result);
+    return { authUrl: result.auth_url, state: result.state };
+  }
+
+  /**
+   * Complete OAuth registration/login with authorization code.
+   *
+   * Called after the user returns from the OAuth provider with an
+   * authorization code.
+   *
+   * @param provider - OAuth provider ('google', 'x', 'epic')
+   * @param code - Authorization code from OAuth callback
+   * @param state - State token to verify (must match initiateOAuth state)
+   * @param zidEndpoint - ZID API endpoint
+   * @returns ZidTokens containing access and refresh tokens
+   * @throws {ZidAuthenticationFailedError} If OAuth verification fails
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async completeOAuth(
+    provider: OAuthProvider,
+    code: string,
+    state: string,
+    zidEndpoint: string
+  ): Promise<ZidTokens> {
+    const response = await this.request<OAuthCallbackResponse>(MSG.ZID_OAUTH_CALLBACK, {
+      provider,
+      code,
+      state,
+      zid_endpoint: zidEndpoint,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Initiate wallet-based registration/login.
+   *
+   * Returns a challenge message that the user's wallet should sign.
+   * After signing, pass the signature to verifyWalletAuth.
+   *
+   * @param walletType - Blockchain type ('ethereum', 'solana', etc.)
+   * @param address - Wallet address
+   * @param zidEndpoint - ZID API endpoint
+   * @returns WalletChallenge containing message to sign
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async initiateWalletAuth(
+    walletType: WalletType,
+    address: string,
+    zidEndpoint: string
+  ): Promise<WalletChallenge> {
+    const response = await this.request<WalletInitResponse>(MSG.ZID_INIT_WALLET, {
+      wallet_type: walletType,
+      address,
+      zid_endpoint: zidEndpoint,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Verify wallet signature to complete registration/login.
+   *
+   * @param challengeId - Challenge ID from initiateWalletAuth
+   * @param walletType - Blockchain type ('ethereum', 'solana', etc.)
+   * @param address - Wallet address
+   * @param signature - Signature over the challenge message
+   * @param zidEndpoint - ZID API endpoint
+   * @param namespaceName - Optional namespace name for the identity
+   * @returns ZidTokens containing access and refresh tokens
+   * @throws {ZidAuthenticationFailedError} If signature verification fails
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async verifyWalletAuth(
+    challengeId: string,
+    walletType: WalletType,
+    address: string,
+    signature: string,
+    zidEndpoint: string,
+    namespaceName?: string
+  ): Promise<ZidTokens> {
+    const response = await this.request<WalletVerifyResponse>(MSG.ZID_VERIFY_WALLET, {
+      challenge_id: challengeId,
+      wallet_type: walletType,
+      address,
+      signature,
+      namespace_name: namespaceName ?? null,
+      zid_endpoint: zidEndpoint,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  // ===========================================================================
+  // Tier Operations
+  // ===========================================================================
+
+  /**
+   * Get the current tier status for an identity.
+   *
+   * Returns information about whether this is a managed or self-sovereign
+   * identity, and what's required to upgrade if applicable.
+   *
+   * @param userId - User ID
+   * @param accessToken - JWT access token from ZID login
+   * @param zidEndpoint - ZID API endpoint
+   * @returns TierStatus containing tier info and upgrade requirements
+   * @throws {ZidUnauthorizedError} If access token is invalid
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async getTierStatus(
+    userId: bigint | string,
+    accessToken: string,
+    zidEndpoint: string
+  ): Promise<TierStatus> {
+    const response = await this.request<GetTierStatusResponse>(MSG.ZID_GET_TIER, {
+      user_id: formatUserIdForRust(userId),
+      access_token: accessToken,
+      zid_endpoint: zidEndpoint,
+    });
+    return this.unwrapResult(response.result);
+  }
+
+  /**
+   * Upgrade from managed to self-sovereign identity.
+   *
+   * This transitions a managed identity (where ZID holds the ISK) to a
+   * self-sovereign identity (where the user controls the ISK via Neural Key).
+   *
+   * Prerequisites:
+   * - Must have at least 2 auth methods linked
+   * - Must generate a Neural Key client-side first
+   * - Must sign the upgrade with the new ISK
+   *
+   * @param userId - User ID
+   * @param request - Upgrade request containing new ISK and signatures
+   * @param accessToken - JWT access token from ZID login
+   * @param zidEndpoint - ZID API endpoint
+   * @throws {ZidUnauthorizedError} If access token is invalid
+   * @throws {ZidUpgradeFailedError} If upgrade requirements not met
+   * @throws {ZidNetworkError} If network error occurs
+   */
+  async upgradeToSelfSovereign(
+    userId: bigint | string,
+    request: UpgradeRequest,
+    accessToken: string,
+    zidEndpoint: string
+  ): Promise<void> {
+    const response = await this.request<UpgradeToSelfSovereignResponse>(MSG.ZID_UPGRADE, {
+      user_id: formatUserIdForRust(userId),
+      new_isk_public: request.new_isk_public,
+      commitment: request.commitment,
+      upgrade_signature: request.upgrade_signature,
+      access_token: accessToken,
+      zid_endpoint: zidEndpoint,
     });
     this.unwrapResult(response.result);
   }

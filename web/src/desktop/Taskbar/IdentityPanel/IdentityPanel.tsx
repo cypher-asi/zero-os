@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { PanelDrill, type PanelDrillItem } from '@cypher-asi/zui';
 import { PanelDrillProvider } from './context';
 import { IdentityPanelContent } from './IdentityPanelContent';
-import { LoginModal } from './modals';
+import { LoginModal, RegisterWizard } from './modals';
 import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelProps {
@@ -13,8 +13,9 @@ interface IdentityPanelProps {
 export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Modal state for centered login
+  // Modal state for centered login and registration
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showRegisterWizard, setShowRegisterWizard] = useState(false);
 
   // Initialize stack with root item (content will be populated in useEffect)
   const [stack, setStack] = useState<PanelDrillItem[]>(() => [
@@ -39,6 +40,12 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
     setStack((prev) => prev.slice(0, index + 1));
   }, []);
 
+  // Handle switching from login to register
+  const handleShowRegisterFromLogin = useCallback(() => {
+    setShowLoginModal(false);
+    setShowRegisterWizard(true);
+  }, []);
+
   // Populate root panel content after mount (following SettingsApp pattern)
   useEffect(() => {
     setStack((prev) => {
@@ -50,6 +57,7 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
               <IdentityPanelContent
                 onClose={onClose}
                 onShowLoginModal={() => setShowLoginModal(true)}
+                onShowRegisterWizard={() => setShowRegisterWizard(true)}
                 onPushPanel={pushPanel}
               />
             ),
@@ -95,7 +103,23 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
       </PanelDrillProvider>
 
       {/* Centered Login Modal - Shows when not connected */}
-      {showLoginModal && <LoginModal onClose={() => setShowLoginModal(false)} />}
+      {showLoginModal && (
+        <LoginModal
+          onClose={() => setShowLoginModal(false)}
+          onShowRegister={handleShowRegisterFromLogin}
+        />
+      )}
+
+      {/* Registration Wizard Modal */}
+      {showRegisterWizard && (
+        <RegisterWizard
+          onClose={() => setShowRegisterWizard(false)}
+          onSelfSovereignSelected={() => {
+            // TODO: Navigate to Neural Key panel
+            setShowRegisterWizard(false);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -93,7 +93,8 @@ use pending::{PendingKeystoreOp, PendingNetworkOp, PendingStorageOp};
 use zos_apps::syscall;
 use zos_apps::{AppContext, AppError, AppManifest, ControlFlow, Message, ZeroApp};
 use zos_process::{
-    identity_cred, identity_key, identity_machine, identity_prefs, identity_zid, net,
+    identity_cred, identity_key, identity_machine, identity_prefs, identity_reg, identity_tier,
+    identity_zid, net,
 };
 use zos_vfs::async_client;
 use zos_vfs::client::keystore_async;
@@ -230,6 +231,27 @@ impl ZeroApp for IdentityService {
             }
             identity_prefs::MSG_SET_DEFAULT_MACHINE_KEY => {
                 handlers::preferences::handle_set_default_machine_key(self, &msg)
+            }
+            // Registration handlers
+            identity_reg::MSG_ZID_REGISTER_EMAIL => {
+                handlers::registration::handle_register_email(self, &msg)
+            }
+            identity_reg::MSG_ZID_INIT_OAUTH => {
+                handlers::registration::handle_init_oauth(self, &msg)
+            }
+            identity_reg::MSG_ZID_OAUTH_CALLBACK => {
+                handlers::registration::handle_oauth_callback(self, &msg)
+            }
+            identity_reg::MSG_ZID_INIT_WALLET => {
+                handlers::registration::handle_init_wallet(self, &msg)
+            }
+            identity_reg::MSG_ZID_VERIFY_WALLET => {
+                handlers::registration::handle_verify_wallet(self, &msg)
+            }
+            // Tier handlers
+            identity_tier::MSG_ZID_GET_TIER => handlers::tier::handle_get_tier_status(self, &msg),
+            identity_tier::MSG_ZID_UPGRADE => {
+                handlers::tier::handle_upgrade_to_self_sovereign(self, &msg)
             }
             net::MSG_NET_RESULT => self.handle_net_result(&msg),
             _ => {

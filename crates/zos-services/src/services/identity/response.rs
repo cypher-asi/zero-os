@@ -722,3 +722,241 @@ pub fn send_create_machine_key_and_enroll_error(
 ) -> Result<(), AppError> {
     send_create_machine_key_and_enroll_response(client_pid, cap_slots, Err(error))
 }
+
+// =============================================================================
+// Registration responses
+// =============================================================================
+
+/// Send register email response (success or error).
+pub fn send_register_email_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<zos_identity::ipc::RegistrationResult, ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::RegisterEmailResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_reg::MSG_ZID_REGISTER_EMAIL_RESPONSE,
+        &response,
+    )
+}
+
+/// Send register email success response.
+pub fn send_register_email_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: zos_identity::ipc::RegistrationResult,
+) -> Result<(), AppError> {
+    send_register_email_response(client_pid, cap_slots, Ok(result))
+}
+
+/// Send register email error response.
+pub fn send_register_email_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_register_email_response(client_pid, cap_slots, Err(error))
+}
+
+/// Send init OAuth response (success or error).
+pub fn send_init_oauth_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<zos_identity::ipc::OAuthInitResult, ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::InitOAuthResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_reg::MSG_ZID_INIT_OAUTH_RESPONSE,
+        &response,
+    )
+}
+
+/// Send init OAuth success response.
+pub fn send_init_oauth_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: zos_identity::ipc::OAuthInitResult,
+) -> Result<(), AppError> {
+    send_init_oauth_response(client_pid, cap_slots, Ok(result))
+}
+
+/// Send init OAuth error response.
+pub fn send_init_oauth_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_init_oauth_response(client_pid, cap_slots, Err(error))
+}
+
+/// Send OAuth callback response (success or error).
+pub fn send_oauth_callback_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<zos_identity::ipc::ZidTokens, ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::OAuthCallbackResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_reg::MSG_ZID_OAUTH_CALLBACK_RESPONSE,
+        &response,
+    )
+}
+
+/// Send OAuth callback success response.
+pub fn send_oauth_callback_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+    tokens: zos_identity::ipc::ZidTokens,
+) -> Result<(), AppError> {
+    send_oauth_callback_response(client_pid, cap_slots, Ok(tokens))
+}
+
+/// Send OAuth callback error response.
+pub fn send_oauth_callback_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_oauth_callback_response(client_pid, cap_slots, Err(error))
+}
+
+/// Send init wallet response (success or error).
+pub fn send_init_wallet_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<zos_identity::ipc::WalletChallenge, ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::InitWalletAuthResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_reg::MSG_ZID_INIT_WALLET_RESPONSE,
+        &response,
+    )
+}
+
+/// Send init wallet success response.
+pub fn send_init_wallet_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+    challenge: zos_identity::ipc::WalletChallenge,
+) -> Result<(), AppError> {
+    send_init_wallet_response(client_pid, cap_slots, Ok(challenge))
+}
+
+/// Send init wallet error response.
+pub fn send_init_wallet_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_init_wallet_response(client_pid, cap_slots, Err(error))
+}
+
+/// Send verify wallet response (success or error).
+pub fn send_verify_wallet_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<zos_identity::ipc::ZidTokens, ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::VerifyWalletResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_reg::MSG_ZID_VERIFY_WALLET_RESPONSE,
+        &response,
+    )
+}
+
+/// Send verify wallet success response.
+pub fn send_verify_wallet_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+    tokens: zos_identity::ipc::ZidTokens,
+) -> Result<(), AppError> {
+    send_verify_wallet_response(client_pid, cap_slots, Ok(tokens))
+}
+
+/// Send verify wallet error response.
+pub fn send_verify_wallet_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_verify_wallet_response(client_pid, cap_slots, Err(error))
+}
+
+// =============================================================================
+// Tier responses
+// =============================================================================
+
+/// Send get tier status response (success or error).
+pub fn send_get_tier_status_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<zos_identity::ipc::TierStatus, ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::GetTierStatusResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_tier::MSG_ZID_GET_TIER_RESPONSE,
+        &response,
+    )
+}
+
+/// Send get tier status success response.
+pub fn send_get_tier_status_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+    status: zos_identity::ipc::TierStatus,
+) -> Result<(), AppError> {
+    send_get_tier_status_response(client_pid, cap_slots, Ok(status))
+}
+
+/// Send get tier status error response.
+pub fn send_get_tier_status_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_get_tier_status_response(client_pid, cap_slots, Err(error))
+}
+
+/// Send upgrade to self-sovereign response (success or error).
+pub fn send_upgrade_to_self_sovereign_response(
+    client_pid: u32,
+    cap_slots: &[u32],
+    result: Result<(), ZidError>,
+) -> Result<(), AppError> {
+    let response = zos_identity::ipc::UpgradeToSelfSovereignResponse { result };
+    send_response_to_pid(
+        client_pid,
+        cap_slots,
+        zos_process::identity_tier::MSG_ZID_UPGRADE_RESPONSE,
+        &response,
+    )
+}
+
+/// Send upgrade to self-sovereign success response.
+pub fn send_upgrade_to_self_sovereign_success(
+    client_pid: u32,
+    cap_slots: &[u32],
+) -> Result<(), AppError> {
+    send_upgrade_to_self_sovereign_response(client_pid, cap_slots, Ok(()))
+}
+
+/// Send upgrade to self-sovereign error response.
+pub fn send_upgrade_to_self_sovereign_error(
+    client_pid: u32,
+    cap_slots: &[u32],
+    error: ZidError,
+) -> Result<(), AppError> {
+    send_upgrade_to_self_sovereign_response(client_pid, cap_slots, Err(error))
+}

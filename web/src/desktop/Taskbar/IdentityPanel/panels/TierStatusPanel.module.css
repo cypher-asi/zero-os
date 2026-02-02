@@ -1,0 +1,231 @@
+/* Tier Status Panel Styles */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 280px;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.tierCard {
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.tierHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tierIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.tierIconManaged {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+}
+
+.tierIconSelfSovereign {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+.tierInfo {
+  flex: 1;
+}
+
+.tierTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #fff);
+  margin: 0 0 4px 0;
+}
+
+.tierDescription {
+  font-size: 13px;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+  margin: 0;
+}
+
+/* Stats */
+.stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.stat {
+  flex: 1;
+  background: var(--color-surface-3, rgba(255, 255, 255, 0.03));
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.statValue {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-primary, #fff);
+}
+
+.statLabel {
+  font-size: 11px;
+  color: var(--color-text-tertiary, rgba(255, 255, 255, 0.4));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+/* Upgrade section */
+.upgradeSection {
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.upgradeSectionDisabled {
+  opacity: 0.6;
+}
+
+.upgradeHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.upgradeTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary, #fff);
+  margin: 0;
+}
+
+.upgradeDescription {
+  font-size: 13px;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+}
+
+.requirementsList {
+  margin: 0 0 12px 0;
+  padding: 0 0 0 20px;
+}
+
+.requirementItem {
+  font-size: 12px;
+  color: var(--color-text-tertiary, rgba(255, 255, 255, 0.5));
+  margin-bottom: 4px;
+}
+
+.requirementMet {
+  color: #22c55e;
+}
+
+.upgradeButton {
+  width: 100%;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.upgradeButton:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.upgradeButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Self-Sovereign badge */
+.tierBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 20px;
+  color: #22c55e;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Loading state */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+}
+
+/* Error state */
+.error {
+  padding: 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+  color: #ef4444;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Not connected state */
+.notConnected {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.notConnectedIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--color-surface-2, rgba(255, 255, 255, 0.05));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary, rgba(255, 255, 255, 0.4));
+  margin-bottom: 16px;
+}
+
+.notConnectedText {
+  font-size: 14px;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+  margin: 0;
+}

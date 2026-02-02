@@ -31,6 +31,8 @@ export interface RemoteAuthState {
   machineId: string;
   /** How the ZERO ID session was authenticated */
   loginType?: LoginType;
+  /** The actual identifier used for authentication (email address, machine key name, OAuth provider, etc.) */
+  authIdentifier?: string;
 }
 
 // =============================================================================
@@ -52,8 +54,20 @@ export type LoginType =
   | 'neural_key'
   | 'email'
   | 'oauth'
+  | 'wallet'
   | 'webauthn'
   | 'recovery';
+
+/** Identity tier */
+export type IdentityTier = 'managed' | 'self_sovereign';
+
+/** Tier status from ZID */
+export interface TierStatus {
+  tier: IdentityTier;
+  authMethodsCount: number;
+  canUpgrade: boolean;
+  upgradeRequirements: string[];
+}
 
 /** User information */
 export interface User {
@@ -89,6 +103,9 @@ interface IdentityStoreState {
   // ZERO ID remote auth state (shared across all consumers)
   remoteAuthState: RemoteAuthState | null;
 
+  // Tier status (for managed vs self-sovereign identity)
+  tierStatus: TierStatus | null;
+
   // Actions
   setCurrentUser: (user: User | null) => void;
   setCurrentSession: (session: Session | null) => void;
@@ -96,6 +113,7 @@ interface IdentityStoreState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setRemoteAuthState: (state: RemoteAuthState | null) => void;
+  setTierStatus: (status: TierStatus | null) => void;
 
   // Async actions (will call supervisor when integrated)
   login: (userId: UserId, loginType?: LoginType) => Promise<void>;
@@ -140,6 +158,7 @@ export const useIdentityStore = create<IdentityStoreState>()(
         isLoading: false,
         error: null,
         remoteAuthState: null,
+        tierStatus: null,
 
         setCurrentUser: (currentUser) => set({ currentUser }),
         setCurrentSession: (currentSession) => set({ currentSession }),
@@ -147,6 +166,7 @@ export const useIdentityStore = create<IdentityStoreState>()(
         setLoading: (isLoading) => set({ isLoading }),
         setError: (error) => set({ error }),
         setRemoteAuthState: (remoteAuthState) => set({ remoteAuthState }),
+        setTierStatus: (tierStatus) => set({ tierStatus }),
 
         login: async (userId, loginType: LoginType = 'machine_key') => {
           set({ isLoading: true, error: null });
@@ -288,6 +308,9 @@ export const selectIsLoggedIn = (state: IdentityStoreState) =>
 /** Select remote auth state (ZERO ID) */
 export const selectRemoteAuthState = (state: IdentityStoreState) => state.remoteAuthState;
 
+/** Select tier status */
+export const selectTierStatus = (state: IdentityStoreState) => state.tierStatus;
+
 /** Select user by ID */
 export const selectUserById = (id: UserId) => (state: IdentityStoreState) =>
   state.users.find((u) => u.id === id);
@@ -330,7 +353,9 @@ export function formatLoginType(loginType: LoginType): string {
     case 'email':
       return 'Email';
     case 'oauth':
-      return 'Third Party';
+      return 'OAuth';
+    case 'wallet':
+      return 'EVM Wallet';
     case 'webauthn':
       return 'Passkey';
     case 'recovery':
@@ -338,4 +363,12 @@ export function formatLoginType(loginType: LoginType): string {
     default:
       return loginType;
   }
+}
+
+/** Truncate an address/string with ellipsis in the middle */
+export function truncateMiddle(str: string, startChars = 6, endChars = 4): string {
+  if (str.length <= startChars + endChars + 3) {
+    return str;
+  }
+  return `${str.slice(0, startChars)}...${str.slice(-endChars)}`;
 }

@@ -1,6 +1,6 @@
 import { useCallback, type ReactNode } from 'react';
 import { Menu, type MenuItem, Avatar, type PanelDrillItem } from '@cypher-asi/zui';
-import { Info, Layers, User, Lock, LogOut, Clock, Brain, Cpu, Link } from 'lucide-react';
+import { Info, Layers, User, Lock, LogOut, Clock, Brain, Cpu, Link, Shield } from 'lucide-react';
 import {
   useIdentityStore,
   selectCurrentUser,
@@ -10,14 +10,16 @@ import {
   useSettingsStore,
 } from '@/stores';
 import { useZeroIdAuth } from '../../hooks/useZeroIdAuth';
+import { useTierStatus } from '../../hooks/useTierStatus';
 import { useWindowActions } from '../../hooks/useWindows';
 import { usePanelDrillOptional } from './context';
-import { ZeroIdLoginPanel } from './panels/ZeroIdLoginPanel';
+import { ZeroIdLoginPanel, TierStatusPanel } from './panels';
 import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelContentProps {
   onClose: () => void;
   onShowLoginModal: () => void;
+  onShowRegisterWizard?: () => void;
   /** Optional push panel function for standalone use (fallback if not in PanelDrillProvider) */
   onPushPanel?: (item: PanelDrillItem) => void;
 }
@@ -31,6 +33,7 @@ interface IdentityPanelContentProps {
 export function IdentityPanelContent({
   onClose,
   onShowLoginModal,
+  onShowRegisterWizard,
   onPushPanel,
 }: IdentityPanelContentProps) {
   // Use Zustand store directly for better performance
@@ -39,6 +42,7 @@ export function IdentityPanelContent({
   const currentSession = useIdentityStore(selectCurrentSession);
 
   const { remoteAuthState, disconnect: disconnectZeroId } = useZeroIdAuth();
+  const { tierStatus } = useTierStatus();
   const { launchOrFocusApp } = useWindowActions();
   const setPendingNavigation = useSettingsStore((state) => state.setPendingNavigation);
 
@@ -106,6 +110,23 @@ export function IdentityPanelContent({
           }
           break;
 
+        case 'tier-status':
+          subPanelLabel = 'Identity Tier';
+          subPanelContent = (
+            <TierStatusPanel
+              key="tier-status"
+              onUpgradeClick={() => {
+                // Navigate to Settings > Identity > Neural Key for upgrade
+                openIdentitySettings('neural-key');
+              }}
+            />
+          );
+          break;
+
+        case 'create-account':
+          onShowRegisterWizard?.();
+          return;
+
         case 'logout':
           try {
             // Disconnect from ZERO ID if connected (remote session only)
@@ -140,15 +161,29 @@ export function IdentityPanelContent({
       openIdentitySettings,
       pushPanel,
       onShowLoginModal,
+      onShowRegisterWizard,
     ]
   );
 
   // Dynamic nav items based on ZERO ID connection state
+  const tierLabel = tierStatus
+    ? tierStatus.tier === 'self_sovereign'
+      ? 'Self-Sovereign'
+      : 'Managed'
+    : 'Identity Tier';
+
   const navItems: MenuItem[] = [
     // Identity settings shortcuts (open Settings > Identity)
     { id: 'neural-key', label: 'Neural Key', icon: <Brain size={14} /> },
     { id: 'machine-keys', label: 'Machine Keys', icon: <Cpu size={14} /> },
     { id: 'linked-accounts', label: 'Linked Accounts', icon: <Link size={14} /> },
+    // Tier status (shows current tier when connected)
+    {
+      id: 'tier-status',
+      label: tierLabel,
+      icon: <Shield size={14} />,
+      disabled: !isZeroIdConnected,
+    },
     { id: 'vault', label: 'Vault', icon: <Lock size={14} />, disabled: true },
     { id: 'information', label: 'Information', icon: <Info size={14} />, disabled: true },
     { type: 'separator' },
@@ -163,6 +198,10 @@ export function IdentityPanelContent({
         <User size={14} />
       ),
     },
+    // Show "Create Account" only when not connected
+    ...(!isZeroIdConnected && onShowRegisterWizard
+      ? [{ id: 'create-account', label: 'Create Account', icon: <User size={14} /> }]
+      : []),
     { type: 'separator' },
     { id: 'logout', label: 'Logout', icon: <LogOut size={14} /> },
   ];

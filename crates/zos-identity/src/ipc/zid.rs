@@ -363,6 +363,241 @@ pub struct ZidEmailLoginResponse {
 }
 
 // ============================================================================
+// Registration Types (Managed Identity)
+// ============================================================================
+
+/// OAuth provider types
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OAuthProvider {
+    Google,
+    X,
+    Epic,
+}
+
+/// Wallet types for Web3 auth
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WalletType {
+    Ethereum,
+    Polygon,
+    Arbitrum,
+    Base,
+    Solana,
+}
+
+/// Register with email/password request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegisterEmailRequest {
+    /// Email address
+    pub email: String,
+    /// Password
+    pub password: String,
+    /// ZID API endpoint
+    pub zid_endpoint: String,
+}
+
+/// Registration result from ZID server (identity created + auto-login tokens).
+///
+/// As of the new API, registration endpoints now return auth tokens directly,
+/// eliminating the need for a separate login request after registration.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegistrationResult {
+    /// The created identity ID
+    pub identity_id: String,
+    /// Machine ID assigned by server
+    pub machine_id: String,
+    /// Namespace ID (usually same as identity_id)
+    #[serde(default)]
+    pub namespace_id: Option<String>,
+    /// Identity tier (managed or self_sovereign)
+    pub tier: String,
+    /// JWT access token for API calls (auto-login)
+    pub access_token: String,
+    /// Refresh token for obtaining new access tokens
+    pub refresh_token: String,
+    /// Unique session identifier
+    pub session_id: String,
+    /// When the access token expires (RFC3339 timestamp)
+    pub expires_at: String,
+    /// Optional warning message (e.g., upgrade recommendations)
+    #[serde(default)]
+    pub warning: Option<String>,
+}
+
+/// Register with email/password response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RegisterEmailResponse {
+    pub result: Result<RegistrationResult, ZidError>,
+}
+
+/// Initiate OAuth flow request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InitOAuthRequest {
+    /// OAuth provider
+    pub provider: OAuthProvider,
+    /// ZID API endpoint
+    pub zid_endpoint: String,
+    /// Redirect URI for callback
+    pub redirect_uri: Option<String>,
+}
+
+/// Initiate OAuth flow response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InitOAuthResponse {
+    pub result: Result<OAuthInitResult, ZidError>,
+}
+
+/// OAuth initiation result
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OAuthInitResult {
+    /// URL to redirect user to for OAuth
+    pub auth_url: String,
+    /// State token to verify callback
+    pub state: String,
+}
+
+/// OAuth callback request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OAuthCallbackRequest {
+    /// OAuth provider
+    pub provider: OAuthProvider,
+    /// Authorization code
+    pub code: String,
+    /// State token to verify
+    pub state: String,
+    /// ZID API endpoint
+    pub zid_endpoint: String,
+}
+
+/// OAuth callback response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OAuthCallbackResponse {
+    pub result: Result<ZidTokens, ZidError>,
+}
+
+/// Initiate wallet auth request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InitWalletAuthRequest {
+    /// Wallet type
+    pub wallet_type: WalletType,
+    /// Wallet address
+    pub address: String,
+    /// ZID API endpoint
+    pub zid_endpoint: String,
+}
+
+/// Initiate wallet auth response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InitWalletAuthResponse {
+    pub result: Result<WalletChallenge, ZidError>,
+}
+
+/// Wallet challenge for signing
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WalletChallenge {
+    /// Challenge ID
+    pub challenge_id: String,
+    /// Message to sign (field name from ZID server is "message_to_sign")
+    #[serde(alias = "message_to_sign")]
+    pub message: String,
+}
+
+/// Verify wallet signature request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VerifyWalletRequest {
+    /// Challenge ID
+    pub challenge_id: String,
+    /// Wallet type (ethereum, solana, etc.)
+    pub wallet_type: WalletType,
+    /// Wallet address
+    pub address: String,
+    /// Signature over the challenge message
+    pub signature: String,
+    /// Optional namespace name for the identity
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub namespace_name: Option<String>,
+    /// ZID API endpoint
+    pub zid_endpoint: String,
+}
+
+/// Verify wallet signature response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct VerifyWalletResponse {
+    pub result: Result<ZidTokens, ZidError>,
+}
+
+// ============================================================================
+// Tier System Types
+// ============================================================================
+
+/// Identity tier
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IdentityTier {
+    /// Managed identity (ZID server holds ISK)
+    #[default]
+    Managed,
+    /// Self-sovereign identity (user holds ISK via Neural Key)
+    SelfSovereign,
+}
+
+/// Tier status from ZID
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TierStatus {
+    /// Current identity tier
+    pub tier: IdentityTier,
+    /// Number of auth methods linked
+    pub auth_methods_count: u32,
+    /// Whether the identity can upgrade to self-sovereign
+    pub can_upgrade: bool,
+    /// Requirements not yet met for upgrade
+    pub upgrade_requirements: Vec<String>,
+}
+
+/// Get tier status request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetTierStatusRequest {
+    /// User ID
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    /// Access token for ZID API
+    pub access_token: String,
+    /// ZID API endpoint
+    pub zid_endpoint: String,
+}
+
+/// Get tier status response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetTierStatusResponse {
+    pub result: Result<TierStatus, ZidError>,
+}
+
+/// Upgrade to self-sovereign request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UpgradeToSelfSovereignRequest {
+    /// User ID
+    #[serde(with = "u128_hex_string")]
+    pub user_id: UserId,
+    /// New ISK public key (hex encoded)
+    pub new_isk_public: String,
+    /// Commitment hash (hex encoded)
+    pub commitment: String,
+    /// Signature over upgrade message (hex encoded)
+    pub upgrade_signature: String,
+    /// Access token for ZID API
+    pub access_token: String,
+    /// ZID API endpoint
+    pub zid_endpoint: String,
+}
+
+/// Upgrade to self-sovereign response.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UpgradeToSelfSovereignResponse {
+    pub result: Result<(), ZidError>,
+}
+
+// ============================================================================
 // ZID Server Enrollment Types (sent to ZID server)
 // ============================================================================
 

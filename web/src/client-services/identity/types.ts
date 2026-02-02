@@ -60,6 +60,22 @@ export const MSG = {
   // ZID Email Login
   ZID_LOGIN_EMAIL: 0x7088,
   ZID_LOGIN_EMAIL_RESPONSE: 0x7089,
+  // Registration (0x709A-0x70AF)
+  ZID_REGISTER_EMAIL: 0x709a,
+  ZID_REGISTER_EMAIL_RESPONSE: 0x709b,
+  ZID_INIT_OAUTH: 0x709c,
+  ZID_INIT_OAUTH_RESPONSE: 0x709d,
+  ZID_OAUTH_CALLBACK: 0x709e,
+  ZID_OAUTH_CALLBACK_RESPONSE: 0x709f,
+  ZID_INIT_WALLET: 0x70a0,
+  ZID_INIT_WALLET_RESPONSE: 0x70a1,
+  ZID_VERIFY_WALLET: 0x70a2,
+  ZID_VERIFY_WALLET_RESPONSE: 0x70a3,
+  // Tier/Upgrade (0x70B0-0x70BF)
+  ZID_GET_TIER: 0x70b0,
+  ZID_GET_TIER_RESPONSE: 0x70b1,
+  ZID_UPGRADE: 0x70b2,
+  ZID_UPGRADE_RESPONSE: 0x70b3,
 } as const;
 
 // =============================================================================
@@ -351,6 +367,112 @@ export interface MachineKeyAndTokens {
 /** Create machine key and enroll response */
 export interface CreateMachineKeyAndEnrollResponse {
   result: Result<MachineKeyAndTokens>;
+}
+
+// =============================================================================
+// Tier System Types
+// =============================================================================
+
+/** Identity tier */
+export type IdentityTier = 'managed' | 'self_sovereign';
+
+/** Tier status response from ZID */
+export interface TierStatus {
+  tier: IdentityTier;
+  auth_methods_count: number;
+  can_upgrade: boolean;
+  upgrade_requirements: string[];
+}
+
+/** OAuth provider types */
+export type OAuthProvider = 'google' | 'x' | 'epic';
+
+/** Wallet types for Web3 auth */
+export type WalletType = 'ethereum' | 'polygon' | 'arbitrum' | 'base' | 'solana';
+
+/** Registration method discriminator */
+export type RegistrationMethod =
+  | { type: 'email'; email: string; password: string }
+  | { type: 'oauth'; provider: OAuthProvider }
+  | { type: 'wallet'; walletType: WalletType; address: string }
+  | { type: 'self_sovereign' };
+
+/** Wallet challenge for signing */
+export interface WalletChallenge {
+  challenge_id: string;
+  /** Message to sign (may come as "message_to_sign" from server) */
+  message?: string;
+  message_to_sign?: string;
+}
+
+/** Upgrade request payload */
+export interface UpgradeRequest {
+  new_isk_public: string;
+  commitment: string;
+  upgrade_signature: string;
+}
+
+/** OAuth initiation response */
+export interface OAuthInitResponse {
+  auth_url: string;
+  state: string;
+}
+
+/**
+ * Registration result from ZID server (identity created + auto-login tokens).
+ *
+ * As of the new API, registration endpoints now return auth tokens directly,
+ * eliminating the need for a separate login request after registration.
+ */
+export interface RegistrationResult {
+  /** The created identity ID */
+  identity_id: string;
+  /** Machine ID assigned by server */
+  machine_id: string;
+  /** Namespace ID (usually same as identity_id) */
+  namespace_id?: string;
+  /** Identity tier (managed or self_sovereign) */
+  tier: string;
+  /** JWT access token for API calls (auto-login) */
+  access_token: string;
+  /** Refresh token for obtaining new access tokens */
+  refresh_token: string;
+  /** Unique session identifier */
+  session_id: string;
+  /** When the access token expires (RFC3339 timestamp) */
+  expires_at: string;
+  /** Optional warning message (e.g., upgrade recommendations) */
+  warning?: string;
+}
+
+/** Register email response */
+export interface RegisterEmailResponse {
+  result: Result<RegistrationResult>;
+}
+
+/** OAuth callback response */
+export interface OAuthCallbackResponse {
+  result: Result<ZidTokens>;
+}
+
+/** Wallet init response */
+export interface WalletInitResponse {
+  result: Result<WalletChallenge>;
+}
+
+/** Wallet verify response */
+export interface WalletVerifyResponse {
+  result: Result<ZidTokens>;
+}
+
+/** Get tier status response */
+export interface GetTierStatusResponse {
+  result: Result<TierStatus>;
+}
+
+/** Upgrade to self-sovereign response */
+export interface UpgradeToSelfSovereignResponse {
+  result: Result<void>;
 }
 
 // =============================================================================

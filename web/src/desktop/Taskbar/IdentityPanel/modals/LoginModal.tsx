@@ -7,6 +7,7 @@ import styles from './LoginModal.module.css';
 
 interface LoginModalProps {
   onClose: () => void;
+  onShowRegister?: () => void;
 }
 
 /**
@@ -49,7 +50,7 @@ function capitalize(str: string): string {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-export function LoginModal({ onClose }: LoginModalProps) {
+export function LoginModal({ onClose, onShowRegister }: LoginModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -169,15 +170,32 @@ export function LoginModal({ onClose }: LoginModalProps) {
             loginProviders={loginProviders}
             error={displayError}
             bottomContent={
-              <Button
-                variant="ghost"
-                onClick={handleMachineKeyLogin}
-                disabled={isAnyLoading}
-                className={styles.machineKeyButton}
-              >
-                <Key size={16} />
-                Login with Machine Key
-              </Button>
+              <>
+                <Button
+                  variant="ghost"
+                  onClick={handleMachineKeyLogin}
+                  disabled={isAnyLoading}
+                  className={styles.machineKeyButton}
+                >
+                  <Key size={16} />
+                  Login with Machine Key
+                </Button>
+                {onShowRegister && (
+                  <div className={styles.registerLink}>
+                    <Text size="sm" variant="secondary">
+                      Don't have an account?
+                    </Text>
+                    <Button
+                      variant="link"
+                      onClick={onShowRegister}
+                      disabled={isAnyLoading}
+                      className={styles.registerButton}
+                    >
+                      Create Account
+                    </Button>
+                  </div>
+                )}
+              </>
             }
           />
         </div>

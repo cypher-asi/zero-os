@@ -486,6 +486,349 @@ impl IdentityService {
                     _ => Ok(()),
                 }
             }
+            // Registration operations
+            PendingNetworkOp::RegisterEmail {
+                ctx,
+                email,
+                zid_endpoint,
+            } => {
+                match network_handlers::handle_register_email_result(
+                    ctx.client_pid,
+                    email,
+                    zid_endpoint,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueRegisterEmail {
+                        client_pid,
+                        register_response,
+                        cap_slots,
+                    } => Self::continue_register_email(client_pid, register_response, cap_slots),
+                    _ => Ok(()),
+                }
+            }
+            PendingNetworkOp::InitOAuth {
+                ctx,
+                provider,
+                zid_endpoint: _,
+            } => {
+                match network_handlers::handle_init_oauth_result(
+                    ctx.client_pid,
+                    provider,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueInitOAuth {
+                        client_pid,
+                        init_response,
+                        cap_slots,
+                    } => Self::continue_init_oauth(client_pid, init_response, cap_slots),
+                    _ => Ok(()),
+                }
+            }
+            PendingNetworkOp::OAuthCallback {
+                ctx,
+                provider,
+                zid_endpoint: _,
+            } => {
+                match network_handlers::handle_oauth_callback_result(
+                    ctx.client_pid,
+                    provider,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueOAuthCallback {
+                        client_pid,
+                        callback_response,
+                        cap_slots,
+                    } => Self::continue_oauth_callback(client_pid, callback_response, cap_slots),
+                    _ => Ok(()),
+                }
+            }
+            PendingNetworkOp::InitWallet {
+                ctx,
+                wallet_type,
+                address,
+                zid_endpoint: _,
+            } => {
+                match network_handlers::handle_init_wallet_result(
+                    ctx.client_pid,
+                    wallet_type,
+                    address,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueInitWallet {
+                        client_pid,
+                        challenge_response,
+                        cap_slots,
+                    } => Self::continue_init_wallet(client_pid, challenge_response, cap_slots),
+                    _ => Ok(()),
+                }
+            }
+            PendingNetworkOp::VerifyWallet {
+                ctx,
+                zid_endpoint: _,
+            } => {
+                match network_handlers::handle_verify_wallet_result(
+                    ctx.client_pid,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueVerifyWallet {
+                        client_pid,
+                        verify_response,
+                        cap_slots,
+                    } => Self::continue_verify_wallet(client_pid, verify_response, cap_slots),
+                    _ => Ok(()),
+                }
+            }
+            // Tier operations
+            PendingNetworkOp::GetTierStatus {
+                ctx,
+                user_id: _,
+                zid_endpoint: _,
+            } => {
+                match network_handlers::handle_tier_status_result(
+                    ctx.client_pid,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueGetTierStatus {
+                        client_pid,
+                        tier_response,
+                        cap_slots,
+                    } => Self::continue_get_tier_status(client_pid, tier_response, cap_slots),
+                    _ => Ok(()),
+                }
+            }
+            PendingNetworkOp::UpgradeToSelfSovereign {
+                ctx,
+                user_id: _,
+                zid_endpoint: _,
+            } => {
+                match network_handlers::handle_upgrade_result(
+                    ctx.client_pid,
+                    ctx.cap_slots.clone(),
+                    http_response,
+                ) {
+                    NetworkHandlerResult::Done(r) => r,
+                    NetworkHandlerResult::ContinueUpgrade {
+                        client_pid,
+                        upgrade_response,
+                        cap_slots,
+                    } => Self::continue_upgrade(client_pid, upgrade_response, cap_slots),
+                    _ => Ok(()),
+                }
+            }
         }
+    }
+
+    // =========================================================================
+    // Registration continuation handlers
+    // =========================================================================
+
+    /// Handle successful registration - parse and return registration info.
+    fn continue_register_email(
+        client_pid: u32,
+        register_response: zos_network::HttpSuccess,
+        cap_slots: alloc::vec::Vec<u32>,
+    ) -> Result<(), AppError> {
+        use super::response;
+        use zos_apps::syscall;
+        use zos_identity::ipc::RegistrationResult;
+
+        // Log the raw response body for debugging
+        if let Ok(body_str) = core::str::from_utf8(&register_response.body) {
+            syscall::debug(&alloc::format!(
+                "IdentityService: Register email response body: {}",
+                body_str
+            ));
+        }
+
+        // Parse registration result
+        match serde_json::from_slice::<RegistrationResult>(&register_response.body) {
+            Ok(result) => {
+                syscall::debug(&alloc::format!(
+                    "IdentityService: Registration successful, identity_id={}",
+                    result.identity_id
+                ));
+                response::send_register_email_success(client_pid, &cap_slots, result)
+            }
+            Err(e) => {
+                syscall::debug(&alloc::format!(
+                    "IdentityService: Failed to parse register email response: {}",
+                    e
+                ));
+                response::send_register_email_error(
+                    client_pid,
+                    &cap_slots,
+                    zos_identity::error::ZidError::ServerError(alloc::format!(
+                        "Invalid response: {}",
+                        e
+                    )),
+                )
+            }
+        }
+    }
+
+    fn continue_init_oauth(
+        client_pid: u32,
+        init_response: zos_network::HttpSuccess,
+        cap_slots: alloc::vec::Vec<u32>,
+    ) -> Result<(), AppError> {
+        use super::response;
+        use zos_identity::ipc::OAuthInitResult;
+
+        match serde_json::from_slice::<OAuthInitResult>(&init_response.body) {
+            Ok(result) => response::send_init_oauth_success(client_pid, &cap_slots, result),
+            Err(e) => {
+                use zos_apps::syscall;
+                syscall::debug(&alloc::format!(
+                    "IdentityService: Failed to parse OAuth init response: {}",
+                    e
+                ));
+                response::send_init_oauth_error(
+                    client_pid,
+                    &cap_slots,
+                    zos_identity::error::ZidError::ServerError(alloc::format!(
+                        "Invalid response: {}",
+                        e
+                    )),
+                )
+            }
+        }
+    }
+
+    fn continue_oauth_callback(
+        client_pid: u32,
+        callback_response: zos_network::HttpSuccess,
+        cap_slots: alloc::vec::Vec<u32>,
+    ) -> Result<(), AppError> {
+        use super::response;
+        use zos_identity::ipc::ZidTokens;
+
+        match serde_json::from_slice::<ZidTokens>(&callback_response.body) {
+            Ok(tokens) => response::send_oauth_callback_success(client_pid, &cap_slots, tokens),
+            Err(e) => {
+                use zos_apps::syscall;
+                syscall::debug(&alloc::format!(
+                    "IdentityService: Failed to parse OAuth callback response: {}",
+                    e
+                ));
+                response::send_oauth_callback_error(
+                    client_pid,
+                    &cap_slots,
+                    zos_identity::error::ZidError::ServerError(alloc::format!(
+                        "Invalid response: {}",
+                        e
+                    )),
+                )
+            }
+        }
+    }
+
+    fn continue_init_wallet(
+        client_pid: u32,
+        challenge_response: zos_network::HttpSuccess,
+        cap_slots: alloc::vec::Vec<u32>,
+    ) -> Result<(), AppError> {
+        use super::response;
+        use zos_identity::ipc::WalletChallenge;
+
+        match serde_json::from_slice::<WalletChallenge>(&challenge_response.body) {
+            Ok(challenge) => response::send_init_wallet_success(client_pid, &cap_slots, challenge),
+            Err(e) => {
+                use zos_apps::syscall;
+                syscall::debug(&alloc::format!(
+                    "IdentityService: Failed to parse wallet challenge response: {}",
+                    e
+                ));
+                response::send_init_wallet_error(
+                    client_pid,
+                    &cap_slots,
+                    zos_identity::error::ZidError::ServerError(alloc::format!(
+                        "Invalid response: {}",
+                        e
+                    )),
+                )
+            }
+        }
+    }
+
+    fn continue_verify_wallet(
+        client_pid: u32,
+        verify_response: zos_network::HttpSuccess,
+        cap_slots: alloc::vec::Vec<u32>,
+    ) -> Result<(), AppError> {
+        use super::response;
+        use zos_identity::ipc::ZidTokens;
+
+        match serde_json::from_slice::<ZidTokens>(&verify_response.body) {
+            Ok(tokens) => response::send_verify_wallet_success(client_pid, &cap_slots, tokens),
+            Err(e) => {
+                use zos_apps::syscall;
+                syscall::debug(&alloc::format!(
+                    "IdentityService: Failed to parse wallet verify response: {}",
+                    e
+                ));
+                response::send_verify_wallet_error(
+                    client_pid,
+                    &cap_slots,
+                    zos_identity::error::ZidError::ServerError(alloc::format!(
+                        "Invalid response: {}",
+                        e
+                    )),
+                )
+            }
+        }
+    }
+
+    // =========================================================================
+    // Tier continuation handlers
+    // =========================================================================
+
+    fn continue_get_tier_status(
+        client_pid: u32,
+        tier_response: zos_network::HttpSuccess,
+        cap_slots: alloc::vec::Vec<u32>,
+    ) -> Result<(), AppError> {
+        use super::response;
+        use zos_identity::ipc::TierStatus;
+
+        match serde_json::from_slice::<TierStatus>(&tier_response.body) {
+            Ok(status) => response::send_get_tier_status_success(client_pid, &cap_slots, status),
+            Err(e) => {
+                use zos_apps::syscall;
+                syscall::debug(&alloc::format!(
+                    "IdentityService: Failed to parse tier status response: {}",
+                    e
+                ));
+                response::send_get_tier_status_error(
+                    client_pid,
+                    &cap_slots,
+                    zos_identity::error::ZidError::ServerError(alloc::format!(
+                        "Invalid response: {}",
+                        e
+                    )),
+                )
+            }
+        }
+    }
+
+    fn continue_upgrade(
+        client_pid: u32,
+        _upgrade_response: zos_network::HttpSuccess,
+        cap_slots: alloc::vec::Vec<u32>,
+    ) -> Result<(), AppError> {
+        use super::response;
+        // Upgrade successful - just return success
+        response::send_upgrade_to_self_sovereign_success(client_pid, &cap_slots)
     }
 }

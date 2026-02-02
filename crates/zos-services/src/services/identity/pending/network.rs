@@ -164,4 +164,54 @@ pub enum PendingNetworkOp {
         user_id: u128,
         zid_endpoint: String,
     },
+
+    // =========================================================================
+    // Registration operations (managed identity)
+    // =========================================================================
+    /// Register with email/password
+    RegisterEmail {
+        ctx: RequestContext,
+        email: String,
+        zid_endpoint: String,
+    },
+    /// Initiate OAuth flow
+    InitOAuth {
+        ctx: RequestContext,
+        provider: String,
+        zid_endpoint: String,
+    },
+    /// OAuth callback with authorization code
+    OAuthCallback {
+        ctx: RequestContext,
+        provider: String,
+        zid_endpoint: String,
+    },
+    /// Initiate wallet auth (get challenge)
+    InitWallet {
+        ctx: RequestContext,
+        wallet_type: String,
+        address: String,
+        zid_endpoint: String,
+    },
+    /// Verify wallet signature
+    VerifyWallet {
+        ctx: RequestContext,
+        zid_endpoint: String,
+    },
+
+    // =========================================================================
+    // Tier operations
+    // =========================================================================
+    /// Get tier status
+    GetTierStatus {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+    },
+    /// Upgrade to self-sovereign
+    UpgradeToSelfSovereign {
+        ctx: RequestContext,
+        user_id: u128,
+        zid_endpoint: String,
+    },
 }

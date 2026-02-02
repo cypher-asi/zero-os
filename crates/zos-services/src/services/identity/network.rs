@@ -121,6 +121,50 @@ pub enum NetworkHandlerResult {
         login_response: HttpSuccess,
         cap_slots: Vec<u32>,
     },
+    // Registration flow results
+    /// Continue after email registration tokens received
+    ContinueRegisterEmail {
+        client_pid: u32,
+        register_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue after OAuth init response
+    ContinueInitOAuth {
+        client_pid: u32,
+        init_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue after OAuth callback tokens received
+    ContinueOAuthCallback {
+        client_pid: u32,
+        callback_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue after wallet challenge received
+    ContinueInitWallet {
+        client_pid: u32,
+        challenge_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue after wallet verification tokens received
+    ContinueVerifyWallet {
+        client_pid: u32,
+        verify_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    // Tier flow results
+    /// Continue after tier status received
+    ContinueGetTierStatus {
+        client_pid: u32,
+        tier_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
+    /// Continue after upgrade completed
+    ContinueUpgrade {
+        client_pid: u32,
+        upgrade_response: HttpSuccess,
+        cap_slots: Vec<u32>,
+    },
 }
 
 /// Handle RequestZidChallenge network result.
@@ -748,6 +792,343 @@ pub fn handle_zid_email_login_result(
                 e
             ));
             NetworkHandlerResult::Done(response::send_zid_email_login_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+// =============================================================================
+// Registration handlers
+// =============================================================================
+
+/// Handle RegisterEmail network result.
+pub fn handle_register_email_result(
+    client_pid: u32,
+    _email: String,
+    _zid_endpoint: String,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Email registration successful");
+            NetworkHandlerResult::ContinueRegisterEmail {
+                client_pid,
+                register_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) if success.status == 409 => {
+            syscall::debug("IdentityService: Email already registered");
+            NetworkHandlerResult::Done(response::send_register_email_error(
+                client_pid,
+                &cap_slots,
+                ZidError::EnrollmentFailed("Email already registered".into()),
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Email registration failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_register_email_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Email registration network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_register_email_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+/// Handle InitOAuth network result.
+pub fn handle_init_oauth_result(
+    client_pid: u32,
+    _provider: String,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: OAuth init successful");
+            NetworkHandlerResult::ContinueInitOAuth {
+                client_pid,
+                init_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: OAuth init failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_init_oauth_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: OAuth init network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_init_oauth_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+/// Handle OAuthCallback network result.
+pub fn handle_oauth_callback_result(
+    client_pid: u32,
+    _provider: String,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: OAuth callback successful");
+            NetworkHandlerResult::ContinueOAuthCallback {
+                client_pid,
+                callback_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) if success.status == 401 => {
+            syscall::debug("IdentityService: OAuth callback unauthorized");
+            NetworkHandlerResult::Done(response::send_oauth_callback_error(
+                client_pid,
+                &cap_slots,
+                ZidError::AuthenticationFailed,
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: OAuth callback failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_oauth_callback_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: OAuth callback network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_oauth_callback_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+/// Handle InitWallet network result.
+pub fn handle_init_wallet_result(
+    client_pid: u32,
+    _wallet_type: String,
+    _address: String,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Wallet init successful");
+            NetworkHandlerResult::ContinueInitWallet {
+                client_pid,
+                challenge_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Wallet init failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_init_wallet_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Wallet init network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_init_wallet_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+/// Handle VerifyWallet network result.
+pub fn handle_verify_wallet_result(
+    client_pid: u32,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Wallet verification successful");
+            NetworkHandlerResult::ContinueVerifyWallet {
+                client_pid,
+                verify_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) if success.status == 401 => {
+            syscall::debug("IdentityService: Wallet verification failed - invalid signature");
+            NetworkHandlerResult::Done(response::send_verify_wallet_error(
+                client_pid,
+                &cap_slots,
+                ZidError::AuthenticationFailed,
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Wallet verification failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_verify_wallet_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Wallet verification network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_verify_wallet_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+// =============================================================================
+// Tier handlers
+// =============================================================================
+
+/// Handle GetTierStatus network result.
+pub fn handle_tier_status_result(
+    client_pid: u32,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Tier status retrieved successfully");
+            NetworkHandlerResult::ContinueGetTierStatus {
+                client_pid,
+                tier_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) if success.status == 401 => {
+            syscall::debug("IdentityService: Tier status - unauthorized");
+            NetworkHandlerResult::Done(response::send_get_tier_status_error(
+                client_pid,
+                &cap_slots,
+                ZidError::Unauthorized,
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Tier status failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_get_tier_status_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Tier status network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_get_tier_status_error(
+                client_pid,
+                &cap_slots,
+                ZidError::NetworkError(e.message().into()),
+            ))
+        }
+    }
+}
+
+/// Handle UpgradeToSelfSovereign network result.
+pub fn handle_upgrade_result(
+    client_pid: u32,
+    cap_slots: Vec<u32>,
+    http_response: HttpResponse,
+) -> NetworkHandlerResult {
+    match http_response.result {
+        Ok(success) if (200..300).contains(&success.status) => {
+            syscall::debug("IdentityService: Upgrade to self-sovereign successful");
+            NetworkHandlerResult::ContinueUpgrade {
+                client_pid,
+                upgrade_response: success,
+                cap_slots,
+            }
+        }
+        Ok(success) if success.status == 401 => {
+            syscall::debug("IdentityService: Upgrade - unauthorized");
+            NetworkHandlerResult::Done(response::send_upgrade_to_self_sovereign_error(
+                client_pid,
+                &cap_slots,
+                ZidError::Unauthorized,
+            ))
+        }
+        Ok(success) if success.status == 400 => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Upgrade failed - requirements not met: {:?}",
+                error
+            ));
+            NetworkHandlerResult::Done(response::send_upgrade_to_self_sovereign_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Ok(success) => {
+            let error = parse_zid_error_response(&success.body, success.status);
+            syscall::debug(&format!(
+                "IdentityService: Upgrade failed with status {}: {:?}",
+                success.status, error
+            ));
+            NetworkHandlerResult::Done(response::send_upgrade_to_self_sovereign_error(
+                client_pid, &cap_slots, error,
+            ))
+        }
+        Err(e) => {
+            syscall::debug(&format!(
+                "IdentityService: Upgrade network error: {:?}",
+                e
+            ));
+            NetworkHandlerResult::Done(response::send_upgrade_to_self_sovereign_error(
                 client_pid,
                 &cap_slots,
                 ZidError::NetworkError(e.message().into()),
