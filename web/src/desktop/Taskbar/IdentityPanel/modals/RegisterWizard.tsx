@@ -1,5 +1,15 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Mail, Shield, User, ArrowLeft, Check } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import {
+  PanelWizard,
+  type WizardStep,
+  Button,
+  Input,
+  Text,
+  Label,
+  Card,
+  CardItem,
+} from '@cypher-asi/zui';
+import { Mail, Shield, User, Check } from 'lucide-react';
 import { useIdentityServiceClient } from '../../../hooks/useIdentityServiceClient';
 import type { RegistrationResult, OAuthProvider, WalletType, ZidTokens } from '@/client-services/identity/types';
 import { ZidServerError, ZidNetworkError } from '@/client-services/identity/errors';
@@ -12,7 +22,6 @@ import '@/types/ethereum.d.ts';
 // Types
 // =============================================================================
 
-type WizardStep = 'account-type' | 'managed-method' | 'email-form' | 'complete';
 type AccountType = 'managed' | 'self_sovereign' | null;
 
 interface RegisterWizardProps {
@@ -27,6 +36,50 @@ interface RegisterWizardProps {
 const DEFAULT_ZID_ENDPOINT = 'http://127.0.0.1:9999';
 
 // =============================================================================
+// Icon Components
+// =============================================================================
+
+function GoogleIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  );
+}
+
+function EthereumIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 256 417" fill="currentColor">
+      <path d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z" opacity="0.6" />
+      <path d="M127.962 0L0 212.32l127.962 75.639V154.158z" opacity="0.45" />
+      <path d="M127.961 312.187l-1.575 1.92v98.199l1.575 4.6L256 236.587z" opacity="0.8" />
+      <path d="M127.962 416.905v-104.72L0 236.585z" opacity="0.45" />
+    </svg>
+  );
+}
+
+function SolanaIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 397.7 311.7" fill="currentColor">
+      <path d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7z" />
+      <path d="M64.6 3.8C67.1 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8z" />
+      <path d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7z" />
+    </svg>
+  );
+}
+
+// =============================================================================
 // Component
 // =============================================================================
 
@@ -35,7 +88,7 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
   const modalRef = useRef<HTMLDivElement>(null);
 
   // State
-  const [step, setStep] = useState<WizardStep>('account-type');
+  const [currentStep, setCurrentStep] = useState(0);
   const [accountType, setAccountType] = useState<AccountType>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -51,7 +104,7 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
   const setCurrentSession = useIdentityStore((state) => state.setCurrentSession);
 
   // Handle account type selection
-  const handleAccountTypeSelect = (type: AccountType) => {
+  const handleAccountTypeSelect = useCallback((type: AccountType) => {
     setAccountType(type);
     setError(null);
 
@@ -62,9 +115,9 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
       }
       onClose();
     } else if (type === 'managed') {
-      setStep('managed-method');
+      setCurrentStep(1);
     }
-  };
+  }, [onClose, onSelfSovereignSelected]);
 
   // Handle email registration
   const handleEmailRegistration = useCallback(async () => {
@@ -160,7 +213,7 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
       }
 
       // Move to success step
-      setStep('complete');
+      setCurrentStep(3);
     } catch (err) {
       console.error('[RegisterWizard] Email registration error:', err);
 
@@ -395,7 +448,7 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
         }
 
         // Move to success step
-        setStep('complete');
+        setCurrentStep(3);
       } catch (err) {
         console.error('[RegisterWizard] Wallet registration error:', err);
 
@@ -463,315 +516,251 @@ export function RegisterWizard({ onClose, onSelfSovereignSelected }: RegisterWiz
     return () => document.removeEventListener('keydown', handleEscKey);
   }, [onClose]);
 
-  // Navigation helpers
-  const goBack = () => {
-    setError(null);
-    if (step === 'email-form') {
-      setStep('managed-method');
-    } else if (step === 'managed-method') {
-      setStep('account-type');
+  // Handle step change from PanelWizard
+  const handleStepChange = useCallback((newStep: number) => {
+    // Handle email form submission when navigating forward from step 2
+    if (currentStep === 2 && newStep === 3) {
+      handleEmailRegistration();
+      return;
+    }
+    
+    // Reset account type when going back to first step
+    if (newStep === 0) {
       setAccountType(null);
     }
-  };
+    
+    setError(null);
+    setCurrentStep(newStep);
+  }, [currentStep, handleEmailRegistration]);
 
-  // Step indicator
-  const getStepNumber = () => {
-    switch (step) {
-      case 'account-type':
-        return 1;
-      case 'managed-method':
-      case 'email-form':
-        return 2;
-      case 'complete':
-        return 3;
-      default:
-        return 1;
-    }
-  };
+  // Email form validation
+  const isEmailFormValid = useMemo(() => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return (
+      email.trim() !== '' &&
+      emailRegex.test(email) &&
+      password.length >= 12 &&
+      password === confirmPassword
+    );
+  }, [email, password, confirmPassword]);
 
-  // Get title based on step
-  const getTitle = () => {
-    switch (step) {
-      case 'account-type':
-        return 'Create Account';
-      case 'managed-method':
-        return 'Choose Sign-Up Method';
-      case 'email-form':
-        return 'Email Registration';
-      case 'complete':
-        return 'Welcome!';
-      default:
-        return 'Create Account';
-    }
-  };
+  // Build wizard steps
+  const wizardSteps: WizardStep[] = useMemo(() => [
+    // Step 0: Account Type Selection
+    {
+      id: 'account-type',
+      label: 'Account Type',
+      content: (
+        <div className={styles.stepContent}>
+          <div className={styles.accountTypeCards}>
+            <Card
+              className={`${styles.accountTypeCard} ${accountType === 'managed' ? styles.selected : ''}`}
+              onClick={() => handleAccountTypeSelect('managed')}
+            >
+              <CardItem
+                icon={<User size={20} />}
+                title="Managed Identity"
+                description="Quick and easy setup. Sign up with email, OAuth, or wallet. Your identity is protected by ZERO ID servers. Great for getting started."
+              />
+            </Card>
+
+            <Card
+              className={`${styles.accountTypeCard} ${accountType === 'self_sovereign' ? styles.selected : ''}`}
+              onClick={() => handleAccountTypeSelect('self_sovereign')}
+            >
+              <CardItem
+                icon={<Shield size={20} />}
+                title="Self-Sovereign Identity"
+                description="Full control over your identity. Generate a Neural Key that only you control. Your keys never leave your device. Best for security-conscious users."
+              />
+            </Card>
+          </div>
+        </div>
+      ),
+      isComplete: accountType !== null,
+    },
+    // Step 1: Managed Registration Method
+    {
+      id: 'managed-method',
+      label: 'Sign Up Method',
+      content: (
+        <div className={styles.stepContent}>
+          <div className={styles.methodList}>
+            <Button
+              variant="secondary"
+              className={styles.methodButton}
+              onClick={() => setCurrentStep(2)}
+              disabled={isLoading}
+            >
+              <Mail size={20} />
+              Sign up with Email
+            </Button>
+
+            <div className={styles.divider}>
+              <div className={styles.dividerLine} />
+              <Text size="xs" variant="secondary">or continue with</Text>
+              <div className={styles.dividerLine} />
+            </div>
+
+            <Button
+              variant="secondary"
+              className={styles.methodButton}
+              onClick={() => handleOAuthRegistration('google')}
+              disabled={isLoading}
+            >
+              <GoogleIcon />
+              Continue with Google
+            </Button>
+
+            <Button
+              variant="secondary"
+              className={styles.methodButton}
+              onClick={() => handleOAuthRegistration('x')}
+              disabled={isLoading}
+            >
+              <XIcon />
+              Continue with X
+            </Button>
+
+            <div className={styles.divider}>
+              <div className={styles.dividerLine} />
+              <Text size="xs" variant="secondary">or connect wallet</Text>
+              <div className={styles.dividerLine} />
+            </div>
+
+            <Button
+              variant="secondary"
+              className={styles.methodButton}
+              onClick={() => handleWalletRegistration('ethereum')}
+              disabled={isLoading}
+            >
+              <EthereumIcon />
+              Continue with Ethereum
+            </Button>
+
+            <Button
+              variant="secondary"
+              className={styles.methodButton}
+              onClick={() => handleWalletRegistration('solana')}
+              disabled={isLoading}
+            >
+              <SolanaIcon />
+              Continue with Solana
+            </Button>
+          </div>
+        </div>
+      ),
+      isComplete: true,
+      hideNavigation: true,
+    },
+    // Step 2: Email Form
+    {
+      id: 'email-form',
+      label: 'Email Registration',
+      content: (
+        <div className={styles.stepContent}>
+          <div className={styles.emailForm}>
+            <div className={styles.inputGroup}>
+              <Label size="sm">Email</Label>
+              <Input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={isLoading}
+                autoComplete="email"
+              />
+            </div>
+
+            <div className={styles.inputGroup}>
+              <Label size="sm">Password</Label>
+              <Input
+                type="password"
+                placeholder="Create a strong password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={isLoading}
+                autoComplete="new-password"
+              />
+              <Text size="xs" variant="secondary" className={styles.passwordHint}>
+                At least 12 characters
+              </Text>
+            </div>
+
+            <div className={styles.inputGroup}>
+              <Label size="sm">Confirm Password</Label>
+              <Input
+                type="password"
+                placeholder="Confirm your password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={isLoading}
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+        </div>
+      ),
+      isComplete: isEmailFormValid,
+      nextLabel: isLoading ? 'Creating Account...' : 'Create Account',
+      nextDisabled: isLoading || !isEmailFormValid,
+    },
+    // Step 3: Complete
+    {
+      id: 'complete',
+      label: 'Complete',
+      content: (
+        <div className={styles.stepContent}>
+          <div className={styles.successBox}>
+            <div className={styles.successIcon}>
+              <Check size={32} />
+            </div>
+            <Text size="lg" className={styles.successTitle}>
+              Welcome to ZERO OS!
+            </Text>
+            <Text size="sm" variant="secondary" className={styles.successDescription}>
+              Your account has been created and you're now signed in. Consider adding more
+              authentication methods for enhanced security and to unlock self-sovereign identity
+              features.
+            </Text>
+          </div>
+        </div>
+      ),
+      isComplete: true,
+    },
+  ], [
+    accountType,
+    email,
+    password,
+    confirmPassword,
+    isLoading,
+    isEmailFormValid,
+    handleAccountTypeSelect,
+    handleOAuthRegistration,
+    handleWalletRegistration,
+  ]);
 
   return (
     <div ref={overlayRef} className={styles.overlay}>
       <div ref={modalRef} className={styles.modal}>
-        {/* Header */}
-        <div className={styles.header}>
-          <h2 className={styles.headerTitle}>{getTitle()}</h2>
-          <button className={styles.closeButton} onClick={onClose} aria-label="Close">
-            <X size={20} />
-          </button>
+        <div className={styles.modalContent}>
+          <PanelWizard
+            steps={wizardSteps}
+            currentStep={currentStep}
+            onStepChange={handleStepChange}
+            onFinish={onClose}
+            finishLabel="Get Started"
+            showSteps={currentStep !== 3}
+            showFooter={currentStep === 2 || currentStep === 3}
+            background="none"
+            border="none"
+          />
         </div>
-
-        {/* Content */}
-        <div className={styles.content}>
-          {/* Step indicator */}
-          {step !== 'complete' && (
-            <div className={styles.stepIndicator}>
-              {[1, 2, 3].map((s) => (
-                <div
-                  key={s}
-                  className={`${styles.stepDot} ${s <= getStepNumber() ? styles.active : ''}`}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Step 1: Account Type Selection */}
-          {step === 'account-type' && (
-            <div className={styles.accountTypeCards}>
-              <div
-                className={`${styles.accountTypeCard} ${accountType === 'managed' ? styles.selected : ''}`}
-                onClick={() => handleAccountTypeSelect('managed')}
-              >
-                <div className={styles.cardHeader}>
-                  <div className={styles.cardIcon}>
-                    <User size={20} />
-                  </div>
-                  <span className={styles.cardTitle}>Managed Identity</span>
-                </div>
-                <p className={styles.cardDescription}>
-                  Quick and easy setup. Sign up with email, OAuth, or wallet. Your identity is
-                  protected by ZERO ID servers. Great for getting started.
-                </p>
-              </div>
-
-              <div
-                className={`${styles.accountTypeCard} ${accountType === 'self_sovereign' ? styles.selected : ''}`}
-                onClick={() => handleAccountTypeSelect('self_sovereign')}
-              >
-                <div className={styles.cardHeader}>
-                  <div className={styles.cardIcon}>
-                    <Shield size={20} />
-                  </div>
-                  <span className={styles.cardTitle}>Self-Sovereign Identity</span>
-                </div>
-                <p className={styles.cardDescription}>
-                  Full control over your identity. Generate a Neural Key that only you control. Your
-                  keys never leave your device. Best for security-conscious users.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Step 2a: Managed Registration Method */}
-          {step === 'managed-method' && (
-            <>
-              <button className={styles.backLink} onClick={goBack}>
-                <ArrowLeft size={16} />
-                Back
-              </button>
-
-              <div className={styles.methodList}>
-                <button
-                  className={styles.methodButton}
-                  onClick={() => setStep('email-form')}
-                  disabled={isLoading}
-                >
-                  <div className={styles.methodIcon}>
-                    <Mail size={20} />
-                  </div>
-                  Sign up with Email
-                </button>
-
-                <div className={styles.divider}>
-                  <div className={styles.dividerLine} />
-                  <span className={styles.dividerText}>or continue with</span>
-                  <div className={styles.dividerLine} />
-                </div>
-
-                <button
-                  className={styles.methodButton}
-                  onClick={() => handleOAuthRegistration('google')}
-                  disabled={isLoading}
-                >
-                  <div className={styles.methodIcon}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                    </svg>
-                  </div>
-                  Continue with Google
-                </button>
-
-                <button
-                  className={styles.methodButton}
-                  onClick={() => handleOAuthRegistration('x')}
-                  disabled={isLoading}
-                >
-                  <div className={styles.methodIcon}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                  </div>
-                  Continue with X
-                </button>
-
-                <div className={styles.divider}>
-                  <div className={styles.dividerLine} />
-                  <span className={styles.dividerText}>or connect wallet</span>
-                  <div className={styles.dividerLine} />
-                </div>
-
-                <button
-                  className={styles.methodButton}
-                  onClick={() => handleWalletRegistration('ethereum')}
-                  disabled={isLoading}
-                >
-                  <div className={styles.methodIcon}>
-                    <svg width="20" height="20" viewBox="0 0 256 417" fill="currentColor">
-                      <path d="M127.961 0l-2.795 9.5v275.668l2.795 2.79 127.962-75.638z" opacity="0.6" />
-                      <path d="M127.962 0L0 212.32l127.962 75.639V154.158z" opacity="0.45" />
-                      <path d="M127.961 312.187l-1.575 1.92v98.199l1.575 4.6L256 236.587z" opacity="0.8" />
-                      <path d="M127.962 416.905v-104.72L0 236.585z" opacity="0.45" />
-                    </svg>
-                  </div>
-                  Continue with Ethereum
-                </button>
-
-                <button
-                  className={styles.methodButton}
-                  onClick={() => handleWalletRegistration('solana')}
-                  disabled={isLoading}
-                >
-                  <div className={styles.methodIcon}>
-                    <svg width="20" height="20" viewBox="0 0 397.7 311.7" fill="currentColor">
-                      <path d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7z" />
-                      <path d="M64.6 3.8C67.1 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8z" />
-                      <path d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7z" />
-                    </svg>
-                  </div>
-                  Continue with Solana
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* Step 2b: Email Form */}
-          {step === 'email-form' && (
-            <>
-              <button className={styles.backLink} onClick={goBack}>
-                <ArrowLeft size={16} />
-                Back
-              </button>
-
-              <div className={styles.emailForm}>
-                <div className={styles.inputGroup}>
-                  <label className={styles.inputLabel}>Email</label>
-                  <input
-                    type="email"
-                    className={styles.input}
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={isLoading}
-                    autoComplete="email"
-                  />
-                </div>
-
-                <div className={styles.inputGroup}>
-                  <label className={styles.inputLabel}>Password</label>
-                  <input
-                    type="password"
-                    className={styles.input}
-                    placeholder="Create a strong password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={isLoading}
-                    autoComplete="new-password"
-                  />
-                  <span className={styles.passwordHint}>At least 12 characters</span>
-                </div>
-
-                <div className={styles.inputGroup}>
-                  <label className={styles.inputLabel}>Confirm Password</label>
-                  <input
-                    type="password"
-                    className={styles.input}
-                    placeholder="Confirm your password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    disabled={isLoading}
-                    autoComplete="new-password"
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Step 3: Complete */}
-          {step === 'complete' && (
-            <div className={styles.successBox}>
-              <div className={styles.successIcon}>
-                <Check size={32} />
-              </div>
-              <h3 className={styles.successTitle}>Welcome to ZERO OS!</h3>
-              <p className={styles.successDescription}>
-                Your account has been created and you're now signed in. Consider adding more
-                authentication methods for enhanced security and to unlock self-sovereign identity
-                features.
-              </p>
-            </div>
-          )}
-
-          {/* Error display */}
-          {error && <div className={styles.errorBox}>{error}</div>}
-        </div>
-
-        {/* Footer */}
-        {step !== 'account-type' && (
-          <div
-            className={`${styles.footer} ${step === 'complete' ? styles.footerSingle : ''}`}
-          >
-            {step === 'email-form' && (
-              <>
-                <button
-                  className={`${styles.button} ${styles.buttonSecondary}`}
-                  onClick={goBack}
-                  disabled={isLoading}
-                >
-                  Back
-                </button>
-                <button
-                  className={`${styles.button} ${styles.buttonPrimary}`}
-                  onClick={handleEmailRegistration}
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <span className={styles.loadingButton}>
-                      <span className={styles.spinner} />
-                      Creating Account...
-                    </span>
-                  ) : (
-                    'Create Account'
-                  )}
-                </button>
-              </>
-            )}
-
-            {step === 'complete' && (
-              <button
-                className={`${styles.button} ${styles.buttonPrimary}`}
-                onClick={onClose}
-              >
-                Get Started
-              </button>
-            )}
+        {error && (
+          <div className={styles.errorBox}>
+            <Text variant="secondary" size="sm" style={{ color: '#ef4444' }}>
+              {error}
+            </Text>
           </div>
         )}
       </div>
