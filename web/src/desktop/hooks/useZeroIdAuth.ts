@@ -13,6 +13,7 @@ import {
   useIdentityStore,
   selectCurrentUser,
   selectRemoteAuthState,
+  selectHasHydrated,
   type RemoteAuthState,
 } from '@/stores';
 
@@ -104,6 +105,10 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
   const supervisor = useSupervisor();
   const currentUser = useIdentityStore(selectCurrentUser);
   const currentUserId = currentUser?.id ?? null;
+  
+  // Wait for zustand to hydrate from localStorage before loading session
+  // This prevents looking up the wrong user's session path on initial render
+  const hasHydrated = useIdentityStore(selectHasHydrated);
 
   // Track if we've initialized to avoid double-loading
   const initializedRef = useRef(false);
@@ -130,7 +135,14 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
   // IMPORTANT: Only load from VFS if zustand store is empty. This prevents overwriting
   // a valid in-memory session with potentially stale VFS data (e.g., if VFS write failed
   // during a previous refresh but React state was updated correctly).
+  // Also wait for zustand hydration to complete to ensure we have the correct user ID.
   useEffect(() => {
+    // Wait for zustand to hydrate - this ensures we have the correct user ID
+    // from localStorage before attempting to load the session from VFS
+    if (!hasHydrated) {
+      return;
+    }
+    
     if (!currentUserId || initializedRef.current) {
       setIsLoadingSession(false);
       return;
@@ -149,6 +161,14 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
         }
 
         const sessionPath = getZidSessionPath(currentUserId);
+        
+        // Debug logging to diagnose session persistence issues
+        console.log('[useZeroIdAuth] Loading session:', {
+          currentUserId,
+          sessionPath,
+          cacheStats: VfsStorageClient.getCacheStats(),
+          sessionExists: VfsStorageClient.existsSync(sessionPath),
+        });
         const session = VfsStorageClient.readJsonSync<ZidSession>(sessionPath);
 
         // Load session if it has a refresh_token - even if expired, we can refresh it
@@ -182,7 +202,16 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
     };
 
     loadSession();
-  }, [currentUserId]);
+  }, [hasHydrated, currentUserId]);
+
+  // If we acquire a remote auth state via login/registration, the session load is effectively complete.
+  // This prevents the desktop from staying locked if the VFS load path was gated or delayed.
+  useEffect(() => {
+    if (remoteAuthState && isLoadingSession) {
+      setIsLoadingSession(false);
+      initializedRef.current = true;
+    }
+  }, [remoteAuthState, isLoadingSession]);
 
   const loginWithEmail = useCallback(
     async (email: string, password: string, zidEndpoint: string = DEFAULT_ZID_ENDPOINT) => {

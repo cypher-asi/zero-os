@@ -11,7 +11,7 @@ import {
   type WizardStep,
 } from '@cypher-asi/zui';
 import {
-  Brain,
+  Binary,
   AlertTriangle,
   Loader,
   Eye,
@@ -217,7 +217,7 @@ export function NeuralKeyPanel() {
           <div className={styles.wizardStepContent}>
             <div className={styles.identityHero}>
               <div className={styles.heroIcon}>
-                <Brain size={48} strokeWidth={1} />
+                <Binary size={48} strokeWidth={1} />
               </div>
               <Text size="md" className={styles.heroTitle}>
                 Your Neural Key is Your Identity

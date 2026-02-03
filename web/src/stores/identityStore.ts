@@ -106,6 +106,9 @@ interface IdentityStoreState {
   // Tier status (for managed vs self-sovereign identity)
   tierStatus: TierStatus | null;
 
+  // Hydration state (true after zustand has loaded from localStorage)
+  _hasHydrated: boolean;
+
   // Actions
   setCurrentUser: (user: User | null) => void;
   setCurrentSession: (session: Session | null) => void;
@@ -159,6 +162,7 @@ export const useIdentityStore = create<IdentityStoreState>()(
         error: null,
         remoteAuthState: null,
         tierStatus: null,
+        _hasHydrated: false,
 
         setCurrentUser: (currentUser) => set({ currentUser }),
         setCurrentSession: (currentSession) => set({ currentSession }),
@@ -259,6 +263,9 @@ export const useIdentityStore = create<IdentityStoreState>()(
           // are indexed by user ID. If we don't persist this, we'll look for keys at the
           // wrong path after refresh.
           currentUser: state.currentUser,
+          // Persist remoteAuthState (ZID session) so user stays logged in across refreshes
+          // This is more reliable than loading from VFS cache which has async timing issues
+          remoteAuthState: state.remoteAuthState,
           // Don't persist currentSession - should be re-authenticated
         }),
         // Custom merge to restore persisted user while ensuring sensible defaults
@@ -270,19 +277,27 @@ export const useIdentityStore = create<IdentityStoreState>()(
             // Restore persisted user if available, otherwise use default mock user
             // This preserves the derived user ID from neural key generation
             currentUser: persistedState.currentUser ?? MOCK_USER,
-            // Always create a fresh session on load (user should re-authenticate)
+            // Always create a fresh session on load (user should re-authenticated)
             currentSession: persistedState.currentUser
               ? {
                   ...MOCK_SESSION,
                   userId: persistedState.currentUser.id,
                 }
               : MOCK_SESSION,
+            // Restore ZID session from localStorage (null if not logged in)
+            remoteAuthState: persistedState.remoteAuthState ?? null,
           };
         },
       }
     )
   )
 );
+
+// Register hydration completion handler AFTER store creation
+// This is the recommended pattern to avoid circular reference issues
+useIdentityStore.persist.onFinishHydration(() => {
+  useIdentityStore.setState({ _hasHydrated: true });
+});
 
 // =============================================================================
 // Selectors for Fine-Grained Subscriptions
@@ -312,6 +327,9 @@ export const selectRemoteAuthState = (state: IdentityStoreState) => state.remote
 
 /** Select tier status */
 export const selectTierStatus = (state: IdentityStoreState) => state.tierStatus;
+
+/** Select hydration state (true after zustand has loaded from localStorage) */
+export const selectHasHydrated = (state: IdentityStoreState) => state._hasHydrated;
 
 /** Select user by ID */
 export const selectUserById = (id: UserId) => (state: IdentityStoreState) =>

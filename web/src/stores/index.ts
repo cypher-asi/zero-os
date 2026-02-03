@@ -54,6 +54,7 @@ export {
   selectUserById,
   selectRemoteAuthState,
   selectTierStatus,
+  selectHasHydrated,
   formatUserId,
   getSessionTimeRemaining,
   isSessionExpired,

@@ -15,7 +15,6 @@
 
 import React from 'react';
 import { useIdentityStore, selectRemoteAuthState } from '@/stores';
-import { useZeroIdAuth } from '../hooks/useZeroIdAuth';
 import { AuthPanel } from '../Taskbar/IdentityPanel/modals/AuthPanel';
 
 interface AuthGateProps {
@@ -24,16 +23,12 @@ interface AuthGateProps {
 
 export function AuthGate({ children }: AuthGateProps) {
   const remoteAuthState = useIdentityStore(selectRemoteAuthState);
-  const { isLoadingSession } = useZeroIdAuth();
-
-  // Wait for session check to complete before showing login
-  // During loading, render locked desktop so it can initialize
-  if (isLoadingSession) {
-    return <>{React.cloneElement(children as React.ReactElement, { isLocked: true })}</>;
-  }
 
   // No session - show auth modal (cannot be dismissed)
   // Pass isLocked=true to disable all desktop interactions
+  // Note: We always show the AuthPanel when there's no session, even if we're still
+  // checking for a cached session. If a valid cached session is found, remoteAuthState
+  // will become non-null and the panel will disappear automatically.
   if (!remoteAuthState) {
     return (
       <>

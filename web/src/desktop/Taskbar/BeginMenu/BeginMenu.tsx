@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useWindowActions } from '../../hooks/useWindows';
 import { useSupervisor } from '../../hooks/useSupervisor';
 import { Menu, type MenuItem } from '@cypher-asi/zui';
-import { AppWindow, Calculator, Clock, Terminal, FolderOpen, Settings, Power } from 'lucide-react';
+import { AppWindow, Calculator, Clock, Terminal, FolderOpen, Settings, Power, MessageSquare } from 'lucide-react';
 import styles from './BeginMenu.module.css';
 
 interface BeginMenuProps {
@@ -14,6 +14,7 @@ interface BeginMenuProps {
 const PROGRAM_ITEMS: MenuItem[] = [
   { id: 'calculator', label: 'Calculator', icon: <Calculator size={14} /> },
   { id: 'clock', label: 'Clock', icon: <Clock size={14} /> },
+  { id: 'zerochat', label: 'ZeroChat', icon: <MessageSquare size={14} /> },
 ];
 
 // Main menu structure

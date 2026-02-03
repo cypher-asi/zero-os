@@ -81,8 +81,10 @@
 .widget .content {
   /* Widget content fills the entire window */
   border-radius: inherit;
-  /* Add padding at top-right so content doesn't crowd the close button */
-  padding: 28px 8px 8px 8px;
+  /* Top padding for close button, no side/bottom padding for full bleed */
+  padding: 28px 0 0 0;
+  /* Clip content overflow without affecting the panel's border pseudo-elements */
+  overflow: hidden;
 }
 
 .widgetCloseButton {

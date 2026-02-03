@@ -4,6 +4,7 @@ import { TerminalApp } from '../TerminalApp/TerminalApp';
 import { ClockApp } from '../ClockApp/ClockApp';
 import { CalculatorApp } from '../CalculatorApp/CalculatorApp';
 import { SettingsApp } from '../SettingsApp/SettingsApp';
+import { ZeroChatApp, ConversationWindow } from '../ZeroChatApp';
 
 interface AppRouterProps {
   appId: string;
@@ -25,6 +26,10 @@ export function AppRouter({ appId, windowId, processId }: AppRouterProps) {
     case 'settings':
     case 'com.zero.settings':
       return <SettingsApp />;
+    case 'chat':
+    case 'zerochat':
+    case 'com.zero.chat':
+      return <ZeroChatApp />;
     case 'files':
       return (
         <PageEmptyState
@@ -34,6 +39,11 @@ export function AppRouter({ appId, windowId, processId }: AppRouterProps) {
         />
       );
     default:
+      // Handle conversation windows: zerochat-conversation-{contactId}
+      if (appId.startsWith('zerochat-conversation-')) {
+        const contactId = appId.replace('zerochat-conversation-', '');
+        return <ConversationWindow contactId={contactId} />;
+      }
       return (
         <PageEmptyState
           icon={<Construction size={48} />}

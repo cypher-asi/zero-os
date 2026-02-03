@@ -1,6 +1,6 @@
 import { useCallback, type ReactNode } from 'react';
 import { Menu, type MenuItem, Avatar, type PanelDrillItem } from '@cypher-asi/zui';
-import { Info, Layers, User, Lock, LogOut, Clock, Brain, Cpu, Link, Shield } from 'lucide-react';
+import { Info, Layers, User, Lock, LogOut, Clock, Binary, Monitor, Link, Shield } from 'lucide-react';
 import {
   useIdentityStore,
   selectCurrentUser,
@@ -172,8 +172,8 @@ export function IdentityPanelContent({
 
   const navItems: MenuItem[] = [
     // Identity settings shortcuts (open Settings > Identity)
-    { id: 'neural-key', label: 'Neural Key', icon: <Brain size={14} /> },
-    { id: 'machine-keys', label: 'Machine Keys', icon: <Cpu size={14} /> },
+    { id: 'neural-key', label: 'Neural Key', icon: <Binary size={14} /> },
+    { id: 'machine-keys', label: 'Machine Keys', icon: <Monitor size={14} /> },
     { id: 'linked-accounts', label: 'Linked Accounts', icon: <Link size={14} /> },
     // Tier status (shows current tier when connected)
     {

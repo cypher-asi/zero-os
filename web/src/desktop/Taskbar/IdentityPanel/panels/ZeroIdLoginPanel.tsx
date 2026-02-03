@@ -11,8 +11,8 @@ import {
   Check,
   ArrowLeft,
   RefreshCw,
-  Cpu,
-  Brain,
+  Monitor,
+  Binary,
   Mail,
   Globe,
   RotateCcw,
@@ -33,9 +33,9 @@ import styles from './ZeroIdLoginPanel.module.css';
 function getLoginTypeIcon(loginType: LoginType, size = 12) {
   switch (loginType) {
     case 'machine_key':
-      return <Cpu size={size} />;
+      return <Monitor size={size} />;
     case 'neural_key':
-      return <Brain size={size} />;
+      return <Binary size={size} />;
     case 'email':
       return <Mail size={size} />;
     case 'oauth':

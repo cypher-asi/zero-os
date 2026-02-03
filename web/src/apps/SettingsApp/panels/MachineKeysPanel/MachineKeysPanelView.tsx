@@ -8,7 +8,7 @@ import {
   ButtonMore,
   ButtonCopy,
 } from '@cypher-asi/zui';
-import { Cpu, Plus, Trash2, RefreshCw, X, AlertTriangle, Smartphone, Loader, Star } from 'lucide-react';
+import { Monitor, Plus, Trash2, RefreshCw, X, AlertTriangle, Smartphone, Loader, Star } from 'lucide-react';
 import type { MachineKeyRecord } from '@/stores';
 import styles from './MachineKeysPanel.module.css';
 
@@ -128,7 +128,7 @@ export function MachineKeysPanelView({
       return (
         <div className={styles.centeredContent}>
           <div className={styles.heroIcon}>
-            <Cpu size={48} strokeWidth={1} />
+            <Monitor size={48} strokeWidth={1} />
           </div>
           <Text size="md" className={styles.heroTitle}>
             No Machines Yet
@@ -145,7 +145,7 @@ export function MachineKeysPanelView({
     return (
       <div className={styles.centeredContent}>
         <div className={styles.heroIcon}>
-          <Cpu size={48} strokeWidth={1} />
+          <Monitor size={48} strokeWidth={1} />
         </div>
         <Text size="md" className={styles.heroTitle}>
           Register Your First Machine
@@ -289,7 +289,7 @@ export function MachineKeysPanelView({
           {machines.map((machine) => (
             <div key={machine.machineId} className={styles.machineItem}>
               <div className={styles.machineItemIcon}>
-                {machine.isCurrentDevice ? <Smartphone size={14} /> : <Cpu size={14} />}
+                {machine.isCurrentDevice ? <Smartphone size={14} /> : <Monitor size={14} />}
               </div>
               <div className={styles.machineItemContentSingle}>
                 <span className={styles.machineItemLabel}>

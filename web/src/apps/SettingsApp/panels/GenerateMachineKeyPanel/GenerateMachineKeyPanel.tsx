@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Button, Card, CardItem, Input, Text } from '@cypher-asi/zui';
-import { Cpu, Check, X, AlertTriangle, Loader, Shield, Key } from 'lucide-react';
+import { Monitor, Check, X, AlertTriangle, Loader, Shield, Key } from 'lucide-react';
 import {
   useMachineKeys,
   type KeyScheme,
@@ -121,7 +121,7 @@ export function GenerateMachineKeyPanel() {
     <div className={styles.panelContainer}>
       <div className={styles.identitySection}>
         <div className={styles.heroIcon}>
-          <Cpu size={48} strokeWidth={1} />
+          <Monitor size={48} strokeWidth={1} />
         </div>
         <Text size="md" className={styles.heroTitle}>
           Generate Machine Key

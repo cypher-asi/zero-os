@@ -7,7 +7,7 @@ import {
   type PanelDrillItem,
   ButtonPlus,
 } from '@cypher-asi/zui';
-import { Clock, User, Shield, Palette, Network, Brain, Cpu, Users } from 'lucide-react';
+import { Clock, User, Shield, Palette, Network, Binary, Monitor, Link } from 'lucide-react';
 import { GeneralPanel } from './panels/GeneralPanel';
 import { IdentitySettingsPanel } from './panels/IdentitySettingsPanel';
 import { PermissionsPanel } from './panels/PermissionsPanel';
@@ -170,9 +170,9 @@ export function SettingsApp() {
         label: 'Identity',
         icon: <User size={14} />,
         children: [
-          { id: 'neural-key', label: 'Neural Key', icon: <Brain size={14} /> },
-          { id: 'machine-keys', label: 'Machines', icon: <Cpu size={14} /> },
-          { id: 'linked-accounts', label: 'Linked Accounts', icon: <Users size={14} /> },
+          { id: 'neural-key', label: 'Neural Key', icon: <Binary size={14} /> },
+          { id: 'machine-keys', label: 'Machines', icon: <Monitor size={14} /> },
+          { id: 'linked-accounts', label: 'Linked Accounts', icon: <Link size={14} /> },
         ],
       },
       {

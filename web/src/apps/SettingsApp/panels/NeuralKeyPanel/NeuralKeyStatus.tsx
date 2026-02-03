@@ -6,7 +6,7 @@ import {
   Label,
 } from '@cypher-asi/zui';
 import {
-  Brain,
+  Binary,
   Key,
   Calendar,
   AlertTriangle,
@@ -91,7 +91,7 @@ export function NeuralKeyStatus({
             <div className={styles.keyDetailsRow}>
               <div className={styles.statusHeroColumn}>
                 <div className={styles.statusIconActive}>
-                  <Brain size={32} />
+                  <Binary size={32} />
                 </div>
                 <Label size="sm" variant="success">
                   Neural Key Active

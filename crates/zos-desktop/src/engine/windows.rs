@@ -141,6 +141,9 @@ impl DesktopEngine {
             visible.height - taskbar_height / self.viewport.zoom,
         );
         self.windows.maximize(id, Some(maximize_bounds));
+
+        // Bring to top of window stack - maximizing implies user intent to work with this window
+        self.focus_window(id);
     }
 
     /// Restore a window
@@ -265,6 +268,37 @@ impl DesktopEngine {
                 360.0,
                 480.0,
             ),
+            "chat" | "zerochat" | "com.zero.chat" => widget_app_config(
+                "ZeroChat",
+                200.0,
+                300.0,
+                // Contacts window: compact width, taller for contact list
+                280.0,
+                500.0,
+            ),
+            // Conversation windows: zerochat-conversation-{contactId}
+            app if app.starts_with("zerochat-conversation-") => {
+                let contact_id = app.strip_prefix("zerochat-conversation-").unwrap_or("Chat");
+                // Capitalize first letter for title
+                let title = format!(
+                    "Chat - {}",
+                    contact_id
+                        .chars()
+                        .next()
+                        .map(|c| c.to_uppercase().to_string())
+                        .unwrap_or_default()
+                        + &contact_id.chars().skip(1).collect::<String>()
+                );
+                AppConfig {
+                    title: Box::leak(title.into_boxed_str()),
+                    content_interactive: false,
+                    window_type: WindowType::Standard,
+                    min_width: 250.0,
+                    min_height: 300.0,
+                    preferred_width: 400.0,
+                    preferred_height: 500.0,
+                }
+            }
             _ => standard_app_config(app_id),
         }
     }

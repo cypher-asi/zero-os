@@ -1,0 +1,81 @@
+/* Container - full height flex layout */
+.container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Profile header - MSN Messenger style */
+.profileHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.avatarBorder {
+  padding: 2px;
+  border: 1px solid #444;
+  border-radius: 50%;
+}
+
+.profileInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profileName {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.statusLabel {
+  font-size: 12px;
+}
+
+.statusChevron {
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.statusMessage {
+  cursor: pointer;
+}
+
+.statusMessage:hover {
+  text-decoration: underline;
+}
+
+/* Explorer container fills remaining space */
+.explorerContainer {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Contact node with status on right */
+.contactNode {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 8px;
+}
+
+.contactName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}

@@ -7,7 +7,7 @@ import {
   type MenuItem,
   type PanelDrillItem,
 } from '@cypher-asi/zui';
-import { Brain, Cpu, Users, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
+import { Binary, Monitor, Link, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
 import { useNeuralKey } from '@desktop/hooks/useNeuralKey';
 import { useMachineKeys } from '@desktop/hooks/useMachineKeys';
 import { useLinkedAccounts } from '@desktop/hooks/useLinkedAccounts';
@@ -120,7 +120,7 @@ export function IdentitySettingsPanel({ onDrillDown }: IdentitySettingsPanelProp
       {
         id: 'neural-key',
         label: 'Neural Key Status',
-        icon: <Brain size={14} />,
+        icon: <Binary size={14} />,
         suffix: neuralKeyState.hasNeuralKey ? (
           <div className={styles.statusBadge}>
             <CheckCircle size={12} className={styles.successIcon} />
@@ -148,7 +148,7 @@ export function IdentitySettingsPanel({ onDrillDown }: IdentitySettingsPanelProp
       {
         id: 'machine-keys',
         label: 'Registered Machines',
-        icon: <Cpu size={14} />,
+        icon: <Monitor size={14} />,
         suffix: (
           <div className={styles.countBadge}>
             <Label size="xs">
@@ -170,7 +170,7 @@ export function IdentitySettingsPanel({ onDrillDown }: IdentitySettingsPanelProp
       {
         id: 'linked-accounts',
         label: 'Connected Services',
-        icon: <Users size={14} />,
+        icon: <Link size={14} />,
         suffix:
           verifiedCount > 0 ? (
             <div className={styles.countBadge}>
