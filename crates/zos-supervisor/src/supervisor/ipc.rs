@@ -21,11 +21,14 @@ impl super::Supervisor {
         };
 
         // Build message for Init: [target_pid: u32, endpoint_slot: u32, data_len: u16, data: [u8]]
-        let mut payload = Vec::with_capacity(10 + input.len());
+        // Append newline so terminal executes the command (it waits for CR/LF)
+        let input_with_newline_len = input.len() + 1;
+        let mut payload = Vec::with_capacity(10 + input_with_newline_len);
         payload.extend_from_slice(&(target_pid as u32).to_le_bytes());
         payload.extend_from_slice(&1u32.to_le_bytes()); // Terminal input slot
-        payload.extend_from_slice(&(input.len() as u16).to_le_bytes());
+        payload.extend_from_slice(&(input_with_newline_len as u16).to_le_bytes());
         payload.extend_from_slice(input.as_bytes());
+        payload.push(b'\n');
 
         let supervisor_pid = ProcessId(0);
         use zos_ipc::supervisor::MSG_SUPERVISOR_CONSOLE_INPUT;
@@ -39,7 +42,7 @@ impl super::Supervisor {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Routed {} bytes to PID {} via Init",
-                    input.len(),
+                    input_with_newline_len,
                     target_pid
                 ));
             }

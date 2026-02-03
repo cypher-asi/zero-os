@@ -73,10 +73,15 @@
 
 .windowItem {
   max-width: 200px;
+  min-width: fit-content;
+  box-sizing: border-box;
+  /* Ensure consistent border width to prevent shifting on focus/selection */
+  border: 1px solid transparent !important;
   animation: fadeIn 0.3s ease-in-out;
   transition:
     opacity 0.2s ease-in-out,
-    transform 0.2s ease-in-out;
+    background-color 0.2s ease-in-out,
+    border-color 0.2s ease-in-out;
 }
 
 .windowItem.minimized {
@@ -123,6 +128,32 @@
 }
 
 .walletBtn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  padding: 0 !important;
+}
+
+.processPanelWrapper {
+  position: relative;
+}
+
+.processBtn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  padding: 0 !important;
+}
+
+.processBtn svg {
+  transition: transform 0.2s ease-in-out;
+}
+
+.processBtnActive svg {
+  transform: scale(1.1);
+}
+
+.notificationBtn {
   width: 36px !important;
   height: 36px !important;
   min-width: 36px !important;

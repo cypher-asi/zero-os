@@ -1,0 +1,49 @@
+/* Wrapper for positioning */
+.appBarWrapper {
+  position: fixed;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 999;
+  pointer-events: auto;
+}
+
+/* Panel styling */
+.appBar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 6px;
+  gap: 4px;
+  border-radius: 9999px;
+  overflow: visible;
+}
+
+.appButton {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  transition:
+    background-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.appButton:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.appButton:active:not(:disabled) {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.18) !important;
+}
+
+.appButton svg {
+  opacity: 0.9;
+  transition: opacity 0.15s ease;
+}
+
+.appButton:hover:not(:disabled) svg {
+  opacity: 1;
+}

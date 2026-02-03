@@ -80,7 +80,9 @@ export function syncStoresFromFrame(frame: FrameData): void {
   // =========================================================================
 
   const desktopCountChanged = frame.workspaceInfo.count !== prevDesktopCount;
-  const activeIndexChanged = frame.workspaceInfo.active !== prevActiveIndex;
+  // Use actualActive (logical state) instead of active (visual/animation state)
+  // to prevent UI flickering during workspace transitions
+  const activeIndexChanged = frame.workspaceInfo.actualActive !== prevActiveIndex;
   const desktopChanged =
     frame.viewMode !== prevViewMode ||
     frame.showVoid !== prevShowVoid ||
@@ -98,7 +100,7 @@ export function syncStoresFromFrame(frame: FrameData): void {
     // Update tracking
     prevViewMode = frame.viewMode;
     prevShowVoid = frame.showVoid;
-    prevActiveIndex = frame.workspaceInfo.active;
+    prevActiveIndex = frame.workspaceInfo.actualActive;
   }
 
   // Sync desktops array when count changes
@@ -109,7 +111,7 @@ export function syncStoresFromFrame(frame: FrameData): void {
       desktops.push({
         id: i,
         name: `Desktop ${i + 1}`,
-        active: i === frame.workspaceInfo.active,
+        active: i === frame.workspaceInfo.actualActive,
         windowCount: 0, // Not tracked per-desktop currently
       });
     }
@@ -121,7 +123,7 @@ export function syncStoresFromFrame(frame: FrameData): void {
     if (currentDesktops.length > 0) {
       const updatedDesktops = currentDesktops.map((d, i) => ({
         ...d,
-        active: i === frame.workspaceInfo.active,
+        active: i === frame.workspaceInfo.actualActive,
       }));
       desktopStore.setDesktops(updatedDesktops);
     }

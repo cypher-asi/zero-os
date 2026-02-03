@@ -1,5 +1,5 @@
-/// Pixel dots background shader with zoom support and multi-workspace rendering
-pub const SHADER_DOTS: &str = r#"
+/// Mosaic background shader - colorful cubes assembling into a grid with retro digital vibes
+pub const SHADER_MOSAIC: &str = r#"
 struct Uniforms {
     time: f32,
     zoom: f32,
@@ -43,6 +43,11 @@ fn hash21(p: vec2<f32>) -> f32 {
     return fract((q.x + q.y) * q.z);
 }
 
+fn hash22(p: vec2<f32>) -> vec2<f32> {
+    let n = vec2<f32>(dot(p, vec2<f32>(127.1, 311.7)), dot(p, vec2<f32>(269.5, 183.3)));
+    return fract(sin(n) * 43758.5453);
+}
+
 fn noise(p: vec2<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
@@ -52,6 +57,154 @@ fn noise(p: vec2<f32>) -> f32 {
         mix(hash21(i + vec2<f32>(0.0, 1.0)), hash21(i + vec2<f32>(1.0, 1.0)), u.x),
         u.y
     );
+}
+
+// Muted retro digital color palette - darker, more subtle
+fn get_retro_color(index: f32) -> vec3<f32> {
+    let i = i32(index * 8.0) % 8;
+    
+    // Muted cyan/teal
+    if (i == 0) { return vec3<f32>(0.0, 0.35, 0.38); }
+    // Muted magenta/pink
+    if (i == 1) { return vec3<f32>(0.4, 0.12, 0.28); }
+    // Muted yellow/gold
+    if (i == 2) { return vec3<f32>(0.42, 0.38, 0.08); }
+    // Muted green
+    if (i == 3) { return vec3<f32>(0.1, 0.38, 0.14); }
+    // Muted purple
+    if (i == 4) { return vec3<f32>(0.25, 0.12, 0.4); }
+    // Muted orange
+    if (i == 5) { return vec3<f32>(0.42, 0.22, 0.06); }
+    // Muted cool blue
+    if (i == 6) { return vec3<f32>(0.14, 0.22, 0.4); }
+    // Muted rose
+    if (i == 7) { return vec3<f32>(0.4, 0.08, 0.22); }
+    
+    return vec3<f32>(0.3, 0.3, 0.3);
+}
+
+// Render a single cube/tile with subtle glow
+fn render_cube(
+    local_uv: vec2<f32>,
+    cube_size: f32,
+    color: vec3<f32>,
+    shimmer: f32
+) -> vec4<f32> {
+    // Distance from center of cell (square/Chebyshev distance)
+    let d = max(abs(local_uv.x), abs(local_uv.y));
+    
+    // Cube fill (square shape)
+    let cube_edge = cube_size * 0.5;
+    let fill = smoothstep(cube_edge + 0.02, cube_edge - 0.02, d);
+    
+    // Inner gradient for subtle depth
+    let inner_grad = 0.7 + 0.3 * (1.0 - smoothstep(0.0, cube_edge, d));
+    
+    // Very subtle outer glow
+    let glow = smoothstep(cube_edge + 0.06, cube_edge, d) * (1.0 - fill) * 0.15;
+    
+    // Combine - muted and subtle
+    let cube_color = color * inner_grad * shimmer;
+    let final_color = cube_color * fill + color * glow * 0.5;
+    let alpha = fill + glow;
+    
+    return vec4<f32>(final_color, alpha);
+}
+
+// Main mosaic render function
+fn render_mosaic(uv: vec2<f32>, time: f32) -> vec3<f32> {
+    let asp = uniforms.resolution.x / uniforms.resolution.y;
+    
+    // Grid configuration - much smaller squares
+    let grid_cols = 56.0;
+    let grid_rows = grid_cols / asp;
+    
+    // Dark background
+    var color = vec3<f32>(0.018, 0.02, 0.028);
+    
+    // Subtle radial gradient in background
+    let center_uv = vec2<f32>((uv.x - 0.5) * asp, uv.y - 0.5);
+    let center_dist = length(center_uv);
+    color += vec3<f32>(0.01, 0.012, 0.018) * (1.0 - smoothstep(0.0, 0.9, center_dist));
+    
+    // Scale UV to aspect-corrected grid space
+    let grid_uv = vec2<f32>(uv.x * grid_cols, uv.y * grid_cols / asp);
+    
+    // Current cell
+    let cell = floor(grid_uv);
+    
+    // Smooth oscillating animation - tiles breathe in and out, never jump
+    // Use sine wave for perfectly smooth back-and-forth motion
+    let oscillation_period = 12.0;
+    let base_phase = time * 6.28318 / oscillation_period;
+    
+    // Check neighboring cells too for smooth cube rendering
+    for (var dy = -1; dy <= 1; dy++) {
+        for (var dx = -1; dx <= 1; dx++) {
+            let neighbor_cell = cell + vec2<f32>(f32(dx), f32(dy));
+            
+            // Skip cells outside reasonable bounds
+            if (neighbor_cell.x < -1.0 || neighbor_cell.x > grid_cols + 1.0 ||
+                neighbor_cell.y < -1.0 || neighbor_cell.y > grid_rows + 1.0) {
+                continue;
+            }
+            
+            // Per-cell random values (stable per cell)
+            let cell_hash = hash12(neighbor_cell);
+            let cell_hash2 = hash21(neighbor_cell + vec2<f32>(42.0, 17.0));
+            let offset_hash = hash22(neighbor_cell + vec2<f32>(13.0, 29.0));
+            
+            // Phase offset based on position - creates wave pattern
+            let cell_center = vec2<f32>(grid_cols * 0.5, grid_rows * 0.5);
+            let dist_from_center = length(neighbor_cell - cell_center) / length(cell_center);
+            let phase_offset = dist_from_center * 2.5 + cell_hash * 1.5;
+            
+            // Smooth sine oscillation - ranges from 0 to 1 and back
+            // sin returns -1 to 1, we map to 0 to 1
+            let oscillation = 0.5 + 0.5 * sin(base_phase + phase_offset);
+            
+            // Maximum scatter offset for this tile (consistent per tile)
+            let scatter_amount = 0.35;
+            let max_offset = (offset_hash - 0.5) * scatter_amount * 2.0;
+            
+            // Current offset oscillates between max_offset and zero
+            let current_offset = max_offset * (1.0 - oscillation);
+            
+            // Calculate UV relative to this neighbor cell
+            let rel_uv = grid_uv - neighbor_cell - 0.5 - current_offset;
+            
+            // Color from muted retro palette
+            let color_idx = cell_hash;
+            let cube_color = get_retro_color(color_idx);
+            
+            // Very subtle shimmer/pulse effect
+            let shimmer_phase = cell_hash2 * 6.28318;
+            let shimmer = 0.9 + 0.1 * sin(time * 1.2 + shimmer_phase);
+            
+            // Cube size - smaller with gaps
+            let cube_size = 0.7 + cell_hash2 * 0.08;
+            
+            // Render the cube
+            let cube = render_cube(rel_uv, cube_size, cube_color, shimmer);
+            
+            // Composite with alpha - more subtle blending
+            color = mix(color, cube.rgb, cube.a * 0.85);
+        }
+    }
+    
+    // Very subtle scanlines for CRT feel
+    let scanline = sin(uv.y * uniforms.resolution.y * 1.0) * 0.5 + 0.5;
+    color *= 0.97 + scanline * 0.03;
+    
+    // Very subtle noise/grain
+    let grain = (hash12(floor(uv * uniforms.resolution) + vec2<f32>(time * 10.0, 0.0)) - 0.5) * 0.01;
+    color += vec3<f32>(grain);
+    
+    // Vignette - subtle darkening at edges
+    let vig = 1.0 - smoothstep(0.4, 1.1, center_dist) * 0.35;
+    color *= vig;
+    
+    return color;
 }
 
 // Render grain-style background (for neighboring workspaces)
@@ -82,83 +235,7 @@ fn render_mist(uv: vec2<f32>, time: f32) -> vec3<f32> {
     return col;
 }
 
-// Render a single layer of dots with shimmer and color variation
-// grid_size: spacing between dots in pixels
-// dot_radius: size of dots in pixels  
-// intensity: overall brightness multiplier
-// shimmer_speed: how fast this layer shimmers (slower = more distant feel)
-// layer_offset: offset for hash to make each layer unique
-fn render_dot_layer(
-    uv: vec2<f32>, 
-    time: f32, 
-    grid_size: f32, 
-    dot_radius: f32, 
-    intensity: f32,
-    shimmer_speed: f32,
-    layer_offset: f32
-) -> vec3<f32> {
-    let pixel_pos = uv * uniforms.resolution;
-    let cell = floor(pixel_pos / grid_size);
-    let cell_center = (cell + 0.5) * grid_size;
-    let dist = length(pixel_pos - cell_center);
-    
-    // Per-dot shimmer based on cell hash + time
-    let cell_hash = hash12(cell + vec2<f32>(layer_offset, layer_offset * 0.7));
-    let shimmer_phase = cell_hash * 6.28318;  // Random phase per dot (2*PI)
-    let shimmer = 0.5 + 0.5 * sin(time * shimmer_speed + shimmer_phase);
-    let shimmer_intensity = 0.6 + 0.4 * shimmer;  // 0.6 to 1.0 range
-    
-    // Color tint based on cell position - mix between cool and warm tones
-    let color_hash = hash21(cell + vec2<f32>(42.0 + layer_offset, 17.0));
-    let color_hash2 = hash12(cell + vec2<f32>(13.0, 29.0 + layer_offset));
-    
-    // Define color palette: cool cyans/blues to warm pinks/golds
-    let cool_tint = vec3<f32>(0.65, 0.78, 0.92);   // Soft cyan-blue
-    let warm_tint = vec3<f32>(0.92, 0.72, 0.78);   // Soft pink-rose
-    let neutral = vec3<f32>(0.82, 0.82, 0.85);     // Light gray
-    let accent = vec3<f32>(0.75, 0.85, 0.70);      // Subtle green
-    
-    // Blend colors based on hash values
-    var dot_color = mix(cool_tint, warm_tint, color_hash);
-    dot_color = mix(dot_color, neutral, color_hash2 * 0.4);
-    // Occasional accent color
-    if (color_hash2 > 0.85) {
-        dot_color = mix(dot_color, accent, 0.5);
-    }
-    
-    // Anti-aliased dot
-    let dot = 1.0 - smoothstep(dot_radius - 0.5, dot_radius + 0.5, dist);
-    
-    // Apply shimmer and intensity
-    return dot_color * dot * intensity * shimmer_intensity;
-}
-
-// Render dots-style background with shimmer and color variation
-fn render_dots(uv: vec2<f32>, time: f32) -> vec3<f32> {
-    // Near-black background with slight blue tint
-    let base = vec3<f32>(0.018, 0.020, 0.028);
-    
-    // Very subtle far depth layer - barely visible
-    let depth_hint = render_dot_layer(uv, time, 48.0, 0.8, 0.015, 0.5, 50.0);
-    
-    // PRIMARY dot grid - the main visual element
-    let primary = render_dot_layer(uv, time, 24.0, 1.5, 0.16, 1.8, 0.0);
-    
-    // Composite: base + subtle depth + primary
-    var color = base + depth_hint + primary;
-    
-    // Subtle vignette for depth
-    let asp = uniforms.resolution.x / uniforms.resolution.y;
-    let centered_uv = vec2<f32>((uv.x - 0.5) * asp, uv.y - 0.5);
-    let vignette_dist = length(centered_uv);
-    let vignette = 1.0 - smoothstep(0.4, 1.1, vignette_dist) * 0.15;
-    
-    color *= vignette;
-    
-    return color;
-}
-
-// Get workspace background type (0=grain, 1=mist, 2=dots)
+// Get workspace background type
 fn get_workspace_bg(index: i32) -> f32 {
     if (index == 0) { return uniforms.workspace_backgrounds.x; }
     if (index == 1) { return uniforms.workspace_backgrounds.y; }
@@ -169,8 +246,12 @@ fn get_workspace_bg(index: i32) -> f32 {
 
 // Render the appropriate background based on type
 fn render_background(bg_type: f32, uv: vec2<f32>, time: f32) -> vec3<f32> {
-    if (bg_type > 1.5) {
-        return render_dots(uv, time);
+    if (bg_type > 3.5) {
+        return render_mosaic(uv, time);
+    } else if (bg_type > 2.5) {
+        return render_mosaic(uv, time); // Use mosaic as fallback
+    } else if (bg_type > 1.5) {
+        return render_mosaic(uv, time);
     } else if (bg_type > 0.5) {
         return render_mist(uv, time);
     } else {

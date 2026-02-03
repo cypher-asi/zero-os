@@ -1,5 +1,5 @@
-/// Pixel dots background shader with zoom support and multi-workspace rendering
-pub const SHADER_DOTS: &str = r#"
+/// Binary background shader - tiny grid of 0s and 1s with grayscale gradients
+pub const SHADER_BINARY: &str = r#"
 struct Uniforms {
     time: f32,
     zoom: f32,
@@ -32,6 +32,7 @@ fn vs_main(@builtin(vertex_index) vertex_index: u32) -> VsOut {
     return out;
 }
 
+// Fast hash functions
 fn hash12(p: vec2<f32>) -> f32 {
     let h = dot(p, vec2<f32>(127.1, 311.7));
     return fract(sin(h) * 43758.5453);
@@ -52,6 +53,100 @@ fn noise(p: vec2<f32>) -> f32 {
         mix(hash21(i + vec2<f32>(0.0, 1.0)), hash21(i + vec2<f32>(1.0, 1.0)), u.x),
         u.y
     );
+}
+
+// Get pattern value for a cell - returns 0.0 to 1.0 for grayscale intensity
+// Also returns binary state via the sign
+fn get_cell_value(cell: vec2<f32>, time: f32) -> vec2<f32> {
+    // Per-cell phase offset (computed once per cell)
+    let h1 = hash12(cell);
+    let h2 = hash21(cell * 1.3 + vec2<f32>(17.1, 31.7));
+    
+    // Precompute cell position factors
+    let cx = cell.x * 0.02;
+    let cy = cell.y * 0.025;
+    let csum = (cell.x + cell.y) * 0.012;
+    let cdiff = (cell.x - cell.y) * 0.015;
+    
+    // Multiple interference patterns - all using efficient trig
+    // Radial waves from corners (cheap: no sqrt, use squared distance proxy)
+    let d1 = cx * cx + cy * cy;
+    let d2 = (cx - 2.0) * (cx - 2.0) + cy * cy;
+    let d3 = cx * cx + (cy - 1.5) * (cy - 1.5);
+    
+    let wave1 = sin(d1 * 8.0 - time * 2.0 + h1 * 0.5);
+    let wave2 = sin(d2 * 6.0 - time * 1.7 + h2 * 0.4);
+    let wave3 = sin(d3 * 7.0 - time * 2.3);
+    
+    // Diagonal patterns
+    let diag1 = sin(csum * 15.0 + time * 1.5 + h1 * 0.3);
+    let diag2 = sin(cdiff * 12.0 - time * 1.2 + h2 * 0.25);
+    
+    // Standing wave pattern
+    let stand = sin(cx * 20.0) * sin(cy * 25.0 + time * 0.8);
+    
+    // Combine all patterns
+    var combined = wave1 * 0.25 + wave2 * 0.2 + wave3 * 0.15;
+    combined += diag1 * 0.15 + diag2 * 0.1 + stand * 0.15;
+    
+    // Add cell-specific variation
+    combined += (h1 - 0.5) * 0.3;
+    
+    // Binary state from sign
+    let state = step(0.0, combined);
+    
+    // Intensity from absolute distance to threshold (how "strong" the state is)
+    // This creates the grayscale gradient - values near threshold are dim, far from threshold are bright
+    let intensity = abs(combined);
+    
+    // Map intensity to visible range (0.15 to 1.0) - ensures minimum visibility
+    let brightness = 0.15 + intensity * 0.85;
+    
+    return vec2<f32>(state, brightness);
+}
+
+// Render a tiny "0" - minimal hollow ellipse
+fn render_zero(local_uv: vec2<f32>) -> f32 {
+    let c = local_uv - 0.5;
+    let d = length(c * vec2<f32>(2.2, 3.0));
+    return smoothstep(0.5, 0.4, d) * smoothstep(0.2, 0.3, d);
+}
+
+// Render a tiny "1" - minimal vertical stroke
+fn render_one(local_uv: vec2<f32>) -> f32 {
+    let c = local_uv - 0.5;
+    return step(abs(c.x), 0.1) * step(abs(c.y), 0.38);
+}
+
+// Main binary grid render function
+fn render_binary(uv: vec2<f32>, time: f32) -> vec3<f32> {
+    // Very dense grid - tiny characters
+    let cols = 200.0;
+    let rows = 110.0;
+    let cell_size = vec2<f32>(1.0 / cols, 1.0 / rows);
+    
+    // Find cell (fixed grid)
+    let cell = floor(uv / cell_size);
+    let local_uv = fract(uv / cell_size);
+    
+    // Get state and brightness for this cell
+    let cell_data = get_cell_value(cell, time);
+    let state = cell_data.x;
+    let brightness = cell_data.y;
+    
+    // Render digit shape
+    var shape: f32;
+    if (state > 0.5) {
+        shape = render_one(local_uv);
+    } else {
+        shape = render_zero(local_uv);
+    }
+    
+    // Apply grayscale based on pattern intensity
+    // Brighter = further from flip threshold, dimmer = about to flip
+    let gray = brightness * shape;
+    
+    return vec3<f32>(gray, gray, gray);
 }
 
 // Render grain-style background (for neighboring workspaces)
@@ -82,83 +177,7 @@ fn render_mist(uv: vec2<f32>, time: f32) -> vec3<f32> {
     return col;
 }
 
-// Render a single layer of dots with shimmer and color variation
-// grid_size: spacing between dots in pixels
-// dot_radius: size of dots in pixels  
-// intensity: overall brightness multiplier
-// shimmer_speed: how fast this layer shimmers (slower = more distant feel)
-// layer_offset: offset for hash to make each layer unique
-fn render_dot_layer(
-    uv: vec2<f32>, 
-    time: f32, 
-    grid_size: f32, 
-    dot_radius: f32, 
-    intensity: f32,
-    shimmer_speed: f32,
-    layer_offset: f32
-) -> vec3<f32> {
-    let pixel_pos = uv * uniforms.resolution;
-    let cell = floor(pixel_pos / grid_size);
-    let cell_center = (cell + 0.5) * grid_size;
-    let dist = length(pixel_pos - cell_center);
-    
-    // Per-dot shimmer based on cell hash + time
-    let cell_hash = hash12(cell + vec2<f32>(layer_offset, layer_offset * 0.7));
-    let shimmer_phase = cell_hash * 6.28318;  // Random phase per dot (2*PI)
-    let shimmer = 0.5 + 0.5 * sin(time * shimmer_speed + shimmer_phase);
-    let shimmer_intensity = 0.6 + 0.4 * shimmer;  // 0.6 to 1.0 range
-    
-    // Color tint based on cell position - mix between cool and warm tones
-    let color_hash = hash21(cell + vec2<f32>(42.0 + layer_offset, 17.0));
-    let color_hash2 = hash12(cell + vec2<f32>(13.0, 29.0 + layer_offset));
-    
-    // Define color palette: cool cyans/blues to warm pinks/golds
-    let cool_tint = vec3<f32>(0.65, 0.78, 0.92);   // Soft cyan-blue
-    let warm_tint = vec3<f32>(0.92, 0.72, 0.78);   // Soft pink-rose
-    let neutral = vec3<f32>(0.82, 0.82, 0.85);     // Light gray
-    let accent = vec3<f32>(0.75, 0.85, 0.70);      // Subtle green
-    
-    // Blend colors based on hash values
-    var dot_color = mix(cool_tint, warm_tint, color_hash);
-    dot_color = mix(dot_color, neutral, color_hash2 * 0.4);
-    // Occasional accent color
-    if (color_hash2 > 0.85) {
-        dot_color = mix(dot_color, accent, 0.5);
-    }
-    
-    // Anti-aliased dot
-    let dot = 1.0 - smoothstep(dot_radius - 0.5, dot_radius + 0.5, dist);
-    
-    // Apply shimmer and intensity
-    return dot_color * dot * intensity * shimmer_intensity;
-}
-
-// Render dots-style background with shimmer and color variation
-fn render_dots(uv: vec2<f32>, time: f32) -> vec3<f32> {
-    // Near-black background with slight blue tint
-    let base = vec3<f32>(0.018, 0.020, 0.028);
-    
-    // Very subtle far depth layer - barely visible
-    let depth_hint = render_dot_layer(uv, time, 48.0, 0.8, 0.015, 0.5, 50.0);
-    
-    // PRIMARY dot grid - the main visual element
-    let primary = render_dot_layer(uv, time, 24.0, 1.5, 0.16, 1.8, 0.0);
-    
-    // Composite: base + subtle depth + primary
-    var color = base + depth_hint + primary;
-    
-    // Subtle vignette for depth
-    let asp = uniforms.resolution.x / uniforms.resolution.y;
-    let centered_uv = vec2<f32>((uv.x - 0.5) * asp, uv.y - 0.5);
-    let vignette_dist = length(centered_uv);
-    let vignette = 1.0 - smoothstep(0.4, 1.1, vignette_dist) * 0.15;
-    
-    color *= vignette;
-    
-    return color;
-}
-
-// Get workspace background type (0=grain, 1=mist, 2=dots)
+// Get workspace background type
 fn get_workspace_bg(index: i32) -> f32 {
     if (index == 0) { return uniforms.workspace_backgrounds.x; }
     if (index == 1) { return uniforms.workspace_backgrounds.y; }
@@ -169,8 +188,12 @@ fn get_workspace_bg(index: i32) -> f32 {
 
 // Render the appropriate background based on type
 fn render_background(bg_type: f32, uv: vec2<f32>, time: f32) -> vec3<f32> {
-    if (bg_type > 1.5) {
-        return render_dots(uv, time);
+    if (bg_type > 3.5) {
+        return render_binary(uv, time);
+    } else if (bg_type > 2.5) {
+        return render_binary(uv, time);
+    } else if (bg_type > 1.5) {
+        return render_binary(uv, time);
     } else if (bg_type > 0.5) {
         return render_mist(uv, time);
     } else {
@@ -180,36 +203,24 @@ fn render_background(bg_type: f32, uv: vec2<f32>, time: f32) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    // Workspace layout from uniforms (must match Rust desktop engine)
     let workspace_width = uniforms.workspace_width;
     let workspace_height = uniforms.workspace_height;
     let workspace_gap = uniforms.workspace_gap;
     let total_cell = workspace_width + workspace_gap;
     
-    // Calculate world position based on viewport
     let screen_offset = (in.uv - 0.5) * uniforms.resolution;
     let world_pos = uniforms.viewport_center + screen_offset / uniforms.zoom;
     
-    // transitioning > 0.5 means we're in void mode or transitioning between workspaces
-    // When false (in workspace mode), always render full-screen regardless of zoom
     let in_void_or_transitioning = uniforms.transitioning > 0.5;
-    
-    // Close-up slide: zoom ~1.0 during transition = workspace-to-workspace slide
-    // In this mode, we hide gaps/borders but keep the same position calculations
     let is_closeup_slide = in_void_or_transitioning && uniforms.zoom > 0.85;
     
-    // Determine which workspace this pixel belongs to (always use real gap for math)
     let grid_x = world_pos.x + workspace_width * 0.5;
     let workspace_index = i32(floor(grid_x / total_cell));
     let cell_x = fract(grid_x / total_cell) * total_cell;
-    
-    // Check if we're in the gap between workspaces
     let in_gap = cell_x > workspace_width;
     
-    // For close-up slides in the gap, figure out which workspace to extend
     var visual_workspace_index = workspace_index;
     if (is_closeup_slide && in_gap) {
-        // In gap during slide - extend the workspace we're closer to
         let gap_pos = (cell_x - workspace_width) / workspace_gap;
         if (gap_pos > 0.5) {
             visual_workspace_index = workspace_index + 1;
@@ -223,20 +234,11 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var color: vec3<f32>;
     
     if (!in_void_or_transitioning) {
-        // WORKSPACE MODE: Always render full-screen active workspace background
-        // The background fills the entire viewport regardless of zoom level
         let active_bg = get_workspace_bg(i32(uniforms.active_workspace));
         color = render_background(active_bg, in.uv, uniforms.time);
     } else if (is_closeup_slide) {
-        // CLOSE-UP SLIDE: Render workspaces sliding across screen
-        // The boundary between workspaces moves across the screen as viewport pans
-        // Each side of the boundary renders its workspace's background using screen UV
-        // This creates a visible "wipe" transition effect
-        
-        // Determine which workspace this screen pixel shows based on world position
         var pixel_workspace = workspace_index;
         if (in_gap) {
-            // In gap - extend the closer workspace
             let gap_pos = (cell_x - workspace_width) / workspace_gap;
             if (gap_pos > 0.5) {
                 pixel_workspace = workspace_index + 1;
@@ -245,24 +247,17 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         
         let clamped_index = clamp(pixel_workspace, 0, i32(uniforms.workspace_count) - 1);
         let bg_type = get_workspace_bg(clamped_index);
-        
-        // Use screen UV so the pattern stays stable on each side
-        // The sliding effect comes from the BOUNDARY moving across the screen
         color = render_background(bg_type, in.uv, uniforms.time);
         
-        // Add a subtle vertical line at workspace boundaries to make the wipe visible
-        // Calculate where the boundary appears in screen space
         let boundary_world_x = f32(workspace_index) * total_cell + workspace_width * 0.5;
         let boundary_screen_x = (boundary_world_x - uniforms.viewport_center.x) * uniforms.zoom / uniforms.resolution.x + 0.5;
         let dist_to_boundary = abs(in.uv.x - boundary_screen_x);
         
-        // Draw a subtle edge effect near the boundary (only if boundary is on screen)
         if (boundary_screen_x > 0.0 && boundary_screen_x < 1.0 && dist_to_boundary < 0.02) {
             let edge_fade = smoothstep(0.0, 0.02, dist_to_boundary);
             color = color * (0.7 + 0.3 * edge_fade);
         }
     } else if (valid_workspace && in_vertical_bounds && !in_gap) {
-        // VOID MODE: Show grid of all workspaces with gaps and borders
         let bg_type = get_workspace_bg(workspace_index);
         
         let local_x = cell_x / workspace_width;
@@ -271,7 +266,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         
         color = render_background(bg_type, local_uv, uniforms.time);
         
-        // Add border around workspaces
         let edge_x = min(local_x, 1.0 - local_x);
         let edge_y = min(local_y, 1.0 - local_y);
         let edge_dist = min(edge_x, edge_y);
@@ -279,16 +273,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
         let border = smoothstep(0.0, border_width, edge_dist);
         color = mix(vec3<f32>(0.2, 0.22, 0.25), color, border * 0.7 + 0.3);
         
-        // Highlight active workspace slightly
         if (is_active_workspace) {
             color = color * 1.05;
         }
     } else {
-        // THE VOID - pure darkness (outside workspace bounds or in gap)
         color = vec3<f32>(0.02, 0.02, 0.03);
     }
     
-    // Add subtle vignette when in void mode and zoomed out
     if (in_void_or_transitioning && uniforms.zoom < 0.9) {
         let vignette_uv = (in.uv - 0.5) * 2.0;
         let vignette_strength = 1.0 - smoothstep(0.3, 0.9, uniforms.zoom);

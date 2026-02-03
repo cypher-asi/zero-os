@@ -7,8 +7,13 @@
  *
  * Sessions persist across refreshes via VFS, so authenticated
  * users see the desktop directly without needing to re-login.
+ *
+ * Security: Passes `isLocked` prop to children when no session exists.
+ * This disables all desktop interactions at the JavaScript level,
+ * preventing bypass via DevTools DOM manipulation.
  */
 
+import React from 'react';
 import { useIdentityStore, selectRemoteAuthState } from '@/stores';
 import { useZeroIdAuth } from '../hooks/useZeroIdAuth';
 import { AuthPanel } from '../Taskbar/IdentityPanel/modals/AuthPanel';
@@ -22,16 +27,17 @@ export function AuthGate({ children }: AuthGateProps) {
   const { isLoadingSession } = useZeroIdAuth();
 
   // Wait for session check to complete before showing login
-  // During loading, render children so the desktop can initialize
+  // During loading, render locked desktop so it can initialize
   if (isLoadingSession) {
-    return <>{children}</>;
+    return <>{React.cloneElement(children as React.ReactElement, { isLocked: true })}</>;
   }
 
   // No session - show auth modal (cannot be dismissed)
+  // Pass isLocked=true to disable all desktop interactions
   if (!remoteAuthState) {
     return (
       <>
-        {children}
+        {React.cloneElement(children as React.ReactElement, { isLocked: true })}
         <AuthPanel
           initialView="login"
           onClose={() => {
@@ -43,6 +49,6 @@ export function AuthGate({ children }: AuthGateProps) {
     );
   }
 
-  // Valid session exists - render children normally
-  return <>{children}</>;
+  // Valid session exists - render children normally (unlocked)
+  return <>{React.cloneElement(children as React.ReactElement, { isLocked: false })}</>;
 }

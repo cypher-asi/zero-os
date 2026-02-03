@@ -21,7 +21,7 @@ export function AppRouter({ appId, windowId, processId }: AppRouterProps) {
       return <ClockApp />;
     case 'calculator':
     case 'com.zero.calculator':
-      return <CalculatorApp />;
+      return <CalculatorApp windowId={windowId} />;
     case 'settings':
     case 'com.zero.settings':
       return <SettingsApp />;

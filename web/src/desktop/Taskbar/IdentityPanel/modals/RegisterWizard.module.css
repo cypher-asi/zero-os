@@ -88,6 +88,25 @@
   gap: 8px;
 }
 
+.methodButtonUnsupported {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  opacity: 0.4;
+  cursor: not-allowed;
+  position: relative;
+}
+
+.comingSoonLabel {
+  font-size: 10px;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.5));
+  margin-left: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 /* Form styles - matches login */
 .form {
   display: flex;

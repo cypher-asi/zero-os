@@ -16,6 +16,8 @@ interface UsePointerHandlersProps {
   setBackgroundMenu: React.Dispatch<React.SetStateAction<BackgroundMenuState>>;
   selectionBox: SelectionBox | null;
   setSelectionBox: React.Dispatch<React.SetStateAction<SelectionBox | null>>;
+  /** When true, all pointer interactions are disabled (pre-auth lock) */
+  isLocked?: boolean;
 }
 
 interface UsePointerHandlersResult {
@@ -35,10 +37,12 @@ export function usePointerHandlers({
   setBackgroundMenu,
   selectionBox,
   setSelectionBox,
+  isLocked = false,
 }: UsePointerHandlersProps): UsePointerHandlersResult {
   // Global pointer move/up handlers to catch drag events
+  // Don't register when locked
   useEffect(() => {
-    if (!initialized) return;
+    if (!initialized || isLocked) return;
 
     const handleGlobalPointerMove = (e: PointerEvent): void => {
       desktop.pointer_move(e.clientX, e.clientY);
@@ -54,10 +58,13 @@ export function usePointerHandlers({
       window.removeEventListener('pointermove', handleGlobalPointerMove);
       window.removeEventListener('pointerup', handleGlobalPointerUp);
     };
-  }, [desktop, initialized]);
+  }, [desktop, initialized, isLocked]);
 
   // Use capture phase for panning so it intercepts before windows
+  // Don't register when locked
   useEffect(() => {
+    if (isLocked) return;
+
     const container = containerRef.current;
     if (!container) return;
 
@@ -77,11 +84,14 @@ export function usePointerHandlers({
     container.addEventListener('pointerdown', handleCapturePointerDown, { capture: true });
     return () =>
       container.removeEventListener('pointerdown', handleCapturePointerDown, { capture: true });
-  }, [desktop, containerRef]);
+  }, [desktop, containerRef, isLocked]);
 
   // Forward pointer events to Rust (bubble phase for normal interactions)
+  // All handlers are no-ops when locked
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if (isLocked) return;
+
       // Close background menu only if clicking directly on the desktop or canvas
       const target = e.target as HTMLElement;
       const isDesktopClick = target === containerRef.current || target.tagName === 'CANVAS';
@@ -114,11 +124,13 @@ export function usePointerHandlers({
         });
       }
     },
-    [desktop, backgroundMenu, setBackgroundMenu, setSelectionBox, containerRef]
+    [desktop, backgroundMenu, setBackgroundMenu, setSelectionBox, containerRef, isLocked]
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
+      if (isLocked) return;
+
       desktop.pointer_move(e.clientX, e.clientY);
 
       if (selectionBox) {
@@ -127,31 +139,39 @@ export function usePointerHandlers({
         );
       }
     },
-    [desktop, selectionBox, setSelectionBox]
+    [desktop, selectionBox, setSelectionBox, isLocked]
   );
 
   const handlePointerUp = useCallback(() => {
+    if (isLocked) return;
+
     desktop.pointer_up();
     setSelectionBox(null);
-  }, [desktop, setSelectionBox]);
+  }, [desktop, setSelectionBox, isLocked]);
 
   const handlePointerLeave = useCallback(() => {
+    if (isLocked) return;
+
     desktop.pointer_up();
     setSelectionBox(null);
-  }, [desktop, setSelectionBox]);
+  }, [desktop, setSelectionBox, isLocked]);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
+      if (isLocked) return;
+
       if (e.ctrlKey) {
         desktop.wheel(e.deltaX, e.deltaY, e.clientX, e.clientY, e.ctrlKey);
       }
     },
-    [desktop]
+    [desktop, isLocked]
   );
 
   // Handle right-click for background menu
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
+      if (isLocked) return;
+
       // Only show background menu when right-clicking on the desktop background itself
       if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'CANVAS') {
         e.preventDefault();
@@ -162,7 +182,7 @@ export function usePointerHandlers({
         });
       }
     },
-    [setBackgroundMenu, containerRef]
+    [setBackgroundMenu, containerRef, isLocked]
   );
 
   return {

@@ -22,7 +22,11 @@ import type { WorkspaceInfo } from '@/stores/types';
 import type { DesktopProps, SelectionBox, DesktopBackgroundType } from '../Desktop/types';
 import styles from '../Desktop/Desktop.module.css';
 
-export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): JSX.Element {
+export function DesktopWithPermissions({
+  supervisor,
+  desktop,
+  isLocked = false,
+}: DesktopProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const backgroundRef = useRef<DesktopBackgroundType | null>(null);
   const [initialized, setInitialized] = useState(false);
@@ -55,7 +59,7 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
     handleBackgroundReady,
   } = useBackgroundMenu({ desktop, backgroundRef, workspaceInfoRef });
 
-  // Pointer event handlers
+  // Pointer event handlers (guarded by isLocked)
   const {
     handlePointerDown,
     handlePointerMove,
@@ -71,6 +75,7 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
     setBackgroundMenu,
     selectionBox,
     setSelectionBox,
+    isLocked,
   });
 
   // Initialize desktop engine
@@ -175,11 +180,13 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
   }, []);
 
   // Handle keyboard shortcuts for workspace navigation and void entry/exit
+  // (guarded by isLocked)
   useKeyboardShortcuts({
     initialized,
     desktop,
     supervisor,
     launchTerminal,
+    isLocked,
   });
 
   // Compute selection box rectangle
@@ -198,6 +205,7 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
         <div
           ref={containerRef}
           className={styles.desktop}
+          style={isLocked ? { pointerEvents: 'none' } : undefined}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -211,24 +219,28 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
               backgroundRef={backgroundRef}
               onBackgroundReady={handleBackgroundReady}
               workspaceInfoRef={workspaceInfoRef}
+              isLocked={isLocked}
             />
           )}
 
-          {/* Selection bounding box */}
-          {selectionRect && selectionRect.width > 2 && selectionRect.height > 2 && (
-            <div
-              className={styles.selectionBox}
-              style={{
-                left: selectionRect.left,
-                top: selectionRect.top,
-                width: selectionRect.width,
-                height: selectionRect.height,
-              }}
-            />
-          )}
+          {/* Selection bounding box - only when unlocked */}
+          {!isLocked &&
+            selectionRect &&
+            selectionRect.width > 2 &&
+            selectionRect.height > 2 && (
+              <div
+                className={styles.selectionBox}
+                style={{
+                  left: selectionRect.left,
+                  top: selectionRect.top,
+                  width: selectionRect.width,
+                  height: selectionRect.height,
+                }}
+              />
+            )}
 
-          {/* Desktop context menu */}
-          {backgroundMenu.visible && (
+          {/* Desktop context menu - only when unlocked */}
+          {!isLocked && backgroundMenu.visible && (
             <DesktopContextMenu
               x={backgroundMenu.x}
               y={backgroundMenu.y}
@@ -243,8 +255,8 @@ export function DesktopWithPermissions({ supervisor, desktop }: DesktopProps): J
             />
           )}
 
-          {/* Permission Dialog - shown when an app requests permissions */}
-          {permissions.pendingRequest && (
+          {/* Permission Dialog - shown when an app requests permissions (only when unlocked) */}
+          {!isLocked && permissions.pendingRequest && (
             <PermissionDialog
               app={permissions.pendingRequest.app}
               onApprove={permissions.pendingRequest.onApprove}

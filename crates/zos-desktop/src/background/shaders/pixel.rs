@@ -1,5 +1,5 @@
-/// Pixel dots background shader with zoom support and multi-workspace rendering
-pub const SHADER_DOTS: &str = r#"
+/// Moving pixel background shader with angled grid pattern and color diversity
+pub const SHADER_PIXEL: &str = r#"
 struct Uniforms {
     time: f32,
     zoom: f32,
@@ -43,6 +43,12 @@ fn hash21(p: vec2<f32>) -> f32 {
     return fract((q.x + q.y) * q.z);
 }
 
+fn hash22(p: vec2<f32>) -> vec2<f32> {
+    let h1 = hash12(p);
+    let h2 = hash21(p + vec2<f32>(43.0, 17.0));
+    return vec2<f32>(h1, h2);
+}
+
 fn noise(p: vec2<f32>) -> f32 {
     let i = floor(p);
     let f = fract(p);
@@ -52,6 +58,137 @@ fn noise(p: vec2<f32>) -> f32 {
         mix(hash21(i + vec2<f32>(0.0, 1.0)), hash21(i + vec2<f32>(1.0, 1.0)), u.x),
         u.y
     );
+}
+
+// Rotate a 2D point by angle (in radians)
+fn rotate2d(p: vec2<f32>, angle: f32) -> vec2<f32> {
+    let c = cos(angle);
+    let s = sin(angle);
+    return vec2<f32>(p.x * c - p.y * s, p.x * s + p.y * c);
+}
+
+// Get color from palette based on hash value
+fn get_pixel_color(h: f32, brightness: f32) -> vec3<f32> {
+    // Vibrant digital color palette
+    let cyan = vec3<f32>(0.3, 0.9, 1.0);
+    let blue = vec3<f32>(0.2, 0.5, 1.0);
+    let white = vec3<f32>(0.95, 0.95, 1.0);
+    let purple = vec3<f32>(0.6, 0.3, 0.9);
+    let magenta = vec3<f32>(0.9, 0.2, 0.6);
+    let green = vec3<f32>(0.2, 0.9, 0.5);
+    
+    var color: vec3<f32>;
+    
+    if (h < 0.2) {
+        color = mix(cyan, blue, h * 5.0);
+    } else if (h < 0.4) {
+        color = mix(blue, white, (h - 0.2) * 5.0);
+    } else if (h < 0.55) {
+        color = mix(white, purple, (h - 0.4) * 6.67);
+    } else if (h < 0.7) {
+        color = mix(purple, cyan, (h - 0.55) * 6.67);
+    } else if (h < 0.85) {
+        // Occasional magenta accent
+        color = mix(cyan, magenta, (h - 0.7) * 6.67);
+    } else {
+        // Rare green accent for digital feel
+        color = mix(magenta, green, (h - 0.85) * 6.67);
+    }
+    
+    return color * brightness;
+}
+
+// Render a single layer of angled pixels with dynamic on/off behavior
+fn render_pixel_layer(
+    uv: vec2<f32>,
+    time: f32,
+    grid_size: f32,
+    angle: f32,
+    speed: f32,
+    intensity: f32,
+    layer_offset: f32,
+    density: f32
+) -> vec3<f32> {
+    let pixel_pos = uv * uniforms.resolution;
+    
+    // Apply slow movement offset before rotation
+    let movement = vec2<f32>(time * speed * 15.0, time * speed * 8.0);
+    let moved_pos = pixel_pos + movement;
+    
+    // Rotate the coordinate system for angled grid
+    let rotated_pos = rotate2d(moved_pos, angle);
+    
+    // Create grid cells
+    let cell = floor(rotated_pos / grid_size);
+    let cell_pos = fract(rotated_pos / grid_size);
+    
+    // Hash for this cell
+    let cell_hash = hash12(cell + vec2<f32>(layer_offset, layer_offset * 0.7));
+    let color_hash = hash21(cell + vec2<f32>(42.0 + layer_offset, 17.0));
+    let brightness_hash = hash12(cell + vec2<f32>(13.0, 29.0 + layer_offset));
+    let blink_hash = hash12(cell + vec2<f32>(77.0 + layer_offset, 53.0));
+    
+    // Density control - skip some cells
+    if (cell_hash > density) {
+        return vec3<f32>(0.0);
+    }
+    
+    // Pixel size varies slightly per cell
+    let pixel_size = 0.15 + brightness_hash * 0.15;
+    
+    // Distance from cell center
+    let center_dist = length(cell_pos - 0.5);
+    
+    // Sharp pixel with slight anti-aliasing
+    let pixel = 1.0 - smoothstep(pixel_size - 0.05, pixel_size + 0.05, center_dist);
+    
+    // === DYNAMIC ON/OFF BEHAVIOR ===
+    
+    // Each pixel has its own blink frequency (0.3 to 2.5 Hz)
+    let blink_freq = 0.3 + blink_hash * 2.2;
+    let blink_phase = cell_hash * 6.28318;
+    
+    // Create sharp on/off pulses using stepped sine wave
+    let blink_wave = sin(time * blink_freq * 6.28318 + blink_phase);
+    
+    // Some pixels blink hard (full on/off), others shimmer softly
+    let blink_intensity = blink_hash;  // 0-1: how "blinky" this pixel is
+    
+    // Hard blinkers: use threshold to create digital on/off
+    let hard_blink = select(0.0, 1.0, blink_wave > (blink_hash * 0.8 - 0.4));
+    
+    // Soft shimmerers: smooth sine wave
+    let soft_shimmer = 0.5 + 0.5 * blink_wave;
+    
+    // Mix between hard blink and soft shimmer based on pixel's character
+    let blink_factor = mix(soft_shimmer, hard_blink, smoothstep(0.4, 0.7, blink_intensity));
+    
+    // Random flicker - occasional quick flash
+    let flicker_seed = hash12(cell + vec2<f32>(floor(time * 8.0), layer_offset));
+    let flicker = select(1.0, 1.8, flicker_seed > 0.97);  // 3% chance of bright flash
+    
+    // Propagating wave that turns pixels on/off in sequence
+    let wave_center = vec2<f32>(
+        sin(time * 0.3) * 50.0,
+        cos(time * 0.2) * 40.0
+    );
+    let wave_dist = length(cell - wave_center);
+    let wave_pulse = 0.7 + 0.3 * sin(wave_dist * 0.08 - time * 1.5);
+    
+    // Combine all effects
+    let alive_factor = blink_factor * wave_pulse * flicker;
+    
+    // Base brightness with variation
+    let base_brightness = 0.5 + brightness_hash * 0.5;
+    let final_brightness = base_brightness * alive_factor;
+    
+    // Threshold to create more digital on/off feel
+    let threshold_brightness = select(0.0, final_brightness, final_brightness > 0.25);
+    
+    // Get color from palette
+    let color = get_pixel_color(color_hash, threshold_brightness);
+    
+    return color * pixel * intensity;
 }
 
 // Render grain-style background (for neighboring workspaces)
@@ -82,83 +219,93 @@ fn render_mist(uv: vec2<f32>, time: f32) -> vec3<f32> {
     return col;
 }
 
-// Render a single layer of dots with shimmer and color variation
-// grid_size: spacing between dots in pixels
-// dot_radius: size of dots in pixels  
-// intensity: overall brightness multiplier
-// shimmer_speed: how fast this layer shimmers (slower = more distant feel)
-// layer_offset: offset for hash to make each layer unique
-fn render_dot_layer(
-    uv: vec2<f32>, 
-    time: f32, 
-    grid_size: f32, 
-    dot_radius: f32, 
-    intensity: f32,
-    shimmer_speed: f32,
-    layer_offset: f32
-) -> vec3<f32> {
+// Render dots-style background (for neighboring workspaces)
+fn render_dots_simple(uv: vec2<f32>, time: f32) -> vec3<f32> {
     let pixel_pos = uv * uniforms.resolution;
+    let grid_size = 24.0;
     let cell = floor(pixel_pos / grid_size);
     let cell_center = (cell + 0.5) * grid_size;
     let dist = length(pixel_pos - cell_center);
     
-    // Per-dot shimmer based on cell hash + time
-    let cell_hash = hash12(cell + vec2<f32>(layer_offset, layer_offset * 0.7));
-    let shimmer_phase = cell_hash * 6.28318;  // Random phase per dot (2*PI)
-    let shimmer = 0.5 + 0.5 * sin(time * shimmer_speed + shimmer_phase);
-    let shimmer_intensity = 0.6 + 0.4 * shimmer;  // 0.6 to 1.0 range
+    let cell_hash = hash12(cell);
+    let shimmer = 0.5 + 0.5 * sin(time * 1.8 + cell_hash * 6.28318);
+    let shimmer_intensity = 0.6 + 0.4 * shimmer;
     
-    // Color tint based on cell position - mix between cool and warm tones
-    let color_hash = hash21(cell + vec2<f32>(42.0 + layer_offset, 17.0));
-    let color_hash2 = hash12(cell + vec2<f32>(13.0, 29.0 + layer_offset));
+    let color_hash = hash21(cell + vec2<f32>(42.0, 17.0));
+    let cool_tint = vec3<f32>(0.65, 0.78, 0.92);
+    let warm_tint = vec3<f32>(0.92, 0.72, 0.78);
+    let dot_color = mix(cool_tint, warm_tint, color_hash);
     
-    // Define color palette: cool cyans/blues to warm pinks/golds
-    let cool_tint = vec3<f32>(0.65, 0.78, 0.92);   // Soft cyan-blue
-    let warm_tint = vec3<f32>(0.92, 0.72, 0.78);   // Soft pink-rose
-    let neutral = vec3<f32>(0.82, 0.82, 0.85);     // Light gray
-    let accent = vec3<f32>(0.75, 0.85, 0.70);      // Subtle green
-    
-    // Blend colors based on hash values
-    var dot_color = mix(cool_tint, warm_tint, color_hash);
-    dot_color = mix(dot_color, neutral, color_hash2 * 0.4);
-    // Occasional accent color
-    if (color_hash2 > 0.85) {
-        dot_color = mix(dot_color, accent, 0.5);
-    }
-    
-    // Anti-aliased dot
-    let dot = 1.0 - smoothstep(dot_radius - 0.5, dot_radius + 0.5, dist);
-    
-    // Apply shimmer and intensity
-    return dot_color * dot * intensity * shimmer_intensity;
-}
-
-// Render dots-style background with shimmer and color variation
-fn render_dots(uv: vec2<f32>, time: f32) -> vec3<f32> {
-    // Near-black background with slight blue tint
+    let dot = 1.0 - smoothstep(1.0, 2.0, dist);
     let base = vec3<f32>(0.018, 0.020, 0.028);
     
-    // Very subtle far depth layer - barely visible
-    let depth_hint = render_dot_layer(uv, time, 48.0, 0.8, 0.015, 0.5, 50.0);
+    return base + dot_color * dot * 0.16 * shimmer_intensity;
+}
+
+// Render pixel-style background with multiple angled layers
+fn render_pixel(uv: vec2<f32>, time: f32) -> vec3<f32> {
+    // Near-black background with slight blue tint
+    let base = vec3<f32>(0.008, 0.010, 0.018);
     
-    // PRIMARY dot grid - the main visual element
-    let primary = render_dot_layer(uv, time, 24.0, 1.5, 0.16, 1.8, 0.0);
+    // Primary layer - main diagonal pattern (about 35 degrees)
+    let primary = render_pixel_layer(
+        uv, time,
+        10.0,           // grid_size - dense pixels
+        0.61,           // angle (~35 degrees in radians)
+        0.008,          // speed - slow movement
+        0.28,           // intensity - boosted for more presence
+        0.0,            // layer_offset
+        0.65            // density
+    );
     
-    // Composite: base + subtle depth + primary
-    var color = base + depth_hint + primary;
+    // Secondary layer - different angle for depth (about -25 degrees)
+    let secondary = render_pixel_layer(
+        uv, time,
+        12.0,           // slightly larger grid
+        -0.44,          // angle (~-25 degrees)
+        0.007,          // movement speed
+        0.20,           // intensity - boosted
+        50.0,           // different layer offset
+        0.55            // density
+    );
+    
+    // Tertiary layer for extra depth (about 60 degrees)
+    let tertiary = render_pixel_layer(
+        uv, time,
+        16.0,           // larger grid for distant feel
+        1.05,           // angle (~60 degrees)
+        0.005,          // slow
+        0.12,           // subtle but visible
+        100.0,          // different offset
+        0.40            // moderate density
+    );
+    
+    // Fourth layer - adds more complexity (about -70 degrees)
+    let quaternary = render_pixel_layer(
+        uv, time,
+        8.0,            // smaller grid - more detailed
+        -1.22,          // angle (~-70 degrees)
+        0.01,           // slightly faster
+        0.15,           // moderate intensity
+        150.0,          // different offset
+        0.45            // density
+    );
+    
+    // Composite all layers
+    var color = base + primary + secondary + tertiary + quaternary;
     
     // Subtle vignette for depth
     let asp = uniforms.resolution.x / uniforms.resolution.y;
     let centered_uv = vec2<f32>((uv.x - 0.5) * asp, uv.y - 0.5);
     let vignette_dist = length(centered_uv);
-    let vignette = 1.0 - smoothstep(0.4, 1.1, vignette_dist) * 0.15;
+    let vignette = 1.0 - smoothstep(0.5, 1.2, vignette_dist) * 0.15;
     
     color *= vignette;
     
     return color;
 }
 
-// Get workspace background type (0=grain, 1=mist, 2=dots)
+// Get workspace background type (0=grain, 1=mist, 2=dots, 3=pixel)
 fn get_workspace_bg(index: i32) -> f32 {
     if (index == 0) { return uniforms.workspace_backgrounds.x; }
     if (index == 1) { return uniforms.workspace_backgrounds.y; }
@@ -168,12 +315,25 @@ fn get_workspace_bg(index: i32) -> f32 {
 }
 
 // Render the appropriate background based on type
+// 0=grain, 1=mist, 2=dots, 3=pixel, 4=mosaic, 5=binary
 fn render_background(bg_type: f32, uv: vec2<f32>, time: f32) -> vec3<f32> {
-    if (bg_type > 1.5) {
-        return render_dots(uv, time);
+    if (bg_type > 4.5) {
+        // Binary (5) - fallback to grain
+        return render_grain(uv, time);
+    } else if (bg_type > 3.5) {
+        // Mosaic (4) - fallback to grain
+        return render_grain(uv, time);
+    } else if (bg_type > 2.5) {
+        // Pixel (3)
+        return render_pixel(uv, time);
+    } else if (bg_type > 1.5) {
+        // Dots (2)
+        return render_dots_simple(uv, time);
     } else if (bg_type > 0.5) {
+        // Mist (1)
         return render_mist(uv, time);
     } else {
+        // Grain (0)
         return render_grain(uv, time);
     }
 }

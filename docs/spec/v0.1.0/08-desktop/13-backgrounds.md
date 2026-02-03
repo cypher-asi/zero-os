@@ -76,8 +76,8 @@ impl BackgroundType {
     /// Get the display name for this background
     pub fn name(&self) -> &'static str {
         match self {
-            BackgroundType::Grain => "Film Grain",
-            BackgroundType::Mist => "Misty Smoke",
+            BackgroundType::Grain => "Grain",
+            BackgroundType::Mist => "Myst",
         }
     }
     

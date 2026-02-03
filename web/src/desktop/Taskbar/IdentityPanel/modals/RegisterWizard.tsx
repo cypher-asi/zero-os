@@ -493,22 +493,24 @@ export function RegisterContent({ onClose, onSelfSovereignSelected, onLoadingCha
 
               <Button
                 variant="secondary"
-                onClick={() => handleOAuthRegistration('google')}
-                disabled={isLoading}
-                className={styles.methodButton}
+                disabled
+                className={styles.methodButtonUnsupported}
+                title="Google sign-in coming soon"
               >
                 <GoogleIcon />
                 Google
+                <span className={styles.comingSoonLabel}>Soon</span>
               </Button>
 
               <Button
                 variant="secondary"
-                onClick={() => handleOAuthRegistration('x')}
-                disabled={isLoading}
-                className={styles.methodButton}
+                disabled
+                className={styles.methodButtonUnsupported}
+                title="X sign-in coming soon"
               >
                 <XIcon />
                 X
+                <span className={styles.comingSoonLabel}>Soon</span>
               </Button>
 
               <div className={styles.divider}>

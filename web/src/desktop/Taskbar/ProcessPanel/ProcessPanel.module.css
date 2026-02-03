@@ -1,0 +1,206 @@
+.panelWrapper {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 4px;
+}
+
+.panel {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  padding: 12px;
+}
+
+/* Content wrapper */
+.contentWrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Section headers */
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.sectionStats {
+  font-size: 10px;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace);
+  color: var(--color-accent, #01f4cb);
+}
+
+/* Process List */
+.processList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.processItem {
+  display: flex;
+  align-items: center;
+  padding: 6px 0;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.processPid {
+  width: 24px;
+  flex-shrink: 0;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace);
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+  font-size: 10px;
+}
+
+.processName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace);
+  font-size: 11px;
+}
+
+.processMem {
+  width: 50px;
+  text-align: right;
+  flex-shrink: 0;
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace);
+  font-size: 10px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.processState {
+  width: 52px;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+/* More button and menu */
+.processMoreWrapper {
+  position: relative;
+  width: 24px;
+  flex-shrink: 0;
+}
+
+.moreButton {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  min-width: unset;
+  font-size: 14px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+
+.processItem:hover .moreButton {
+  opacity: 1;
+}
+
+.processMenuWrapper {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 2px;
+  z-index: 100;
+}
+
+/* Quick Actions */
+.quickActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.1));
+}
+
+/* Memory Bar */
+.memorySection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.memBar {
+  height: 12px;
+  background: var(--color-surface, rgba(0, 0, 0, 0.3));
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+}
+
+.memSegment {
+  height: 100%;
+  transition: width 0.3s;
+}
+
+/* Memory legend */
+.memLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.memLegendItem {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.memLegendColor {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+/* Axiom Stats */
+.axiomSection {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.axiomStats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.axiomRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.axiomLabel {
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.5));
+}
+
+.axiomValue {
+  font-family: var(--font-mono, 'Monaco', 'Menlo', monospace);
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.axiomValueSuccess {
+  color: var(--color-success, #01f4cb);
+}
+
+.axiomValueWarning {
+  color: var(--color-warning, #facc15);
+}

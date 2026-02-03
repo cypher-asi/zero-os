@@ -6,6 +6,8 @@ interface UseKeyboardShortcutsOptions {
   desktop: DesktopController;
   supervisor?: Supervisor | null;
   launchTerminal: () => void;
+  /** When true, all keyboard shortcuts are disabled (pre-auth lock) */
+  isLocked?: boolean;
 }
 
 /**
@@ -23,9 +25,11 @@ export function useKeyboardShortcuts({
   desktop,
   supervisor,
   launchTerminal,
+  isLocked = false,
 }: UseKeyboardShortcutsOptions): void {
   useEffect(() => {
-    if (!initialized) return;
+    // Don't register keyboard shortcuts when locked or not initialized
+    if (!initialized || isLocked) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if focus is in an input field
@@ -65,7 +69,7 @@ export function useKeyboardShortcuts({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [initialized, desktop, supervisor, launchTerminal]);
+  }, [initialized, desktop, supervisor, launchTerminal, isLocked]);
 }
 
 /**

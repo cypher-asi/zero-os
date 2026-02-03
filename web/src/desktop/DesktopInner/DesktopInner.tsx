@@ -9,6 +9,7 @@ import type { DesktopController } from '../hooks/useSupervisor';
 import type { WorkspaceInfo } from '@/stores/types';
 import { WindowContent } from '../WindowContent';
 import { Taskbar } from '../Taskbar';
+import { AppBar } from '../AppBar';
 import { AppRouter } from '@apps/AppRouter/AppRouter';
 import { useRenderLoop } from '../Desktop/hooks/useRenderLoop';
 import type { DesktopBackgroundType } from '../Desktop/types';
@@ -19,6 +20,8 @@ interface DesktopInnerProps {
   backgroundRef: React.MutableRefObject<DesktopBackgroundType | null>;
   onBackgroundReady: () => void;
   workspaceInfoRef: React.MutableRefObject<WorkspaceInfo | null>;
+  /** When true, desktop is locked (pre-auth) - windows not rendered, taskbar disabled */
+  isLocked?: boolean;
 }
 
 export function DesktopInner({
@@ -26,6 +29,7 @@ export function DesktopInner({
   backgroundRef,
   onBackgroundReady,
   workspaceInfoRef,
+  isLocked = false,
 }: DesktopInnerProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -43,15 +47,18 @@ export function DesktopInner({
       <canvas id="desktop-canvas" ref={canvasRef} className={styles.canvas} />
 
       {/* React overlays for window content - positions updated via direct DOM */}
-      {windows
-        .filter((w) => w.state !== 'minimized')
-        .map((w) => (
-          <WindowContent key={w.id} ref={(el) => setWindowRef(w.id, el)} window={w}>
-            <AppRouter appId={w.appId} windowId={w.id} processId={w.processId} />
-          </WindowContent>
-        ))}
+      {/* Windows are NOT rendered when locked to prevent interaction via DevTools */}
+      {!isLocked &&
+        windows
+          .filter((w) => w.state !== 'minimized')
+          .map((w) => (
+            <WindowContent key={w.id} ref={(el) => setWindowRef(w.id, el)} window={w}>
+              <AppRouter appId={w.appId} windowId={w.id} processId={w.processId} />
+            </WindowContent>
+          ))}
 
-      <Taskbar />
+      <AppBar isLocked={isLocked} />
+      <Taskbar isLocked={isLocked} />
     </>
   );
 }

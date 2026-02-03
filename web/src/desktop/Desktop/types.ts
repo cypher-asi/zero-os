@@ -20,6 +20,8 @@ export type {
 export interface DesktopProps {
   supervisor: Supervisor;
   desktop: DesktopController;
+  /** When true, the desktop is locked (pre-auth) and all interactions are disabled */
+  isLocked?: boolean;
 }
 
 export interface SelectionBox {

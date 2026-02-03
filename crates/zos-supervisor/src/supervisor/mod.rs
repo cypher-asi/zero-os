@@ -228,17 +228,21 @@ impl Supervisor {
         };
 
         // Send console input via capability-checked IPC
+        // Append newline so terminal executes the command (it waits for CR/LF)
+        let mut data = input.as_bytes().to_vec();
+        data.push(b'\n');
+
         let supervisor_pid = ProcessId(0);
         match self.system.ipc_send(
             supervisor_pid,
             supervisor_slot,
             zos_kernel::MSG_CONSOLE_INPUT,
-            input.as_bytes().to_vec(),
+            data,
         ) {
             Ok(()) => {
                 log(&format!(
                     "[supervisor] Delivered {} bytes to PID {} via IPC (slot {})",
-                    input.len(),
+                    input.len() + 1,
                     pid,
                     supervisor_slot
                 ));

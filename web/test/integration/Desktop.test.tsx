@@ -59,8 +59,8 @@ vi.mock('../../pkg/supervisor/zos_supervisor.js', () => ({
     render: vi.fn(),
     get_available_backgrounds: vi.fn().mockReturnValue(
       JSON.stringify([
-        { id: 'grain', name: 'Film Grain' },
-        { id: 'mist', name: 'Misty Smoke' },
+        { id: 'grain', name: 'Grain' },
+        { id: 'mist', name: 'Myst' },
       ])
     ),
     get_current_background: vi.fn().mockReturnValue('grain'),

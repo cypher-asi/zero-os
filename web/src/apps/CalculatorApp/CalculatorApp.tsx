@@ -1,7 +1,16 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Panel, Button, Text, Label } from '@cypher-asi/zui';
 import { decodeCalculatorState, CalculatorState } from '../_wire-format/app-protocol';
+import { useWindowStore, selectFocusedId } from '../../stores/windowStore';
 import styles from './CalculatorApp.module.css';
+
+// =============================================================================
+// Props
+// =============================================================================
+
+interface CalculatorAppProps {
+  windowId: number;
+}
 
 // =============================================================================
 // Calculator State Types
@@ -127,6 +136,48 @@ function handleNegate(state: CalcInternalState): CalcUpdate {
 }
 
 // =============================================================================
+// Keyboard Mapping
+// =============================================================================
+
+/**
+ * Map keyboard key to calculator button name.
+ * Returns null if the key is not a calculator key.
+ */
+function keyToButtonName(key: string): string | null {
+  // Digits 0-9
+  if (key >= '0' && key <= '9') {
+    return `digit_${key}`;
+  }
+
+  // Operators and special keys
+  switch (key) {
+    case '.':
+      return 'decimal';
+    case '+':
+      return 'op_add';
+    case '-':
+      return 'op_sub';
+    case '*':
+      return 'op_mul';
+    case '/':
+      return 'op_div';
+    case 'Enter':
+    case '=':
+      return 'op_equals';
+    case 'Backspace':
+      return 'backspace';
+    case 'Escape':
+    case 'c':
+    case 'C':
+      return 'clear';
+    case 'Delete':
+      return 'clear_entry';
+    default:
+      return null;
+  }
+}
+
+// =============================================================================
 // Calculator Component
 // =============================================================================
 
@@ -134,8 +185,12 @@ function handleNegate(state: CalcInternalState): CalcUpdate {
  * Calculator App - Basic arithmetic calculator
  *
  * Uses ZUI components: Panel, Button, Text, Label
+ * Supports keyboard input for digits, operators, and control keys.
  */
-export function CalculatorApp() {
+export function CalculatorApp({ windowId }: CalculatorAppProps) {
+  const focusedId = useWindowStore(selectFocusedId);
+  const isFocused = focusedId === windowId;
+
   const [state, setState] = useState<CalculatorState>({
     display: '0',
     pendingOp: null,
@@ -195,6 +250,30 @@ export function CalculatorApp() {
     },
     [state, accumulator, justComputed]
   );
+
+  // Keyboard input handling
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only process keyboard input when this window is focused
+      if (!isFocused) return;
+
+      // Ignore if focus is in an input field
+      const target = e.target as HTMLElement;
+      const tagName = target.tagName?.toLowerCase();
+      if (tagName === 'input' || tagName === 'textarea' || target.isContentEditable) {
+        return;
+      }
+
+      const buttonName = keyToButtonName(e.key);
+      if (buttonName) {
+        e.preventDefault();
+        handleButton(buttonName);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isFocused, handleButton]);
 
   const handleMessage = (data: Uint8Array) => {
     const decoded = decodeCalculatorState(data);

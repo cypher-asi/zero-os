@@ -68,14 +68,14 @@ impl DesktopBackground {
     }
 
     /// Get all available background types as JSON
-    /// Returns: [{ "id": "grain", "name": "Film Grain" }, ...]
+    /// Returns: [{ "id": "grain", "name": "Grain" }, ...]
     #[wasm_bindgen]
     pub fn get_available_backgrounds(&self) -> String {
         let backgrounds: Vec<serde_json::Value> = background::BackgroundType::all()
             .iter()
             .map(|bg| {
                 serde_json::json!({
-                    "id": format!("{:?}", bg).to_lowercase(),
+                    "id": bg.id(),
                     "name": bg.name()
                 })
             })
@@ -87,21 +87,19 @@ impl DesktopBackground {
     #[wasm_bindgen]
     pub fn get_current_background(&self) -> String {
         if let Some(renderer) = &self.renderer {
-            format!("{:?}", renderer.current_background()).to_lowercase()
+            renderer.current_background().id().to_string()
         } else {
             "grain".to_string()
         }
     }
 
-    /// Set the background type by ID (e.g., "grain", "mist", "dots")
+    /// Set the background type by ID (e.g., "grain", "mist", "dots", "pixel", "mosaic", "binary")
     /// Returns true if successful, false if ID is invalid
     #[wasm_bindgen]
     pub fn set_background(&mut self, id: &str) -> bool {
-        let bg_type = match id.to_lowercase().as_str() {
-            "grain" => background::BackgroundType::Grain,
-            "mist" => background::BackgroundType::Mist,
-            "dots" => background::BackgroundType::Dots,
-            _ => return false,
+        let bg_type = match background::BackgroundType::from_id(id) {
+            Some(bg) => bg,
+            None => return false,
         };
 
         if let Some(renderer) = &mut self.renderer {

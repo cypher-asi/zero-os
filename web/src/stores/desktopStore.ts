@@ -67,7 +67,9 @@ export const useDesktopStore = create<DesktopStoreState>()(
         inVoid: frame.viewMode === 'void',
         showVoid: frame.showVoid,
         viewport: frame.viewport,
-        activeIndex: frame.workspaceInfo.active,
+        // Use actualActive (logical state) instead of active (visual/animation state)
+        // to prevent UI flickering during workspace transitions
+        activeIndex: frame.workspaceInfo.actualActive,
         workspaceInfo: frame.workspaceInfo,
       }),
   }))

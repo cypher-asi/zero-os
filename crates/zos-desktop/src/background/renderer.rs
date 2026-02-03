@@ -327,6 +327,9 @@ impl BackgroundRenderer {
                 BackgroundType::Grain => 0.0,
                 BackgroundType::Mist => 1.0,
                 BackgroundType::Dots => 2.0,
+                BackgroundType::Pixel => 3.0,
+                BackgroundType::Mosaic => 4.0,
+                BackgroundType::Binary => 5.0,
             };
         }
     }
