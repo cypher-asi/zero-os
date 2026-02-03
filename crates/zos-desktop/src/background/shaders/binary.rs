@@ -74,16 +74,16 @@ fn get_cell_value(cell: vec2<f32>, time: f32) -> vec2<f32> {
     let d2 = (cx - 2.0) * (cx - 2.0) + cy * cy;
     let d3 = cx * cx + (cy - 1.5) * (cy - 1.5);
     
-    let wave1 = sin(d1 * 8.0 - time * 2.0 + h1 * 0.5);
-    let wave2 = sin(d2 * 6.0 - time * 1.7 + h2 * 0.4);
-    let wave3 = sin(d3 * 7.0 - time * 2.3);
+    let wave1 = sin(d1 * 8.0 - time * 0.15 + h1 * 0.5);
+    let wave2 = sin(d2 * 6.0 - time * 0.12 + h2 * 0.4);
+    let wave3 = sin(d3 * 7.0 - time * 0.18);
     
     // Diagonal patterns
-    let diag1 = sin(csum * 15.0 + time * 1.5 + h1 * 0.3);
-    let diag2 = sin(cdiff * 12.0 - time * 1.2 + h2 * 0.25);
+    let diag1 = sin(csum * 15.0 + time * 0.1 + h1 * 0.3);
+    let diag2 = sin(cdiff * 12.0 - time * 0.08 + h2 * 0.25);
     
     // Standing wave pattern
-    let stand = sin(cx * 20.0) * sin(cy * 25.0 + time * 0.8);
+    let stand = sin(cx * 20.0) * sin(cy * 25.0 + time * 0.06);
     
     // Combine all patterns
     var combined = wave1 * 0.25 + wave2 * 0.2 + wave3 * 0.15;

@@ -144,11 +144,11 @@ fn render_pixel_layer(
     
     // === DYNAMIC ON/OFF BEHAVIOR ===
     
-    // Each pixel has its own blink frequency (0.3 to 2.5 Hz)
-    let blink_freq = 0.3 + blink_hash * 2.2;
+    // Each pixel has its own blink frequency (very slow: 0.02 to 0.12 Hz = 8-50 second cycles)
+    let blink_freq = 0.02 + blink_hash * 0.1;
     let blink_phase = cell_hash * 6.28318;
     
-    // Create sharp on/off pulses using stepped sine wave
+    // Create slow on/off pulses using sine wave
     let blink_wave = sin(time * blink_freq * 6.28318 + blink_phase);
     
     // Some pixels blink hard (full on/off), others shimmer softly
@@ -163,17 +163,17 @@ fn render_pixel_layer(
     // Mix between hard blink and soft shimmer based on pixel's character
     let blink_factor = mix(soft_shimmer, hard_blink, smoothstep(0.4, 0.7, blink_intensity));
     
-    // Random flicker - occasional quick flash
-    let flicker_seed = hash12(cell + vec2<f32>(floor(time * 8.0), layer_offset));
-    let flicker = select(1.0, 1.8, flicker_seed > 0.97);  // 3% chance of bright flash
+    // Random flicker - very occasional flash (updates every 2 seconds)
+    let flicker_seed = hash12(cell + vec2<f32>(floor(time * 0.5), layer_offset));
+    let flicker = select(1.0, 1.4, flicker_seed > 0.98);  // 2% chance of subtle flash
     
-    // Propagating wave that turns pixels on/off in sequence
+    // Propagating wave that turns pixels on/off in sequence (very slow)
     let wave_center = vec2<f32>(
-        sin(time * 0.3) * 50.0,
-        cos(time * 0.2) * 40.0
+        sin(time * 0.02) * 50.0,
+        cos(time * 0.015) * 40.0
     );
     let wave_dist = length(cell - wave_center);
-    let wave_pulse = 0.7 + 0.3 * sin(wave_dist * 0.08 - time * 1.5);
+    let wave_pulse = 0.8 + 0.2 * sin(wave_dist * 0.08 - time * 0.1);
     
     // Combine all effects
     let alive_factor = blink_factor * wave_pulse * flicker;
@@ -252,7 +252,7 @@ fn render_pixel(uv: vec2<f32>, time: f32) -> vec3<f32> {
         uv, time,
         10.0,           // grid_size - dense pixels
         0.61,           // angle (~35 degrees in radians)
-        0.008,          // speed - slow movement
+        0.0003,         // speed - extremely slow drift
         0.28,           // intensity - boosted for more presence
         0.0,            // layer_offset
         0.65            // density
@@ -263,7 +263,7 @@ fn render_pixel(uv: vec2<f32>, time: f32) -> vec3<f32> {
         uv, time,
         12.0,           // slightly larger grid
         -0.44,          // angle (~-25 degrees)
-        0.007,          // movement speed
+        0.00025,        // movement speed
         0.20,           // intensity - boosted
         50.0,           // different layer offset
         0.55            // density
@@ -274,7 +274,7 @@ fn render_pixel(uv: vec2<f32>, time: f32) -> vec3<f32> {
         uv, time,
         16.0,           // larger grid for distant feel
         1.05,           // angle (~60 degrees)
-        0.005,          // slow
+        0.0002,         // slow
         0.12,           // subtle but visible
         100.0,          // different offset
         0.40            // moderate density
@@ -285,7 +285,7 @@ fn render_pixel(uv: vec2<f32>, time: f32) -> vec3<f32> {
         uv, time,
         8.0,            // smaller grid - more detailed
         -1.22,          // angle (~-70 degrees)
-        0.01,           // slightly faster
+        0.00035,        // slightly faster
         0.15,           // moderate intensity
         150.0,          // different offset
         0.45            // density

@@ -83,30 +83,46 @@ fn get_retro_color(index: f32) -> vec3<f32> {
     return vec3<f32>(0.3, 0.3, 0.3);
 }
 
-// Render a single cube/tile with subtle glow
+// Render a single cube/tile with glowing border only (transparent interior)
 fn render_cube(
     local_uv: vec2<f32>,
     cube_size: f32,
     color: vec3<f32>,
     shimmer: f32
 ) -> vec4<f32> {
-    // Distance from center of cell (square/Chebyshev distance)
+    // Distance from center of cell (square/Chebyshev distance for square shape)
     let d = max(abs(local_uv.x), abs(local_uv.y));
     
-    // Cube fill (square shape)
+    // Cube edges
     let cube_edge = cube_size * 0.5;
-    let fill = smoothstep(cube_edge + 0.02, cube_edge - 0.02, d);
+    let border_thickness = 0.06;
+    let inner_edge = cube_edge - border_thickness;
     
-    // Inner gradient for subtle depth
-    let inner_grad = 0.7 + 0.3 * (1.0 - smoothstep(0.0, cube_edge, d));
+    // Border region: between inner_edge and cube_edge
+    let in_border = smoothstep(inner_edge - 0.02, inner_edge + 0.01, d) * 
+                    smoothstep(cube_edge + 0.02, cube_edge - 0.01, d);
     
-    // Very subtle outer glow
-    let glow = smoothstep(cube_edge + 0.06, cube_edge, d) * (1.0 - fill) * 0.15;
+    // Outer glow - extends beyond the border
+    let outer_glow = smoothstep(cube_edge + 0.12, cube_edge - 0.02, d) * 
+                     (1.0 - smoothstep(cube_edge - 0.04, cube_edge + 0.02, d));
+    let outer_glow_strength = outer_glow * 0.4;
     
-    // Combine - muted and subtle
-    let cube_color = color * inner_grad * shimmer;
-    let final_color = cube_color * fill + color * glow * 0.5;
-    let alpha = fill + glow;
+    // Inner glow - subtle glow bleeding inward from border
+    let inner_glow = smoothstep(inner_edge - 0.08, inner_edge + 0.02, d) *
+                     (1.0 - smoothstep(inner_edge - 0.02, inner_edge + 0.04, d));
+    let inner_glow_strength = inner_glow * 0.2;
+    
+    // Border brightness varies along the edge for more interest
+    let edge_variation = 0.8 + 0.2 * sin(atan2(local_uv.y, local_uv.x) * 4.0);
+    
+    // Combine border and glows
+    let border_color = color * shimmer * edge_variation * 1.2;
+    let glow_color = color * shimmer * 0.6;
+    
+    let final_color = border_color * in_border + 
+                      glow_color * outer_glow_strength + 
+                      glow_color * inner_glow_strength;
+    let alpha = in_border + outer_glow_strength * 0.5 + inner_glow_strength * 0.3;
     
     return vec4<f32>(final_color, alpha);
 }
@@ -135,7 +151,7 @@ fn render_mosaic(uv: vec2<f32>, time: f32) -> vec3<f32> {
     
     // Smooth oscillating animation - tiles breathe in and out, never jump
     // Use sine wave for perfectly smooth back-and-forth motion
-    let oscillation_period = 12.0;
+    let oscillation_period = 60.0;
     let base_phase = time * 6.28318 / oscillation_period;
     
     // Check neighboring cells too for smooth cube rendering
@@ -179,7 +195,7 @@ fn render_mosaic(uv: vec2<f32>, time: f32) -> vec3<f32> {
             
             // Very subtle shimmer/pulse effect
             let shimmer_phase = cell_hash2 * 6.28318;
-            let shimmer = 0.9 + 0.1 * sin(time * 1.2 + shimmer_phase);
+            let shimmer = 0.9 + 0.1 * sin(time * 0.15 + shimmer_phase);
             
             // Cube size - smaller with gaps
             let cube_size = 0.7 + cell_hash2 * 0.08;
