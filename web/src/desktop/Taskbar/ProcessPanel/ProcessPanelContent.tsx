@@ -25,20 +25,20 @@ interface AxiomStats {
   storage_ready: boolean;
 }
 
-// Color palette for processes
+// Color palette for processes - wide range of accent shades
 const COLORS = [
-  '#01f4cb',
-  '#60a5fa',
-  '#f472b6',
-  '#facc15',
-  '#a78bfa',
-  '#fb923c',
-  '#01f4cb',
-  '#f87171',
-  '#818cf8',
-  '#01f4cb',
-  '#fbbf24',
-  '#f97316',
+  '#01f4cb', // accent (base)
+  '#b8fff0', // very light
+  '#007a5e', // dark
+  '#5dfbdd', // light
+  '#004d3a', // very dark
+  '#00c9a3', // medium
+  '#d4fff7', // lightest (near white)
+  '#00a080', // medium-dark
+  '#8afde8', // medium-light
+  '#003d2e', // darkest
+  '#00e6b8', // bright
+  '#006650', // deep
 ];
 
 function formatBytes(bytes: number): string {
