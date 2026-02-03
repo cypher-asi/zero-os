@@ -9,7 +9,7 @@ import {
   Laptop,
   Copy,
   Check,
-  LogOut,
+  ArrowLeft,
   RefreshCw,
   Cpu,
   Brain,
@@ -68,14 +68,12 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
     remoteAuthState,
     isAuthenticating,
     error,
-    disconnect,
     refreshToken,
     getTimeRemaining,
     isTokenExpired,
   } = useZeroIdAuth();
 
   const { copy, isCopied } = useCopyToClipboard();
-  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [showTokenExpanded, setShowTokenExpanded] = useState(false);
 
   // PanelDrill navigation (optional - allows component to work both inside and outside drill context)
@@ -97,20 +95,12 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
     }
   };
 
-  const handleDisconnect = async () => {
-    setIsDisconnecting(true);
-    try {
-      await disconnect();
-      // Navigate back using PanelDrill context if available, otherwise use fallback
-      if (panelDrill) {
-        panelDrill.navigateBack();
-      } else {
-        onClose?.();
-      }
-    } catch {
-      // Error is already set in the hook
-    } finally {
-      setIsDisconnecting(false);
+  const handleBack = () => {
+    // Navigate back using PanelDrill context if available, otherwise use fallback
+    if (panelDrill) {
+      panelDrill.navigateBack();
+    } else {
+      onClose?.();
     }
   };
 
@@ -362,18 +352,17 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
         )}
       </div>
 
-      {/* Footer - Disconnect Button pinned to bottom */}
+      {/* Footer - Back Button pinned to bottom */}
       <div className={styles.footer}>
         <Menu
           items={[
             {
-              id: 'disconnect',
-              label: isDisconnecting ? 'Disconnecting...' : 'Disconnect',
-              icon: isDisconnecting ? <Spinner size="small" /> : <LogOut size={14} />,
-              disabled: isDisconnecting || isAuthenticating,
+              id: 'back',
+              label: 'Back',
+              icon: <ArrowLeft size={14} />,
             },
           ]}
-          onChange={(id) => id === 'disconnect' && handleDisconnect()}
+          onChange={(id) => id === 'back' && handleBack()}
           background="none"
           border="none"
         />

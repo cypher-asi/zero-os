@@ -7,7 +7,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
@@ -57,7 +57,7 @@
   width: 100%;
   overflow: hidden;
   position: relative;
-  border-radius: 12px 12px 0 0;
+  /* Panel's overflow:hidden clips to its border-radius, no need for extra rounding here */
 }
 
 .imageHeader img {

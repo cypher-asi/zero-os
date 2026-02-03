@@ -16,9 +16,32 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
   // Unified auth panel state - null means closed, otherwise shows the specified view
   const [authPanelView, setAuthPanelView] = useState<AuthView | null>(null);
 
-  // Initialize stack with root item (content will be populated in useEffect)
+  // Use refs to avoid recreating content on every render while keeping callbacks fresh
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Push a new panel onto the stack
+  const pushPanel = useCallback((item: PanelDrillItem) => {
+    setStack((prev) => [...prev, item]);
+  }, []);
+
+  const pushPanelRef = useRef(pushPanel);
+  pushPanelRef.current = pushPanel;
+
+  // Initialize stack with root item content immediately to avoid layout shift
   const [stack, setStack] = useState<PanelDrillItem[]>(() => [
-    { id: 'identity', label: 'Identity', content: null },
+    {
+      id: 'identity',
+      label: 'Identity',
+      content: (
+        <IdentityPanelContent
+          onClose={() => onCloseRef.current()}
+          onShowLoginModal={() => setAuthPanelView('login')}
+          onShowRegisterWizard={() => setAuthPanelView('register')}
+          onPushPanel={(item) => pushPanelRef.current(item)}
+        />
+      ),
+    },
   ]);
 
   // Navigate back one level in the stack
@@ -27,11 +50,6 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
       if (prev.length <= 1) return prev;
       return prev.slice(0, -1);
     });
-  }, []);
-
-  // Push a new panel onto the stack
-  const pushPanel = useCallback((item: PanelDrillItem) => {
-    setStack((prev) => [...prev, item]);
   }, []);
 
   // Handle breadcrumb navigation
@@ -43,28 +61,6 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
   const handleCloseAuthPanel = useCallback(() => {
     setAuthPanelView(null);
   }, []);
-
-  // Populate root panel content after mount (following SettingsApp pattern)
-  useEffect(() => {
-    setStack((prev) => {
-      if (prev.length === 1 && prev[0].content === null) {
-        return [
-          {
-            ...prev[0],
-            content: (
-              <IdentityPanelContent
-                onClose={onClose}
-                onShowLoginModal={() => setAuthPanelView('login')}
-                onShowRegisterWizard={() => setAuthPanelView('register')}
-                onPushPanel={pushPanel}
-              />
-            ),
-          },
-        ];
-      }
-      return prev;
-    });
-  }, [onClose, pushPanel]);
 
   // Click outside handler
   useEffect(() => {

@@ -15,6 +15,7 @@
 
 import { SupervisorProvider, DesktopControllerProvider } from '../hooks/useSupervisor';
 import { DesktopWithPermissions } from '../DesktopWithPermissions';
+import { AuthGate } from '../AuthGate';
 import type { DesktopProps } from './types';
 
 export { useBackground } from '../BackgroundContext';
@@ -23,7 +24,9 @@ export function Desktop({ supervisor, desktop }: DesktopProps): JSX.Element {
   return (
     <SupervisorProvider value={supervisor}>
       <DesktopControllerProvider value={desktop}>
-        <DesktopWithPermissions supervisor={supervisor} desktop={desktop} />
+        <AuthGate>
+          <DesktopWithPermissions supervisor={supervisor} desktop={desktop} />
+        </AuthGate>
       </DesktopControllerProvider>
     </SupervisorProvider>
   );

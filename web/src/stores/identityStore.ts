@@ -201,10 +201,12 @@ export const useIdentityStore = create<IdentityStoreState>()(
         logout: async () => {
           set({ isLoading: true, error: null });
           try {
-            // Clear current user completely to allow a different user to log in
+            // Clear all session state - local identity and remote auth
+            // This re-enables auth gating (AuthGate checks remoteAuthState)
             set({
               currentUser: null,
               currentSession: null,
+              remoteAuthState: null,
               isLoading: false,
             });
           } catch (error) {

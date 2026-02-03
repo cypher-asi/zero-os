@@ -18,6 +18,8 @@ interface AuthPanelProps {
   onClose: () => void;
   /** Callback when self-sovereign identity is selected during registration */
   onSelfSovereignSelected?: () => void;
+  /** Whether the panel can be dismissed (click-outside, ESC). Defaults to true. */
+  dismissable?: boolean;
 }
 
 /**
@@ -28,7 +30,7 @@ interface AuthPanelProps {
  * - Dynamic content area (login form or registration wizard)
  * - Shared AuthLink footer (fixed at bottom)
  */
-export function AuthPanel({ initialView, onClose, onSelfSovereignSelected }: AuthPanelProps) {
+export function AuthPanel({ initialView, onClose, onSelfSovereignSelected, dismissable = true }: AuthPanelProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [currentView, setCurrentView] = useState<AuthView>(initialView);
   const [isLoading, setIsLoading] = useState(false);
@@ -51,6 +53,8 @@ export function AuthPanel({ initialView, onClose, onSelfSovereignSelected }: Aut
 
   // Click outside to close (only on overlay, not panel content)
   useEffect(() => {
+    if (!dismissable) return; // Skip dismiss handler in gate mode
+
     const handleClickOutside = (event: MouseEvent) => {
       if (event.target === overlayRef.current) {
         onClose();
@@ -59,10 +63,12 @@ export function AuthPanel({ initialView, onClose, onSelfSovereignSelected }: Aut
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
+  }, [onClose, dismissable]);
 
   // ESC key to close
   useEffect(() => {
+    if (!dismissable) return; // Skip ESC handler in gate mode
+
     const handleEscKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         onClose();
@@ -71,7 +77,7 @@ export function AuthPanel({ initialView, onClose, onSelfSovereignSelected }: Aut
 
     document.addEventListener('keydown', handleEscKey);
     return () => document.removeEventListener('keydown', handleEscKey);
-  }, [onClose]);
+  }, [onClose, dismissable]);
 
   return (
     <div ref={overlayRef} className={styles.overlay}>
