@@ -3,16 +3,12 @@
   bottom: 100%;
   right: 0;
   margin-bottom: 4px;
-  /* CRITICAL: Explicit height for PanelDrill's absolute positioning to work */
-  height: 485px;
 }
 
 .panel {
   width: 240px;
-  height: 100%; /* Fill the wrapper */
   display: flex;
   flex-direction: column;
-  /* Override PanelDrill's overflow:hidden to allow border-future pseudo-elements to render */
   overflow: visible;
 }
 
@@ -20,8 +16,6 @@
 .contentWrapper {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  overflow: hidden;
 }
 
 /* Section 1: Horizontal Image (full bleed) */
@@ -87,8 +81,6 @@
 /* Section 3: Menu */
 .menuSection {
   padding: 0;
-  flex: 1;
-  overflow: auto;
 }
 
 /* Menu */

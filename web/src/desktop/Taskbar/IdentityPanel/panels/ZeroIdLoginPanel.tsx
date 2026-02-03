@@ -303,11 +303,15 @@ export function ZeroIdLoginPanel({ onClose }: ZeroIdLoginPanelProps) {
               <span>Scopes</span>
             </div>
             <div className={styles.scopesList}>
-              {remoteAuthState.scopes.map((scope, i) => (
-                <Label key={i} variant="default" size="xs">
-                  {scope}
-                </Label>
-              ))}
+              {remoteAuthState.scopes.length > 0 ? (
+                remoteAuthState.scopes.map((scope, i) => (
+                  <Label key={i} variant="default" size="xs">
+                    {scope}
+                  </Label>
+                ))
+              ) : (
+                <span className={styles.textMuted}>None</span>
+              )}
             </div>
           </div>
 

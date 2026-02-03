@@ -1,0 +1,34 @@
+/* Auth Link - Shared styling for login/registration switch links */
+
+.authLink {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 16px;
+  font-size: 14px;
+}
+
+.text {
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.6));
+}
+
+.linkButton {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+  color: var(--color-text-primary, #fff);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.linkButton:hover {
+  text-decoration: underline;
+}
+
+.linkButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

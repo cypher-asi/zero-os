@@ -46,3 +46,4 @@ export { usePermissions } from './usePermissions';
 // Utility hooks
 export { useKeyboardShortcuts } from './useKeyboardShortcuts';
 export { useCopyToClipboard } from './useCopyToClipboard';
+export { useAnimatedHeight } from './useAnimatedHeight';

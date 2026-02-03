@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { PanelDrill, type PanelDrillItem } from '@cypher-asi/zui';
 import { PanelDrillProvider } from './context';
 import { IdentityPanelContent } from './IdentityPanelContent';
-import { LoginModal, RegisterWizard } from './modals';
+import { AuthPanel, type AuthView } from './modals';
 import styles from './IdentityPanel.module.css';
 
 interface IdentityPanelProps {
@@ -13,9 +13,8 @@ interface IdentityPanelProps {
 export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Modal state for centered login and registration
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [showRegisterWizard, setShowRegisterWizard] = useState(false);
+  // Unified auth panel state - null means closed, otherwise shows the specified view
+  const [authPanelView, setAuthPanelView] = useState<AuthView | null>(null);
 
   // Initialize stack with root item (content will be populated in useEffect)
   const [stack, setStack] = useState<PanelDrillItem[]>(() => [
@@ -40,10 +39,9 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
     setStack((prev) => prev.slice(0, index + 1));
   }, []);
 
-  // Handle switching from login to register
-  const handleShowRegisterFromLogin = useCallback(() => {
-    setShowLoginModal(false);
-    setShowRegisterWizard(true);
+  // Close auth panel
+  const handleCloseAuthPanel = useCallback(() => {
+    setAuthPanelView(null);
   }, []);
 
   // Populate root panel content after mount (following SettingsApp pattern)
@@ -56,8 +54,8 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
             content: (
               <IdentityPanelContent
                 onClose={onClose}
-                onShowLoginModal={() => setShowLoginModal(true)}
-                onShowRegisterWizard={() => setShowRegisterWizard(true)}
+                onShowLoginModal={() => setAuthPanelView('login')}
+                onShowRegisterWizard={() => setAuthPanelView('register')}
                 onPushPanel={pushPanel}
               />
             ),
@@ -102,21 +100,14 @@ export function IdentityPanel({ onClose, containerRef }: IdentityPanelProps) {
         />
       </PanelDrillProvider>
 
-      {/* Centered Login Modal - Shows when not connected */}
-      {showLoginModal && (
-        <LoginModal
-          onClose={() => setShowLoginModal(false)}
-          onShowRegister={handleShowRegisterFromLogin}
-        />
-      )}
-
-      {/* Registration Wizard Modal */}
-      {showRegisterWizard && (
-        <RegisterWizard
-          onClose={() => setShowRegisterWizard(false)}
+      {/* Unified Auth Panel - Single overlay for login/register views */}
+      {authPanelView && (
+        <AuthPanel
+          initialView={authPanelView}
+          onClose={handleCloseAuthPanel}
           onSelfSovereignSelected={() => {
             // TODO: Navigate to Neural Key panel
-            setShowRegisterWizard(false);
+            setAuthPanelView(null);
           }}
         />
       )}

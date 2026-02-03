@@ -1,72 +1,156 @@
-/* Register Wizard Styles */
-/* Minimal overlay/modal styles matching LoginModal + layout for wizard content */
+/* Register Content Styles */
+/* Matches LoginModal.module.css for consistent layout */
 
-/* =============================================================================
-   Overlay and Modal (matching LoginModal exactly)
-   ============================================================================= */
+.registerContent {
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  gap: 16px;
+}
 
-.overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
+/* Step content wrapper */
+.stepContent {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Header styles */
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.headerWithBack {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.backButton {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10000;
-  animation: fadeIn 0.15s ease-out;
-  pointer-events: auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+  color: var(--color-text-primary, #fff);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  flex-shrink: 0;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+.backButton:hover:not(:disabled) {
+  background: var(--color-bg-hover, rgba(255, 255, 255, 0.05));
 }
 
-.modal {
-  max-width: 500px;
-  width: 90vw;
-  max-height: 85vh;
+.backButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Options list (account type selection) */
+.optionsList {
   display: flex;
   flex-direction: column;
-  animation: slideIn 0.2s ease-out;
-  pointer-events: auto;
-  position: relative;
-  z-index: 10001;
+  gap: 12px;
 }
 
-.modalContent {
-  flex: 0 0 auto;
+/* Method list */
+.methodList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
+.methodButton {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-/* =============================================================================
-   Error Box (matching LoginModal exactly)
-   ============================================================================= */
+/* Form styles - matches login */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 
+.submitButton {
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* Divider */
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 8px 0;
+}
+
+.dividerLine {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+/* Success state */
+.successBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 16px 0;
+}
+
+.successIcon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--color-accent-muted, rgba(1, 244, 203, 0.15));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent, #01f4cb);
+  margin-bottom: 20px;
+}
+
+.successTitle {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.successDescription {
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.getStartedButton {
+  width: 100%;
+}
+
+/* Error box */
 .errorBox {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 12px;
   padding: 12px 16px;
   background-color: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);
@@ -83,121 +167,4 @@
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-/* =============================================================================
-   Step Content Layout
-   ============================================================================= */
-
-.stepContent {
-  padding: 8px 0;
-}
-
-/* =============================================================================
-   Account Type Selection
-   ============================================================================= */
-
-.accountTypeCards {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.accountTypeCard {
-  cursor: pointer;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
-}
-
-.accountTypeCard:hover {
-  border-color: var(--color-accent, #6366f1);
-}
-
-.accountTypeCard.selected {
-  border-color: var(--color-accent, #6366f1);
-  background: rgba(99, 102, 241, 0.1);
-}
-
-/* =============================================================================
-   Method List (Sign-up options)
-   ============================================================================= */
-
-.methodList {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.methodButton {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-  padding: 14px 16px;
-}
-
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 8px 0;
-}
-
-.dividerLine {
-  flex: 1;
-  height: 1px;
-  background: var(--color-border-subtle, rgba(255, 255, 255, 0.08));
-}
-
-/* =============================================================================
-   Email Form
-   ============================================================================= */
-
-.emailForm {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.inputGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.passwordHint {
-  margin-top: 2px;
-}
-
-/* =============================================================================
-   Success State
-   ============================================================================= */
-
-.successBox {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding: 24px 16px;
-}
-
-.successIcon {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: rgba(34, 197, 94, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #22c55e;
-  margin-bottom: 20px;
-}
-
-.successTitle {
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.successDescription {
-  line-height: 1.5;
 }
