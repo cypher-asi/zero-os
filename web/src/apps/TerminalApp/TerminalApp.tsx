@@ -81,7 +81,6 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
       setHistoryIndex(-1);
     }
 
-    setOutput((prev) => [...prev, { text: `z::> ${line}\n`, className: styles.inputEcho }]);
 
     // Send input to specific process (if processId provided) or legacy global
     if (processId != null) {
@@ -148,7 +147,6 @@ export function TerminalApp({ windowId: _windowId, processId }: TerminalAppProps
           </span>
         ))}
         <span className={styles.inputLine}>
-          <span className={styles.prompt}>z::&gt;</span>
           <input
             ref={inputRef}
             type="text"

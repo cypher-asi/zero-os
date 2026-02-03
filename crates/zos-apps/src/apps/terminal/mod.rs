@@ -82,9 +82,8 @@ impl TerminalApp {
                     self.history.push(line.to_string());
                     self.history_index = self.history.len();
                     self.execute_command(line);
-                } else {
-                    self.print(Self::PROMPT);
                 }
+                self.print(Self::PROMPT);
                 self.flush_output(ctx)?;
             }
             InputAction::Interrupt => {

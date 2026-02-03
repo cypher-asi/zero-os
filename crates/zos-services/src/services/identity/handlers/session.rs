@@ -1275,14 +1275,9 @@ pub fn handle_zid_login_email(
         );
     }
 
-    // Validate password length
-    if request.password.len() < 8 {
-        return response::send_zid_email_login_error(
-            msg.from_pid,
-            &msg.cap_slots,
-            ZidError::InvalidRequest("Password must be at least 8 characters".into()),
-        );
-    }
+    // Note: Password length validation is intentionally NOT done here for login.
+    // The server validates credentials - clients shouldn't reject passwords that
+    // might have been valid under older password policies.
 
     // Build request body for ZID email login
     let mut body = format!(

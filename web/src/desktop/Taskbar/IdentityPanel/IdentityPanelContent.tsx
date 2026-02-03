@@ -130,15 +130,13 @@ export function IdentityPanelContent({
         case 'logout':
           try {
             // Disconnect from ZERO ID if connected (remote session only)
+            // Note: This only clears the remote session, not the local identity
             if (isZeroIdConnected) {
               await disconnectZeroId();
               console.log('[identity-panel] ZERO ID disconnect successful');
             }
-            // Logout from local identity
-            await identityStore.logout();
-            console.log('[identity-panel] Local logout successful');
           } catch (error) {
-            console.error('[identity-panel] Logout failed:', error);
+            console.error('[identity-panel] Disconnect failed:', error);
           }
           onClose();
           return;

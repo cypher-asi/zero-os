@@ -46,7 +46,7 @@ pub struct WasmHal {
     /// Worker processes (using Arc<Mutex> for HAL trait Send+Sync requirements)
     pub(crate) processes: Arc<Mutex<HashMap<u64, WorkerProcess>>>,
     /// Incoming messages from Workers (syscalls, status updates)
-    incoming_messages: Arc<Mutex<Vec<WorkerMessage>>>,
+    pub(crate) incoming_messages: Arc<Mutex<Vec<WorkerMessage>>>,
     /// Next storage request ID (monotonically increasing)
     next_storage_request_id: AtomicU32,
     /// Pending storage requests: request_id -> requesting PID

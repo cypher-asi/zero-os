@@ -31,7 +31,7 @@
 }
 
 .appButton:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12) !important;
+  background: transparent !important;
 }
 
 .appButton:active:not(:disabled) {

@@ -46,6 +46,8 @@ impl super::Supervisor {
                     self.system
                         .hal()
                         .update_process_memory(msg.pid, memory_size);
+                    let pid = ProcessId(msg.pid);
+                    self.system.update_process_memory(pid, memory_size);
                     log(&format!(
                         "[supervisor] Worker {} ready, memory: {} bytes",
                         msg.pid, memory_size

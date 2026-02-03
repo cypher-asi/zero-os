@@ -11,7 +11,7 @@ use web_sys::{MessageEvent, Worker};
 use zos_hal::HalError;
 
 use super::WasmHal;
-use crate::worker::{WasmProcessHandle, WorkerProcess};
+use crate::worker::{WasmProcessHandle, WorkerMessage, WorkerMessageType, WorkerProcess};
 
 #[wasm_bindgen]
 extern "C" {
@@ -33,6 +33,7 @@ type WorkerCreationResult = Result<
 
 pub(crate) fn handle_worker_message(
     processes: &Arc<Mutex<HashMap<u64, WorkerProcess>>>,
+    incoming_messages: &Arc<Mutex<Vec<WorkerMessage>>>,
     event: MessageEvent,
 ) {
     let data = event.data();
@@ -40,7 +41,7 @@ pub(crate) fn handle_worker_message(
     let type_str = msg_type.ok().and_then(|value| value.as_string());
 
     match type_str.as_deref() {
-        Some("memory") => handle_worker_memory(processes, &data),
+        Some("memory") => handle_worker_memory(processes, incoming_messages, &data),
         Some("error") => handle_worker_error_message(&data),
         _ => {}
     }
@@ -48,6 +49,7 @@ pub(crate) fn handle_worker_message(
 
 pub(crate) fn handle_worker_memory(
     processes: &Arc<Mutex<HashMap<u64, WorkerProcess>>>,
+    incoming_messages: &Arc<Mutex<Vec<WorkerMessage>>>,
     data: &JsValue,
 ) {
     let buffer_val = js_sys::Reflect::get(data, &"buffer".into());
@@ -71,6 +73,8 @@ pub(crate) fn handle_worker_memory(
                 false
             };
             
+            let memory_size = shared_buf.byte_length() as usize;
+            
             if is_update {
                 log(&format!(
                     "[wasm-hal] MEMORY UPDATE: Received NEW SharedArrayBuffer from worker:{} (PID {}) after memory growth, size: {} bytes",
@@ -89,7 +93,18 @@ pub(crate) fn handle_worker_memory(
                     proc.syscall_buffer = shared_buf;
                     proc.mailbox_view = view;
                     proc.worker_id = worker_id;
+                    proc.memory_size = memory_size;
                 }
+            }
+            
+            // Queue message to update kernel ProcessMetrics
+            let msg_type = if is_update {
+                WorkerMessageType::MemoryUpdate { memory_size }
+            } else {
+                WorkerMessageType::Ready { memory_size }
+            };
+            if let Ok(mut queue) = incoming_messages.lock() {
+                queue.push(WorkerMessage { pid, msg_type, data: Vec::new() });
             }
         } else {
             let is_array_buffer = buffer_val.dyn_ref::<js_sys::ArrayBuffer>().is_some();
@@ -135,6 +150,7 @@ pub(crate) fn create_placeholder_buffers() -> (js_sys::SharedArrayBuffer, js_sys
 pub(crate) fn create_worker_with_handlers(
     pid: u64,
     processes: Arc<Mutex<HashMap<u64, WorkerProcess>>>,
+    incoming_messages: Arc<Mutex<Vec<WorkerMessage>>>,
 ) -> WorkerCreationResult {
     let worker = Worker::new("/worker.js").map_err(|e| {
         log(&format!("[wasm-hal] Failed to create Worker: {:?}", e));
@@ -142,7 +158,7 @@ pub(crate) fn create_worker_with_handlers(
     })?;
 
     let onmessage_closure = Closure::wrap(Box::new(move |event: MessageEvent| {
-        handle_worker_message(&processes, event);
+        handle_worker_message(&processes, &incoming_messages, event);
     }) as Box<dyn FnMut(MessageEvent)>);
 
     let onerror_closure = Closure::wrap(Box::new(move |event: JsValue| {
@@ -206,7 +222,7 @@ impl WasmHal {
         let handle = WasmProcessHandle::new(pid);
 
         let (worker, onmessage_closure, onerror_closure) =
-            create_worker_with_handlers(pid, self.processes.clone())?;
+            create_worker_with_handlers(pid, self.processes.clone(), self.incoming_messages.clone())?;
 
         // Create a placeholder SharedArrayBuffer (will be replaced when worker sends real one)
         // Size: 16KB to support large IPC responses (e.g., PQ hybrid keys ~6KB)

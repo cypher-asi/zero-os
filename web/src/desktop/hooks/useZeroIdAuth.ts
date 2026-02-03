@@ -204,7 +204,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
           throw new Error('Supervisor not available - please wait for system to initialize');
         }
         if (!currentUserId) {
-          throw new Error('You must be logged in locally before using email login');
+          throw new Error('No local user identity selected. Please select or create a local identity first.');
         }
 
         // Call identity service to perform email login
@@ -282,7 +282,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
           throw new Error('Supervisor not available - please wait for system to initialize');
         }
         if (!currentUserId) {
-          throw new Error('You must be logged in locally before using Machine Key login');
+          throw new Error('No local user identity selected. Please select or create a local identity first.');
         }
 
         // Call identity service to perform machine key login
@@ -357,7 +357,7 @@ export function useZeroIdAuth(): UseZeroIdAuthReturn {
           throw new Error('Supervisor not available - please wait for system to initialize');
         }
         if (!currentUserId) {
-          throw new Error('You must be logged in locally before enrolling machine');
+          throw new Error('No local user identity selected. Please select or create a local identity first.');
         }
 
         // Call identity service to enroll machine with ZID server

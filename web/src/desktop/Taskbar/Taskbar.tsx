@@ -7,6 +7,7 @@ import { BeginMenu } from './BeginMenu/BeginMenu';
 import { IdentityPanel } from './IdentityPanel';
 import { ProcessPanel } from './ProcessPanel';
 import { DateTime } from './DateTime';
+import { CurrencyDisplay } from './CurrencyDisplay';
 import {
   TerminalSquare,
   AppWindow,
@@ -200,6 +201,7 @@ export function Taskbar({ isLocked = false }: TaskbarProps) {
         >
           <Plus size={16} />
         </Button>
+        <CurrencyDisplay />
         <Button
           variant="transparent"
           rounded="none"

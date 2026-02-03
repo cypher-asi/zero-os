@@ -42,8 +42,14 @@ const COLORS = [
 ];
 
 function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  if (bytes >= 1024 * 1024) {
+    const val = bytes / (1024 * 1024);
+    return (val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)) + ' MB';
+  }
+  if (bytes >= 1024) {
+    const val = bytes / 1024;
+    return (val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)) + ' KB';
+  }
   return bytes + ' B';
 }
 
@@ -184,14 +190,6 @@ export function ProcessPanelContent({ onClose: _onClose }: ProcessPanelContentPr
               </div>
             </div>
           ))}
-        </div>
-        <div className={styles.quickActions}>
-          <Button variant="ghost" size="sm" onClick={() => spawnProcess('memhog')}>
-            + memhog
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => spawnProcess('idle')}>
-            + idle
-          </Button>
         </div>
       </div>
 
